@@ -1,9 +1,10 @@
 /**
  * Holy Star POS - Offline Service Worker (sw.js)
- * Caches all application shell files, Master Catalog, and icons so the POS works 100% offline.
+ * Uses Network-First with 100% Offline Cache Fallback so new deployments
+ * load immediately when online while still working 100% offline without internet.
  */
 
-const CACHE_NAME = 'holystar-pos-cache-v5';
+const CACHE_NAME = 'holystar-pos-cache-v6';
 const OFFLINE_ASSETS = [
   './',
   './index.html',
@@ -18,10 +19,11 @@ const OFFLINE_ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(OFFLINE_ASSETS);
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
@@ -43,25 +45,25 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
   event.respondWith(
-    caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(event.request)
-        .then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
-            const responseClone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+          const responseClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        return caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
+          if (cachedResponse) {
+            return cachedResponse;
           }
-          return networkResponse;
-        })
-        .catch(() => {
           if (event.request.mode === 'navigate') {
             return caches.match('./index.html');
           }
         });
-    })
+      })
   );
 });

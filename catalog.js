@@ -155,3 +155,4 @@ window.MASTER_CATALOG = RAW_MASTER_CATALOG.map((item, idx) => ({
 }));
 
 window.generateProductSvgThumbnail = generateProductSvgThumbnail;
+
