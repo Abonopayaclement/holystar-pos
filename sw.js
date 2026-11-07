@@ -4,14 +4,16 @@
  * load immediately when online while still working 100% offline without internet.
  */
 
-const CACHE_NAME = 'holystar-pos-cache-v6';
+const CACHE_NAME = 'holystar-pos-cache-v8';
 const OFFLINE_ASSETS = [
   './',
   './index.html',
+  './super-admin.html',
   './style.css',
   './catalog.js',
   './db.js',
   './app.js',
+  './super-admin.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
@@ -43,6 +45,11 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+
+  // Never cache live cloud telemetry sync calls
+  if (event.request.url.includes('ntfy.sh')) {
+    return;
+  }
 
   event.respondWith(
     fetch(event.request)

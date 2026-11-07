@@ -1,22 +1,23 @@
 /**
  * Holy Star POS - Multi-Store SaaS IndexedDB Wrapper (db.js)
- * Supports Store Registration/Login, Boss vs. Cashier roles, Staff/Device accounts,
- * Barcode & Image-enabled Inventory, Atomic Checkout, Debtors Book, Prepaid Tokens,
- * and Super-Admin Sync Telemetry Summary.
+ * Strictly isolates every store's products, sales, debtors, and licenses by `store_id`.
+ * Purges any legacy prototype records lacking a `store_id` so every new store
+ * starts with 0 Products, 0 Sales, and 0 Debtors.
  */
 
 const DB_NAME = 'HolyStarPOS_DB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const CLOCK_DRIFT_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes tolerance
-const SESSION_STORAGE_KEY = 'holystar_active_session_v2';
+const SESSION_STORAGE_KEY = 'holystar_active_session_v3';
 
 class HolyStarDatabase {
   constructor() {
     this.db = null;
+    this.legacyCleaned = false;
   }
 
   /**
-   * Initialize IndexedDB (v2 schema with multi-store support)
+   * Initialize IndexedDB (v3 schema with strict store_id isolation)
    */
   async init() {
     if (this.db) return this.db;
@@ -26,19 +27,20 @@ class HolyStarDatabase {
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
+        const tx = event.target.transaction;
 
         // 1. Settings Store
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings', { keyPath: 'key' });
         }
 
-        // 2. Stores Registry (Multi-Store SaaS support)
+        // 2. Stores Registry
         if (!db.objectStoreNames.contains('stores')) {
           const storeObj = db.createObjectStore('stores', { keyPath: 'store_id' });
           storeObj.createIndex('owner_phone', 'owner_phone', { unique: false });
         }
 
-        // 3. Staff & Devices Store
+        // 3. Staff & Devices Store (Modular for future premium multi-staff tier)
         if (!db.objectStoreNames.contains('staff_devices')) {
           const staffStore = db.createObjectStore('staff_devices', { keyPath: 'id' });
           staffStore.createIndex('store_id', 'store_id', { unique: false });
@@ -75,11 +77,34 @@ class HolyStarDatabase {
           const licenseStore = db.createObjectStore('license', { keyPath: 'token_id' });
           licenseStore.createIndex('applied_at', 'applied_at', { unique: false });
         }
+
+        // Purge any legacy v1 prototype records without `store_id` during upgrade
+        ['products', 'sales', 'debtors', 'license'].forEach((storeName) => {
+          if (db.objectStoreNames.contains(storeName)) {
+            const os = tx.objectStore(storeName);
+            const cursorReq = os.openCursor();
+            cursorReq.onsuccess = (ev) => {
+              const cursor = ev.target.result;
+              if (cursor) {
+                const val = cursor.value;
+                if (!val || !val.store_id) {
+                  cursor.delete();
+                }
+                cursor.continue();
+              }
+            };
+          }
+        });
       };
 
       request.onsuccess = (event) => resolve(event.target.result);
       request.onerror = (event) => reject(new Error('Failed to open IndexedDB: ' + event.target.error));
     });
+
+    if (!this.legacyCleaned) {
+      this.legacyCleaned = true;
+      await this.purgeLegacyRecordsWithoutStoreId();
+    }
 
     return this.db;
   }
@@ -90,14 +115,39 @@ class HolyStarDatabase {
     }
   }
 
+  /**
+   * Ensure any legacy records without `store_id` are completely removed
+   */
+  async purgeLegacyRecordsWithoutStoreId() {
+    if (!this.db) return;
+    return new Promise((resolve) => {
+      try {
+        const tx = this.db.transaction(['products', 'sales', 'debtors', 'license'], 'readwrite');
+        ['products', 'sales', 'debtors', 'license'].forEach((storeName) => {
+          const store = tx.objectStore(storeName);
+          const req = store.openCursor();
+          req.onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+              if (!cursor.value || !cursor.value.store_id) {
+                cursor.delete();
+              }
+              cursor.continue();
+            }
+          };
+        });
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+
   // =========================================================================
   // SESSION, AUTHENTICATION & MULTI-STORE ONBOARDING
   // =========================================================================
 
-  /**
-   * Returns current active session:
-   * { store_id, role_mode: 'boss' | 'cashier', staff_name, logged_in_at } or null
-   */
   getActiveSession() {
     try {
       const raw = localStorage.getItem(SESSION_STORAGE_KEY);
@@ -131,9 +181,6 @@ class HolyStarDatabase {
     return String(phone || '').replace(/\s+/g, '').replace(/^\+233/, '0');
   }
 
-  /**
-   * Generate unique `HS-XXXX` store_id
-   */
   generateStoreId(existingIds = []) {
     const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
     for (let attempt = 0; attempt < 50; attempt++) {
@@ -178,7 +225,7 @@ class HolyStarDatabase {
   }
 
   /**
-   * Create a new Store account with 0 products, 0 sales, 0 debtors, and a 7-day trial
+   * Create a brand-new Store account with 0 products, 0 sales, 0 debtors, and a 7-day trial
    */
   async registerNewStore({
     store_name,
@@ -186,7 +233,6 @@ class HolyStarDatabase {
     owner_name,
     owner_phone,
     owner_password,
-    boss_pin,
     store_location
   }) {
     await this.initFromExisting();
@@ -196,14 +242,12 @@ class HolyStarDatabase {
     const cleanOwner = String(owner_name || '').trim();
     const cleanPhone = this.normalizePhone(owner_phone);
     const cleanPass = String(owner_password || '').trim();
-    const cleanPin = String(boss_pin || '').trim();
     const cleanLoc = String(store_location || 'Ghana').trim();
 
     if (!cleanName) throw new Error('Store Name is required.');
     if (!cleanOwner) throw new Error('Owner Full Name is required.');
     if (!cleanPhone || cleanPhone.length < 9) throw new Error('Valid Owner Phone Number is required.');
     if (!cleanPass || cleanPass.length < 4) throw new Error('Password must be at least 4 characters.');
-    if (!/^\d{4}$/.test(cleanPin)) throw new Error('Boss PIN must be an exact 4-digit number (e.g. 1234).');
 
     const existingStores = await this.getAllStores();
     const duplicatePhone = existingStores.find((s) => this.normalizePhone(s.owner_phone) === cleanPhone);
@@ -217,14 +261,13 @@ class HolyStarDatabase {
 
     const newStore = {
       store_id: storeId,
-      shop_id: storeId, // alias for backward compatibility
+      shop_id: storeId,
       store_name: cleanName,
       shop_name: cleanName,
       store_category: cleanCat,
       owner_name: cleanOwner,
       owner_phone: cleanPhone,
       owner_password: cleanPass,
-      boss_pin: cleanPin,
       shop_location: cleanLoc,
       license_expiry: now + sevenDaysMs,
       license_plan: '7-Day Initial Trial',
@@ -234,29 +277,16 @@ class HolyStarDatabase {
       created_at: now
     };
 
-    const defaultStaff = {
-      id: 'STF-' + now,
-      store_id: storeId,
-      name: 'Shop Cashier',
-      phone: cleanPhone,
-      role: 'cashier',
-      pin_or_pass: cleanPass,
-      device_label: 'Main Counter Device',
-      created_at: now
-    };
-
     await new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['stores', 'staff_devices'], 'readwrite');
+      const tx = this.db.transaction(['stores'], 'readwrite');
       tx.objectStore('stores').put(newStore);
-      tx.objectStore('staff_devices').put(defaultStaff);
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => reject(tx.error || new Error('Failed to create store.'));
     });
 
     const session = {
       store_id: storeId,
-      role_mode: 'boss',
-      staff_name: cleanOwner,
+      owner_name: cleanOwner,
       logged_in_at: now
     };
     this.setActiveSession(session);
@@ -264,22 +294,21 @@ class HolyStarDatabase {
   }
 
   /**
-   * Login to an existing Store as Boss or Cashier
+   * Unified Store Login (Phone/Username/Store ID + Password)
    */
-  async loginToStore({ identifier, password, role }) {
+  async loginToStore({ identifier, password }) {
     await this.initFromExisting();
     const cleanId = String(identifier || '').trim();
     const cleanPhone = this.normalizePhone(cleanId);
     const cleanPass = String(password || '').trim();
-    const requestedRole = role === 'boss' ? 'boss' : 'cashier';
 
     if (!cleanId || !cleanPass) {
-      throw new Error('Please enter your Store Phone / ID and Password.');
+      throw new Error('Please enter your Store Phone / Username and Password.');
     }
 
     const stores = await this.getAllStores();
     if (stores.length === 0) {
-      throw new Error('No store registered on this device yet. Please switch to "Create New Store (Sign Up)" first.');
+      throw new Error('No store registered on this device yet. Please switch to "Create New Store" first.');
     }
 
     const store = stores.find(
@@ -290,125 +319,21 @@ class HolyStarDatabase {
     );
 
     if (!store) {
-      throw new Error('Store not found. Check your Store Phone Number or Store ID.');
+      throw new Error('Store not found. Check your Phone Number or Store ID.');
     }
 
-    if (requestedRole === 'boss') {
-      if (cleanPass !== store.owner_password && cleanPass !== store.boss_pin) {
-        throw new Error('Invalid Boss Password or PIN.');
-      }
-      const session = {
-        store_id: store.store_id,
-        role_mode: 'boss',
-        staff_name: store.owner_name,
-        logged_in_at: Date.now()
-      };
-      this.setActiveSession(session);
-      await this.TouchClock();
-      return { store, session };
-    }
-
-    // Cashier login: check staff_devices or store password/PIN
-    const staffList = await this.getStoreStaff(store.store_id);
-    const matchedStaff = staffList.find(
-      (st) => st.pin_or_pass === cleanPass || this.normalizePhone(st.phone) === cleanPhone && st.pin_or_pass === cleanPass
-    );
-
-    if (!matchedStaff && cleanPass !== store.owner_password && cleanPass !== store.boss_pin) {
-      throw new Error('Invalid Cashier Password or PIN.');
+    if (cleanPass !== store.owner_password) {
+      throw new Error('Incorrect password. Please try again.');
     }
 
     const session = {
       store_id: store.store_id,
-      role_mode: 'cashier',
-      staff_name: matchedStaff ? matchedStaff.name : 'Cashier / Attendant',
+      owner_name: store.owner_name,
       logged_in_at: Date.now()
     };
     this.setActiveSession(session);
     await this.TouchClock();
     return { store, session };
-  }
-
-  /**
-   * Verify 4-digit Boss PIN (or Boss Password) to unlock Boss Mode
-   */
-  async verifyBossPin(pinInput) {
-    const store = await this.getActiveStore();
-    if (!store) throw new Error('No active store session.');
-    const clean = String(pinInput || '').trim();
-    if (clean === store.boss_pin || clean === store.owner_password) {
-      const sess = this.getActiveSession() || { store_id: store.store_id };
-      sess.role_mode = 'boss';
-      sess.staff_name = store.owner_name;
-      this.setActiveSession(sess);
-      return true;
-    }
-    return false;
-  }
-
-  switchToCashierMode() {
-    const sess = this.getActiveSession();
-    if (!sess) return;
-    sess.role_mode = 'cashier';
-    this.setActiveSession(sess);
-  }
-
-  // =========================================================================
-  // STAFF / CASHIER DEVICE MANAGEMENT
-  // =========================================================================
-
-  async getStoreStaff(storeId = this.getActiveStoreId()) {
-    await this.initFromExisting();
-    if (!storeId) return [];
-    return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['staff_devices'], 'readonly');
-      const req = tx.objectStore('staff_devices').getAll();
-      req.onsuccess = () => {
-        const all = req.result || [];
-        resolve(all.filter((s) => s.store_id === storeId));
-      };
-      req.onerror = () => reject(req.error);
-    });
-  }
-
-  async addStoreStaff({ name, phone, pin_or_pass, device_label }) {
-    await this.initFromExisting();
-    const storeId = this.getActiveStoreId();
-    if (!storeId) throw new Error('No active store.');
-
-    const cleanName = String(name || '').trim();
-    const cleanPass = String(pin_or_pass || '').trim();
-    if (!cleanName || !cleanPass) {
-      throw new Error('Staff Name and Cashier Password/PIN are required.');
-    }
-
-    const record = {
-      id: 'STF-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5).toUpperCase(),
-      store_id: storeId,
-      name: cleanName,
-      phone: String(phone || '').trim(),
-      role: 'cashier',
-      pin_or_pass: cleanPass,
-      device_label: String(device_label || 'Shop Counter Phone').trim(),
-      created_at: Date.now()
-    };
-
-    return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['staff_devices'], 'readwrite');
-      tx.objectStore('staff_devices').put(record);
-      tx.oncomplete = () => resolve(record);
-      tx.onerror = () => reject(tx.error);
-    });
-  }
-
-  async deleteStoreStaff(staffId) {
-    await this.initFromExisting();
-    return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['staff_devices'], 'readwrite');
-      tx.objectStore('staff_devices').delete(staffId);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => reject(tx.error);
-    });
   }
 
   // =========================================================================
@@ -451,9 +376,6 @@ class HolyStarDatabase {
     });
   }
 
-  /**
-   * Returns active store settings mapped cleanly for app.js
-   */
   async getSettings() {
     const store = await this.getActiveStore();
     if (!store) return {};
@@ -487,18 +409,19 @@ class HolyStarDatabase {
   }
 
   // =========================================================================
-  // LICENSE & TOKEN MANAGEMENT (SCOPED BY STORE_ID)
+  // LICENSE & TOKEN MANAGEMENT (STRICTLY SCOPED BY STORE_ID)
   // =========================================================================
 
   async getUsedTokens() {
     await this.initFromExisting();
     const storeId = this.getActiveStoreId();
+    if (!storeId) return [];
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction(['license'], 'readonly');
       const req = tx.objectStore('license').getAll();
       req.onsuccess = () => {
         const all = req.result || [];
-        resolve(storeId ? all.filter((t) => !t.shop_id || t.shop_id === storeId) : all);
+        resolve(all.filter((t) => t.store_id === storeId || t.shop_id === storeId));
       };
       req.onerror = () => reject(req.error);
     });
@@ -557,7 +480,7 @@ class HolyStarDatabase {
   }
 
   // =========================================================================
-  // PRODUCTS / INVENTORY STORE (WITH BARCODE & THUMBNAIL IMAGE)
+  // PRODUCTS / INVENTORY STORE (STRICTLY SCOPED BY STORE_ID)
   // =========================================================================
 
   async getAllProducts(storeId = this.getActiveStoreId()) {
@@ -567,7 +490,8 @@ class HolyStarDatabase {
       const tx = this.db.transaction(['products'], 'readonly');
       const req = tx.objectStore('products').getAll();
       req.onsuccess = () => {
-        const list = (req.result || []).filter((p) => !p.store_id || p.store_id === storeId);
+        // Strict store_id equality check: never leak legacy or other store items
+        const list = (req.result || []).filter((p) => p && p.store_id === storeId);
         list.sort((a, b) => a.name.localeCompare(b.name));
         resolve(list);
       };
@@ -628,7 +552,7 @@ class HolyStarDatabase {
   }
 
   // =========================================================================
-  // ATOMIC CHECKOUT TRANSACTION (Products + Sales + Debtors + Store Clock)
+  // ATOMIC CHECKOUT TRANSACTION (STRICTLY SCOPED BY STORE_ID)
   // =========================================================================
 
   async processAtomicCheckout(checkoutPayload) {
@@ -682,7 +606,7 @@ class HolyStarDatabase {
         getReq.onsuccess = () => {
           if (aborted) return;
           const dbProduct = getReq.result;
-          if (!dbProduct || (dbProduct.store_id && dbProduct.store_id !== storeId)) {
+          if (!dbProduct || dbProduct.store_id !== storeId) {
             return failTransaction(`Product not found in store inventory (ID: ${cartItem.id}).`);
           }
           if (qty > dbProduct.stock_qty) {
@@ -777,11 +701,10 @@ class HolyStarDatabase {
           deposit_method: paymentMethod === 'Credit' ? depositMethod : paymentMethod,
           balance_owed: paymentMethod === 'Credit' ? balanceOwed : 0,
           customer: customerInfo,
-          served_by: session ? session.staff_name : 'Attendant',
+          served_by: session ? session.owner_name : 'Store Owner',
           repayments: []
         };
 
-        // Update store timestamp
         const storeReq = storesStore.get(storeId);
         storeReq.onsuccess = () => {
           if (storeReq.result) {
@@ -802,7 +725,8 @@ class HolyStarDatabase {
 
         allDebtorsReq.onsuccess = () => {
           if (aborted) return;
-          const allDebtors = (allDebtorsReq.result || []).filter((d) => !d.store_id || d.store_id === storeId);
+          // Strict store_id check
+          const allDebtors = (allDebtorsReq.result || []).filter((d) => d && d.store_id === storeId);
           let debtor = allDebtors.find(
             (d) => String(d.phone || '').replace(/\s+/g, '') === normalizedPhone
           );
@@ -878,7 +802,7 @@ class HolyStarDatabase {
   }
 
   // =========================================================================
-  // DEBTORS BOOK MANAGEMENT (SCOPED BY STORE_ID)
+  // DEBTORS BOOK MANAGEMENT (STRICTLY SCOPED BY STORE_ID)
   // =========================================================================
 
   async getAllDebtors(storeId = this.getActiveStoreId()) {
@@ -888,7 +812,7 @@ class HolyStarDatabase {
       const tx = this.db.transaction(['debtors'], 'readonly');
       const req = tx.objectStore('debtors').getAll();
       req.onsuccess = () => {
-        const list = (req.result || []).filter((d) => !d.store_id || d.store_id === storeId);
+        const list = (req.result || []).filter((d) => d && d.store_id === storeId);
         list.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
         resolve(list);
       };
@@ -926,7 +850,7 @@ class HolyStarDatabase {
 
       const allReq = debtorsStore.getAll();
       allReq.onsuccess = () => {
-        const list = (allReq.result || []).filter((d) => !d.store_id || d.store_id === storeId);
+        const list = (allReq.result || []).filter((d) => d && d.store_id === storeId);
         const normalizedPhone = cPhone.replace(/\s+/g, '');
         let debtor = list.find((d) => String(d.phone || '').replace(/\s+/g, '') === normalizedPhone);
 
@@ -981,6 +905,7 @@ class HolyStarDatabase {
 
   async recordDebtorPayment({ debtorId, amount, paymentMethod, note }) {
     await this.initFromExisting();
+    const storeId = this.getActiveStoreId();
     const clockCheck = await this.TouchClock();
     if (!clockCheck.valid) throw new Error(clockCheck.message);
 
@@ -1000,9 +925,9 @@ class HolyStarDatabase {
       const req = debtorsStore.get(debtorId);
       req.onsuccess = () => {
         const debtor = req.result;
-        if (!debtor) {
+        if (!debtor || debtor.store_id !== storeId) {
           tx.abort();
-          return reject(new Error('Debtor record not found.'));
+          return reject(new Error('Debtor record not found in this store.'));
         }
 
         const currentOwed = Number(debtor.total_owed || 0);
@@ -1045,7 +970,7 @@ class HolyStarDatabase {
   }
 
   // =========================================================================
-  // SALES HISTORY & DAILY FINANCIAL METRICS (SCOPED BY STORE_ID)
+  // SALES HISTORY & DAILY FINANCIAL METRICS (STRICTLY SCOPED BY STORE_ID)
   // =========================================================================
 
   async getAllSales(storeId = this.getActiveStoreId()) {
@@ -1055,7 +980,7 @@ class HolyStarDatabase {
       const tx = this.db.transaction(['sales'], 'readonly');
       const req = tx.objectStore('sales').getAll();
       req.onsuccess = () => {
-        const list = (req.result || []).filter((s) => !s.store_id || s.store_id === storeId);
+        const list = (req.result || []).filter((s) => s && s.store_id === storeId);
         list.sort((a, b) => b.timestamp - a.timestamp);
         resolve(list);
       };
@@ -1151,12 +1076,42 @@ class HolyStarDatabase {
   }
 
   // =========================================================================
-  // STAGE 3 & 4 SUPER-ADMIN TELEMETRY SUMMARY PAYLOAD
+  // STAGE 3 & 4 SUPER-ADMIN TELEMETRY SUMMARY & CLOUD/LOCAL HEARTBEAT ENGINE
   // =========================================================================
 
-  /**
-   * Compiles a privacy-safe telemetry summary object for the active store
-   */
+  getTelemetryRegistryMap() {
+    try {
+      const raw = localStorage.getItem('holystar_telemetry_registry_v1');
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  saveTelemetryRegistryMap(mapObj) {
+    try {
+      localStorage.setItem('holystar_telemetry_registry_v1', JSON.stringify(mapObj || {}));
+    } catch (e) {
+      // Ignore quota errors
+    }
+  }
+
+  getCloudSyncConfig() {
+    const defaultTopic = 'holystar_pos_telemetry_sync_2026_v1';
+    try {
+      const savedTopic = localStorage.getItem('holystar_cloud_sync_topic') || defaultTopic;
+      const customUrl = localStorage.getItem('holystar_cloud_sync_custom_url') || '';
+      return {
+        topic: String(savedTopic).trim() || defaultTopic,
+        customUrl: String(customUrl).trim()
+      };
+    } catch (e) {
+      return { topic: defaultTopic, customUrl: '' };
+    }
+  }
+
   async getStoreTelemetrySummary(storeId = this.getActiveStoreId()) {
     await this.initFromExisting();
     const store = await this.getStoreById(storeId);
@@ -1174,14 +1129,24 @@ class HolyStarDatabase {
 
     const now = Date.now();
     const expiry = Number(store.license_expiry || 0);
+    const msLeft = expiry - now;
+    const daysRemaining = msLeft > 0 ? Math.ceil(msLeft / (24 * 60 * 60 * 1000)) : 0;
+
     let licenseStatus = 'Active';
     if (store.clock_tampered) {
       licenseStatus = 'Clock_Tamper_Locked';
     } else if (expiry <= now) {
       licenseStatus = 'Expired';
+    } else if (daysRemaining <= 2) {
+      licenseStatus = 'Expiring_Soon';
     } else if (String(store.license_plan || '').toLowerCase().includes('trial')) {
       licenseStatus = 'Trial_Active';
     }
+
+    const isOnlineNow = typeof navigator !== 'undefined' ? Boolean(navigator.onLine) : true;
+    const lastSyncedTs = isOnlineNow
+      ? now
+      : Number(store.last_synced_at || store.last_active_at || store.created_at || now);
 
     return {
       store_id: store.store_id,
@@ -1189,39 +1154,253 @@ class HolyStarDatabase {
       store_category: store.store_category || 'Provision & Mini-Mart',
       owner_name: store.owner_name || '',
       owner_phone: store.owner_phone || '',
+      location: store.location || '',
       created_at: new Date(store.created_at || now).toISOString(),
+      created_at_ts: Number(store.created_at || now),
       total_products_count: products.length,
       total_stock_units: totalStockUnits,
       total_sales_count: sales.length,
       total_revenue_ghs: totalRevenueGhs,
+      license_plan: store.license_plan || '7-Day Free Trial',
       license_status: licenseStatus,
+      days_remaining: daysRemaining,
+      license_expiry_ts: expiry,
       license_expiry_date: new Date(expiry || now).toISOString(),
-      last_active_at: new Date(store.last_active_at || now).toISOString()
+      last_active_at: new Date(store.last_active_at || now).toISOString(),
+      last_active_ts: Number(store.last_active_at || now),
+      last_synced_at: new Date(lastSyncedTs).toISOString(),
+      last_synced_ts: lastSyncedTs,
+      online_now: isOnlineNow
     };
   }
 
+  /**
+   * Push a store's high-level telemetry heartbeat to:
+   * 1. Local Cross-Store Telemetry Registry (`localStorage`)
+   * 2. Cloud Pub/Sub Relay (`ntfy.sh` + optional custom Webhook/REST URL) when online
+   */
+  async syncTelemetryHeartbeat(storeId = this.getActiveStoreId(), eventReason = 'heartbeat') {
+    try {
+      await this.initFromExisting();
+      if (!storeId) return null;
+
+      const summary = await this.getStoreTelemetrySummary(storeId);
+      if (!summary) return null;
+
+      summary.last_event = eventReason;
+
+      // Merge into local cross-store registry
+      const registry = this.getTelemetryRegistryMap();
+      const existing = registry[storeId] || {};
+
+      const isOnline = typeof navigator !== 'undefined' ? Boolean(navigator.onLine) : true;
+      if (!isOnline && existing.last_synced_ts) {
+        summary.last_synced_ts = existing.last_synced_ts;
+        summary.last_synced_at = existing.last_synced_at;
+        summary.pending_cloud_sync = true;
+      } else if (isOnline) {
+        summary.last_synced_ts = Date.now();
+        summary.last_synced_at = new Date(summary.last_synced_ts).toISOString();
+        summary.pending_cloud_sync = false;
+      }
+
+      registry[storeId] = {
+        ...existing,
+        ...summary,
+        updated_local_ts: Date.now()
+      };
+      this.saveTelemetryRegistryMap(registry);
+
+      // Update store's `last_synced_at` in IndexedDB if online
+      if (isOnline) {
+        const store = await this.getStoreById(storeId);
+        if (store) {
+          store.last_synced_at = summary.last_synced_ts;
+          await new Promise((resolve) => {
+            const tx = this.db.transaction(['stores'], 'readwrite');
+            tx.objectStore('stores').put(store);
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => resolve(false);
+          });
+        }
+
+        // Non-blocking Cloud Push (cross-device phone <-> laptop sync)
+        this.pushTelemetryToCloud(registry[storeId]).catch(() => {});
+      }
+
+      return registry[storeId];
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async pushTelemetryToCloud(telemetryItem) {
+    if (!telemetryItem || !telemetryItem.store_id) return false;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return false;
+
+    const { topic, customUrl } = this.getCloudSyncConfig();
+    const payloadStr = JSON.stringify({
+      _type: 'HOLYSTAR_STORE_HEARTBEAT_V1',
+      sent_at: Date.now(),
+      telemetry: telemetryItem
+    });
+
+    const promises = [];
+
+    if (topic) {
+      promises.push(
+        fetch(`https://ntfy.sh/${encodeURIComponent(topic)}`, {
+          method: 'POST',
+          headers: {
+            'Title': `HolyStar POS Sync: ${telemetryItem.store_id}`,
+            'Priority': 'default'
+          },
+          body: payloadStr
+        }).catch(() => null)
+      );
+    }
+
+    if (customUrl) {
+      promises.push(
+        fetch(customUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payloadStr
+        }).catch(() => null)
+      );
+    }
+
+    await Promise.all(promises);
+    return true;
+  }
+
+  /**
+   * Aggregate all stores from IndexedDB + localStorage Registry for Super-Admin
+   */
+  async getAllStoresTelemetry() {
+    await this.initFromExisting();
+    const dbStores = await this.getAllStores();
+    const registry = this.getTelemetryRegistryMap();
+
+    for (const s of dbStores) {
+      if (!s || !s.store_id) continue;
+      const liveSummary = await this.getStoreTelemetrySummary(s.store_id);
+      if (liveSummary) {
+        const prev = registry[s.store_id] || {};
+        // Preserve admin-override expiry if admin generated a token for an offline store
+        if (prev.admin_expected_expiry_ts && prev.admin_expected_expiry_ts > liveSummary.license_expiry_ts) {
+          liveSummary.admin_expected_expiry_ts = prev.admin_expected_expiry_ts;
+          liveSummary.admin_expected_expiry_date = prev.admin_expected_expiry_date;
+        }
+        registry[s.store_id] = {
+          ...prev,
+          ...liveSummary
+        };
+      }
+    }
+
+    this.saveTelemetryRegistryMap(registry);
+    return Object.values(registry).filter((item) => item && item.store_id);
+  }
+
+  /**
+   * Pull recent cross-device heartbeats from the Cloud Sync Channel
+   */
+  async pullCloudTelemetry() {
+    const currentList = await this.getAllStoresTelemetry();
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return currentList;
+    }
+
+    const { topic, customUrl } = this.getCloudSyncConfig();
+    const registry = this.getTelemetryRegistryMap();
+
+    if (topic) {
+      try {
+        const res = await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}/json?poll=1&since=all`, {
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          const text = await res.text();
+          const lines = text.split('\n').filter((l) => l.trim().length > 0);
+          for (const line of lines) {
+            try {
+              const envelope = JSON.parse(line);
+              if (envelope && envelope.event === 'message' && envelope.message) {
+                const parsed = JSON.parse(envelope.message);
+                if (parsed && parsed._type === 'HOLYSTAR_STORE_HEARTBEAT_V1' && parsed.telemetry && parsed.telemetry.store_id) {
+                  const t = parsed.telemetry;
+                  const existing = registry[t.store_id];
+                  const incomingTs = Number(t.last_synced_ts || parsed.sent_at || 0);
+                  const existingTs = existing ? Number(existing.last_synced_ts || 0) : 0;
+                  if (!existing || incomingTs >= existingTs) {
+                    registry[t.store_id] = {
+                      ...(existing || {}),
+                      ...t,
+                      last_synced_ts: incomingTs || Date.now(),
+                      last_synced_at: new Date(incomingTs || Date.now()).toISOString()
+                    };
+                  }
+                }
+              }
+            } catch (lineErr) {
+              // Ignore malformed message line
+            }
+          }
+        }
+      } catch (err) {
+        // Offline or unreachable
+      }
+    }
+
+    if (customUrl) {
+      try {
+        const res = await fetch(customUrl, { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          const items = Array.isArray(data) ? data : (data && typeof data === 'object' ? Object.values(data) : []);
+          for (const item of items) {
+            const t = item && item.telemetry ? item.telemetry : item;
+            if (t && t.store_id) {
+              const existing = registry[t.store_id];
+              const incomingTs = Number(t.last_synced_ts || 0);
+              const existingTs = existing ? Number(existing.last_synced_ts || 0) : 0;
+              if (!existing || incomingTs >= existingTs) {
+                registry[t.store_id] = { ...(existing || {}), ...t };
+              }
+            }
+          }
+        }
+      } catch (err) {
+        // Ignore custom URL fetch errors
+      }
+    }
+
+    this.saveTelemetryRegistryMap(registry);
+    return Object.values(registry).filter((item) => item && item.store_id);
+  }
+
   // =========================================================================
-  // BACKUP, RESTORE & OPTIONAL SAMPLE ITEMS LOADER
+  // BACKUP & RESTORE
   // =========================================================================
 
   async exportFullBackup() {
     await this.initFromExisting();
     const storeId = this.getActiveStoreId();
-    const [store, products, sales, debtors, license, staff, telemetry] = await Promise.all([
+    const [store, products, sales, debtors, license, telemetry] = await Promise.all([
       this.getActiveStore(),
       this.getAllProducts(storeId),
       this.getAllSales(storeId),
       this.getAllDebtors(storeId),
       this.getUsedTokens(),
-      this.getStoreStaff(storeId),
       this.getStoreTelemetrySummary(storeId)
     ]);
 
     return {
       app: 'HolyStarPOS',
-      version: '2.0.0',
+      version: '2.1.0',
       exported_at: new Date().toISOString(),
-      shop_id: store ? store.store_id : 'HS-001',
+      shop_id: store ? store.store_id : 'HS-0000',
       telemetry_summary: telemetry,
       data: {
         settings: store || {},
@@ -1229,8 +1408,7 @@ class HolyStarDatabase {
         products,
         sales,
         debtors,
-        license,
-        staff_devices: staff
+        license
       }
     };
   }
@@ -1241,7 +1419,7 @@ class HolyStarDatabase {
       throw new Error('Invalid backup file format. Expected a valid HolyStarPOS JSON backup.');
     }
 
-    const { settings, store, products, sales, debtors, license, staff_devices } = backupJson.data;
+    const { settings, store, products, sales, debtors, license } = backupJson.data;
     const targetStore = store && store.store_id ? store : settings;
     if (!Array.isArray(products) || !Array.isArray(sales) || !Array.isArray(debtors) || !targetStore) {
       throw new Error('Corrupted backup structure: missing products, sales, debtors, or store settings.');
@@ -1256,7 +1434,7 @@ class HolyStarDatabase {
     targetStore.clock_tampered = false;
 
     return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['stores', 'products', 'sales', 'debtors', 'license', 'staff_devices'], 'readwrite');
+      const tx = this.db.transaction(['stores', 'products', 'sales', 'debtors', 'license'], 'readwrite');
       tx.objectStore('stores').put(targetStore);
 
       const pStore = tx.objectStore('products');
@@ -1281,147 +1459,8 @@ class HolyStarDatabase {
         }
       }
 
-      if (Array.isArray(staff_devices)) {
-        const stStore = tx.objectStore('staff_devices');
-        for (const st of staff_devices) {
-          if (st && st.id) stStore.put({ ...st, store_id: storeId });
-        }
-      }
-
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => reject(tx.error || new Error('Failed to restore backup.'));
-    });
-  }
-
-  /**
-   * Optional: Load Sample Ghanaian Shop Items into the active store ONLY when clicked in Settings
-   */
-  async loadDemoShopData() {
-    await this.initFromExisting();
-    const storeId = this.getActiveStoreId();
-    if (!storeId) throw new Error('Please log into a store first.');
-
-    const now = Date.now();
-    const thumb = (n, c) =>
-      typeof window.generateProductSvgThumbnail === 'function'
-        ? window.generateProductSvgThumbnail(n, c)
-        : '';
-
-    const demoProducts = [
-      {
-        id: `PRD-${storeId}-01`,
-        store_id: storeId,
-        name: 'Nestle Milo Activ-Go Tin 400g',
-        category: 'Beverages',
-        barcode: '6031100200017',
-        image_url: thumb('Nestle Milo Activ-Go Tin 400g', 'Beverages'),
-        cost_price: 42.00,
-        selling_price: 50.00,
-        stock_qty: 24,
-        low_stock_threshold: 5,
-        updated_at: now
-      },
-      {
-        id: `PRD-${storeId}-02`,
-        store_id: storeId,
-        name: 'Ideal Evaporated Milk 160g Tin',
-        category: 'Milk & Dairy',
-        barcode: '6031100300014',
-        image_url: thumb('Ideal Evaporated Milk 160g Tin', 'Milk & Dairy'),
-        cost_price: 9.50,
-        selling_price: 12.00,
-        stock_qty: 48,
-        low_stock_threshold: 10,
-        updated_at: now
-      },
-      {
-        id: `PRD-${storeId}-03`,
-        store_id: storeId,
-        name: "McVitie's Digestive Biscuit 105g",
-        category: 'Biscuits & Snacks',
-        barcode: '6031100100010',
-        image_url: thumb("McVitie's Digestive Biscuit 105g", 'Biscuits & Snacks'),
-        cost_price: 11.00,
-        selling_price: 15.00,
-        stock_qty: 30,
-        low_stock_threshold: 6,
-        updated_at: now
-      },
-      {
-        id: `PRD-${storeId}-04`,
-        store_id: storeId,
-        name: 'Perk Milk Shortcake Biscuit',
-        category: 'Biscuits & Snacks',
-        barcode: '6031100100034',
-        image_url: thumb('Perk Milk Shortcake Biscuit', 'Biscuits & Snacks'),
-        cost_price: 3.50,
-        selling_price: 5.00,
-        stock_qty: 50,
-        low_stock_threshold: 10,
-        updated_at: now
-      },
-      {
-        id: `PRD-${storeId}-05`,
-        store_id: storeId,
-        name: 'Gino Tomato Paste Mix 70g Sachet',
-        category: 'Tin & Canned Foods',
-        barcode: '6031100400011',
-        image_url: thumb('Gino Tomato Paste Mix 70g Sachet', 'Tin & Canned Foods'),
-        cost_price: 3.80,
-        selling_price: 5.00,
-        stock_qty: 60,
-        low_stock_threshold: 12,
-        updated_at: now
-      },
-      {
-        id: `PRD-${storeId}-06`,
-        store_id: storeId,
-        name: 'Frytol Vegetable Cooking Oil 1 Litre',
-        category: 'Grains & Oils',
-        barcode: '6031100500018',
-        image_url: thumb('Frytol Vegetable Cooking Oil 1 Litre', 'Grains & Oils'),
-        cost_price: 36.00,
-        selling_price: 43.00,
-        stock_qty: 15,
-        low_stock_threshold: 5,
-        updated_at: now
-      },
-      {
-        id: `PRD-${storeId}-07`,
-        store_id: storeId,
-        name: 'Titus Sardines in Vegetable Oil 125g',
-        category: 'Tin & Canned Foods',
-        barcode: '6031100400059',
-        image_url: thumb('Titus Sardines in Vegetable Oil 125g', 'Tin & Canned Foods'),
-        cost_price: 14.50,
-        selling_price: 18.00,
-        stock_qty: 30,
-        low_stock_threshold: 8,
-        updated_at: now
-      },
-      {
-        id: `PRD-${storeId}-08`,
-        store_id: storeId,
-        name: 'Cindy Jasmine Long Grain Rice 5kg',
-        category: 'Grains & Oils',
-        barcode: '6031100500032',
-        image_url: thumb('Cindy Jasmine Long Grain Rice 5kg', 'Grains & Oils'),
-        cost_price: 105.00,
-        selling_price: 125.00,
-        stock_qty: 12,
-        low_stock_threshold: 4,
-        updated_at: now
-      }
-    ];
-
-    return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['products'], 'readwrite');
-      const productStore = tx.objectStore('products');
-      for (const p of demoProducts) {
-        productStore.put(p);
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => reject(tx.error || new Error('Failed to load sample items.'));
     });
   }
 

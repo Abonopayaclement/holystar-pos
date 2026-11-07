@@ -28,7 +28,7 @@
 
       <div class="auth-tabs">
         <button type="button" class="auth-tab-btn active" data-auth-tab="login">
-          🔑 Login to Store
+          🔑 Store Login
         </button>
         <button type="button" class="auth-tab-btn" data-auth-tab="register">
           🏪 Create New Store
@@ -44,32 +44,17 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="login-identifier">Store Phone Number or Store ID *</label>
-            <input type="text" id="login-identifier" class="form-control" placeholder="e.g. 0244123456 or HS-XXXX" required />
+            <label class="form-label" for="login-identifier">Store Phone / Username *</label>
+            <input type="text" id="login-identifier" class="form-control" placeholder="e.g. 0244123456 or Store ID" required />
           </div>
 
           <div class="form-group">
-            <label class="form-label">Select Login Role *</label>
-            <div class="role-selector-grid">
-              <div class="role-option-card active" data-login-role="boss">
-                👑 Store Owner / Boss
-                <div style="font-size:0.7rem; font-weight:500; color:var(--text-muted); margin-top:0.15rem;">Full Profit &amp; Stock Control</div>
-              </div>
-              <div class="role-option-card" data-login-role="cashier">
-                👤 Cashier / Attendant
-                <div style="font-size:0.7rem; font-weight:500; color:var(--text-muted); margin-top:0.15rem;">Sales &amp; Credit Book Only</div>
-              </div>
-            </div>
-            <input type="hidden" id="login-role-input" value="boss" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="login-password">Password or 4-Digit PIN *</label>
-            <input type="password" id="login-password" class="form-control" placeholder="Enter your Password or PIN" required />
+            <label class="form-label" for="login-password">Password *</label>
+            <input type="password" id="login-password" class="form-control" placeholder="Enter your store password" required />
           </div>
 
           <button type="submit" class="btn btn-primary btn-lg btn-block">
-            🚀 Login to POS
+            🚀 Login to Store
           </button>
         </form>
       </div>
@@ -106,15 +91,9 @@
             </div>
           </div>
 
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.65rem;">
-            <div class="form-group">
-              <label class="form-label" for="reg-owner-password">Owner Password *</label>
-              <input type="password" id="reg-owner-password" class="form-control" placeholder="Min 4 chars" minlength="4" required />
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="reg-boss-pin">4-Digit Boss PIN *</label>
-              <input type="password" id="reg-boss-pin" class="form-control" placeholder="e.g. 1234" pattern="\d{4}" maxlength="4" inputmode="numeric" required />
-            </div>
+          <div class="form-group">
+            <label class="form-label" for="reg-owner-password">Password *</label>
+            <input type="password" id="reg-owner-password" class="form-control" placeholder="Create password (min 4 characters)" minlength="4" required />
           </div>
 
           <div class="form-group">
@@ -126,6 +105,14 @@
             ✨ Create Store &amp; Start 7-Day Free Trial
           </button>
         </form>
+      </div>
+
+      <!-- Subtle Platform Super-Admin Footer Link -->
+      <div style="padding:0.75rem 1.25rem; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; align-items:center; justify-content:space-between; font-size:0.76rem; color:#64748b;">
+        <span>Holy Star POS SaaS v2.2</span>
+        <a href="super-admin.html" style="color:#475569; text-decoration:none; font-weight:700; display:inline-flex; align-items:center; gap:0.25rem;">
+          🛡️ Platform Admin
+        </a>
       </div>
     </div>
   </div>
@@ -151,11 +138,6 @@
     <div class="header-status">
       <button type="button" id="btn-install-pwa" class="btn btn-warning btn-sm hidden" title="Install Holy Star POS as an offline app">
         📲 Install App
-      </button>
-
-      <!-- Boss Mode vs Cashier Mode Toggle -->
-      <button type="button" id="btn-role-mode-toggle" class="role-pill role-boss" title="Click to switch between Cashier Mode and Boss Mode">
-        <span id="role-pill-text">👑 Boss Mode (Unlocked)</span>
       </button>
 
       <!-- License Status Badge -->
@@ -376,12 +358,12 @@
           <div id="inv-metric-count" class="metric-value">0</div>
           <div class="metric-sub">Active items in store</div>
         </div>
-        <div class="metric-card metric-cash boss-only">
+        <div class="metric-card metric-cash">
           <div class="metric-label">Total Stock Cost Value</div>
           <div id="inv-metric-cost" class="metric-value">GHS 0.00</div>
           <div class="metric-sub">Capital tied in current stock</div>
         </div>
-        <div class="metric-card metric-profit boss-only">
+        <div class="metric-card metric-profit">
           <div class="metric-label">Expected Retail Value</div>
           <div id="inv-metric-retail" class="metric-value">GHS 0.00</div>
           <div id="inv-metric-margin" class="metric-sub">Est. Profit: GHS 0.00</div>
@@ -421,9 +403,9 @@
                   <th>Photo</th>
                   <th>Product Name &amp; Barcode</th>
                   <th>Category</th>
-                  <th class="boss-only">Cost Price</th>
+                  <th>Cost Price</th>
                   <th>Selling Price</th>
-                  <th class="boss-only">Unit Profit</th>
+                  <th>Unit Profit</th>
                   <th>Stock Qty</th>
                   <th>Status</th>
                   <th>Actions</th>
@@ -510,7 +492,7 @@
       <div class="card" style="margin-bottom:1.25rem;">
         <div class="card-header">
           <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
-            <h2 class="card-title">📅 Daily Sales Report</h2>
+            <h2 class="card-title">📅 Daily Sales &amp; Profit Report</h2>
             <input type="date" id="sales-date-picker" class="form-control" style="width:auto; font-weight:700;" />
             <button type="button" id="btn-sales-today" class="btn btn-outline btn-sm">Today</button>
           </div>
@@ -520,14 +502,14 @@
         </div>
       </div>
 
-      <!-- Daily Metric Cards (Actual Gross Profit hidden in Cashier Mode) -->
+      <!-- Daily Metric Cards -->
       <div class="metrics-grid">
         <div class="metric-card">
           <div class="metric-label">Total Revenue (GHS)</div>
           <div id="metric-revenue" class="metric-value">GHS 0.00</div>
           <div id="metric-sales-count" class="metric-sub">0 sales completed</div>
         </div>
-        <div class="metric-card metric-profit boss-only">
+        <div class="metric-card metric-profit">
           <div class="metric-label">Actual Gross Profit (GHS)</div>
           <div id="metric-profit" class="metric-value" style="color:var(--success);">GHS 0.00</div>
           <div class="metric-sub">∑ (Selling − Cost) × Qty sold</div>
@@ -564,7 +546,7 @@
                   <th>Items Sold</th>
                   <th>Payment Type</th>
                   <th>Total (GHS)</th>
-                  <th class="boss-only">Gross Profit</th>
+                  <th>Gross Profit</th>
                   <th>Receipt</th>
                 </tr>
               </thead>
@@ -604,7 +586,7 @@
     </section>
 
     <!-- ==================================================================
-         TAB 5: SETTINGS, PREPAID LICENSE, STAFF & BACKUP / RESTORE
+         TAB 5: SETTINGS, PREPAID LICENSE & BACKUP / RESTORE
          ================================================================== -->
     <section id="tab-settings" class="tab-panel">
       <div class="settings-grid">
@@ -641,14 +623,15 @@
             <form id="form-activate-token">
               <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.65rem;">
                 <div class="form-group">
-                  <label class="form-label" for="token-issue-code">Issue Code / Serial *</label>
-                  <input type="text" id="token-issue-code" class="form-control" placeholder="e.g. 001 or NOV26" required style="text-transform:uppercase; font-weight:800;" />
+                  <label class="form-label" for="token-issue-code">Issue Code (Optional)</label>
+                  <input type="text" id="token-issue-code" class="form-control" placeholder="Auto-Detect (or e.g. 001)" style="text-transform:uppercase; font-weight:800;" />
                 </div>
                 <div class="form-group">
                   <label class="form-label" for="token-plan-days">Plan Duration</label>
                   <select id="token-plan-days" class="form-control" style="font-weight:700;">
-                    <option value="AUTO">Auto-Detect (7 or 30 Days)</option>
-                    <option value="7">7-Day Pass</option>
+                    <option value="AUTO">Auto-Detect (7, 14, 30 or Custom Days)</option>
+                    <option value="7">7-Day Weekly Pass</option>
+                    <option value="14">14-Day Bi-Weekly Pass</option>
                     <option value="30">30-Day Monthly Pass</option>
                   </select>
                 </div>
@@ -657,7 +640,7 @@
               <div class="form-group">
                 <label class="form-label" for="token-code-input">8-Character Unlock Token *</label>
                 <input type="text" id="token-code-input" class="form-control" placeholder="e.g. ABCD1234" maxlength="25" required style="text-transform:uppercase; font-family:monospace; font-size:1.15rem; font-weight:900; letter-spacing:0.12em; text-align:center;" />
-                <small style="color:var(--text-muted); font-size:0.75rem;">Enter the 8-character token generated for your Store ID and Issue Code.</small>
+                <small style="color:var(--text-muted); font-size:0.75rem;">Paste or type the 8-character Unlock Token sent to your WhatsApp.</small>
               </div>
 
               <button type="submit" class="btn btn-primary btn-block">
@@ -665,7 +648,7 @@
               </button>
             </form>
 
-            <div class="boss-only" style="margin-top:1rem; padding-top:0.85rem; border-top:1px dashed var(--border);">
+            <div style="margin-top:1rem; padding-top:0.85rem; border-top:1px dashed var(--border);">
               <div style="display:flex; align-items:center; justify-content:space-between; gap:0.5rem; flex-wrap:wrap;">
                 <span style="font-size:0.8rem; color:var(--text-secondary); font-weight:700;">QA Testing Control:</span>
                 <button type="button" id="btn-simulate-expiry" class="btn btn-outline btn-sm">🧪 Simulate Expired License</button>
@@ -681,38 +664,18 @@
           </div>
         </div>
 
-        <!-- Card 2: Boss Store Settings, Staff Accounts & Backup -->
+        <!-- Card 2: Store Profile, Backup & Telemetry -->
         <div style="display:flex; flex-direction:column; gap:1.25rem;">
 
-          <!-- Notice shown when in Cashier Mode -->
-          <div id="cashier-settings-lock-card" class="card hidden">
-            <div class="card-body" style="text-align:center; padding:2rem 1.2rem;">
-              <div style="font-size:2rem; margin-bottom:0.5rem;">🔒</div>
-              <h3 style="margin-bottom:0.4rem;">Boss Settings Locked in Cashier Mode</h3>
-              <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:1rem;">
-                Store configuration, staff management, profit reports, and backups require the 4-Digit Boss PIN.
-              </p>
-              <button type="button" id="btn-settings-unlock-boss" class="btn btn-warning">
-                👑 Enter 4-Digit Boss PIN
-              </button>
-            </div>
-          </div>
-
-          <div class="card boss-only">
+          <div class="card">
             <div class="card-header">
-              <h2 class="card-title">🏪 Store Profile &amp; Security PIN</h2>
+              <h2 class="card-title">🏪 Store Profile Settings</h2>
             </div>
             <div class="card-body">
               <form id="form-shop-settings">
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.65rem;">
-                  <div class="form-group">
-                    <label class="form-label" for="setting-shop-id">Store ID (Read-Only)</label>
-                    <input type="text" id="setting-shop-id" class="form-control" readonly style="background:#f1f5f9; font-weight:800;" />
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label" for="setting-boss-pin">4-Digit Boss PIN *</label>
-                    <input type="password" id="setting-boss-pin" class="form-control" pattern="\d{4}" maxlength="4" inputmode="numeric" required />
-                  </div>
+                <div class="form-group">
+                  <label class="form-label" for="setting-shop-id">Store ID (Read-Only)</label>
+                  <input type="text" id="setting-shop-id" class="form-control" readonly style="background:#f1f5f9; font-weight:800;" />
                 </div>
                 <div class="form-group">
                   <label class="form-label" for="setting-shop-name">Store / Business Name *</label>
@@ -731,33 +694,13 @@
             </div>
           </div>
 
-          <!-- Staff / Cashier Accounts Management (Boss Only) -->
-          <div class="card boss-only">
+          <!-- Backup, Restore & Telemetry Summary -->
+          <div class="card">
             <div class="card-header">
-              <h2 class="card-title">👥 Cashier Logins &amp; Shop Devices</h2>
-            </div>
-            <div class="card-body">
-              <form id="form-add-staff" style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:0.85rem;">
-                <input type="text" id="staff-name-input" class="form-control" placeholder="Cashier Name *" required />
-                <input type="text" id="staff-pass-input" class="form-control" placeholder="Cashier PIN / Pass *" required />
-                <input type="text" id="staff-device-input" class="form-control" placeholder="Device (e.g. Counter Phone)" />
-                <button type="submit" class="btn btn-primary">➕ Add Cashier</button>
-              </form>
-              <div id="staff-list-container" style="font-size:0.82rem;"></div>
-            </div>
-          </div>
-
-          <!-- Backup, Restore, Sample Items & Telemetry Summary (Boss Only) -->
-          <div class="card boss-only">
-            <div class="card-header">
-              <h2 class="card-title">🛡️ Local Backup, Sample Data &amp; Telemetry</h2>
+              <h2 class="card-title">🛡️ Local Backup &amp; Store Telemetry</h2>
             </div>
             <div class="card-body">
               <div style="display:flex; flex-direction:column; gap:0.65rem;">
-                <button type="button" id="btn-load-demo-data" class="btn btn-warning btn-block">
-                  🇬🇭 Load Sample Items (8 Ghanaian Provision Products)
-                </button>
-
                 <button type="button" id="btn-export-backup" class="btn btn-primary btn-block">
                   ⬇️ Export Full Store Backup (.json)
                 </button>
@@ -1107,32 +1050,6 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-outline" id="btn-cancel-scanner">Close Scanner</button>
       </div>
-    </div>
-  </div>
-
-  <!-- ====================================================================
-       MODAL 9: 4-DIGIT BOSS PIN UNLOCK
-       ==================================================================== -->
-  <div id="modal-boss-pin" class="modal-backdrop hidden">
-    <div class="modal-box" style="max-width:380px;">
-      <div class="modal-header">
-        <h3>👑 Unlock Boss Mode</h3>
-        <button type="button" class="modal-close" data-close="modal-boss-pin">&times;</button>
-      </div>
-      <form id="form-boss-pin">
-        <div class="modal-body" style="text-align:center;">
-          <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:0.9rem;">
-            Enter your <strong>4-Digit Boss PIN</strong> (or Owner Password) to unlock profit reports, stock editing, and store settings.
-          </p>
-          <div class="form-group">
-            <input type="password" id="boss-pin-input" class="form-control" placeholder="••••" maxlength="20" required style="font-size:1.5rem; font-weight:900; text-align:center; letter-spacing:0.25em;" />
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline" data-close="modal-boss-pin">Cancel</button>
-          <button type="submit" class="btn btn-warning">🔓 Unlock Boss Mode</button>
-        </div>
-      </form>
     </div>
   </div>
 
