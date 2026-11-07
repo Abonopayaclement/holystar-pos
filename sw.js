@@ -3,7 +3,7 @@
  * Caches all application shell files and icons so the POS works 100% offline without internet.
  */
 
-const CACHE_NAME = 'holystar-pos-cache-v3';
+const CACHE_NAME = 'holystar-pos-cache-v4';
 const OFFLINE_ASSETS = [
   './',
   './index.html',

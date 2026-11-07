@@ -158,6 +158,26 @@ const AppState = {
 // INITIALIZATION & SERVICE WORKER REGISTRATION
 // ============================================================================
 
+let deferredPwaPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPwaPrompt = e;
+  const installBtn = document.getElementById('btn-install-pwa');
+  if (installBtn) {
+    installBtn.classList.remove('hidden');
+  }
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredPwaPrompt = null;
+  const installBtn = document.getElementById('btn-install-pwa');
+  if (installBtn) {
+    installBtn.classList.add('hidden');
+  }
+  showToast('🎉 Holy Star POS installed! You can now open it 100% offline from your home screen.', 'success');
+});
+
 document.addEventListener('DOMContentLoaded', async () => {
   registerServiceWorker();
   setupEventListeners();
@@ -1223,6 +1243,18 @@ function setupEventListeners() {
       switchTab(tabBtn.dataset.tab);
     });
   });
+
+  // 1-Tap PWA Install Button
+  const installBtn = document.getElementById('btn-install-pwa');
+  if (installBtn) {
+    installBtn.addEventListener('click', async () => {
+      if (!deferredPwaPrompt) return;
+      deferredPwaPrompt.prompt();
+      await deferredPwaPrompt.userChoice;
+      deferredPwaPrompt = null;
+      installBtn.classList.add('hidden');
+    });
+  }
 
   // License status pill & banner unlock button jump to Settings tab
   document.getElementById('license-status-pill').addEventListener('click', () => {
