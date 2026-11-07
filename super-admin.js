@@ -838,15 +838,16 @@ function sendTokenViaWhatsApp(tokenEntry) {
 
 function bindSuperAdminEvents() {
   // 1. Login Form
-  document.getElementById('form-sa-login')?.addEventListener('submit', (e) => {
+  document.getElementById('form-sa-login')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const userIn = String(document.getElementById('sa-login-username')?.value || '').trim();
     const passIn = String(document.getElementById('sa-login-password')?.value || '');
     const master = getMasterCredentials();
 
     if (userIn === master.username && passIn === master.password) {
-      document.getElementById('sa-login-password').value = '';
-      unlockDashboard();
+      const passEl = document.getElementById('sa-login-password');
+      if (passEl) passEl.value = '';
+      await unlockDashboard();
       saShowToast('Welcome to Holy Star Super-Admin Command Center!', 'success');
     } else {
       saShowToast('Invalid Super-Admin username or password.', 'error');

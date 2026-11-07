@@ -17,17 +17,44 @@ class HolyStarDatabase {
   }
 
   /**
-   * Initialize IndexedDB (v3 schema with strict store_id isolation)
+   * Initialize IndexedDB (v3 schema with strict store_id isolation & non-blocking upgrade)
    */
   async init() {
     if (this.db) return this.db;
 
     this.db = await new Promise((resolve, reject) => {
+      let settled = false;
+      const finishResolve = (dbInstance) => {
+        if (settled) return;
+        settled = true;
+        if (dbInstance) {
+          dbInstance.onversionchange = () => {
+            try { dbInstance.close(); } catch (e) {}
+            this.db = null;
+          };
+        }
+        resolve(dbInstance);
+      };
+      const finishReject = (err) => {
+        if (settled) return;
+        settled = true;
+        reject(err);
+      };
+
       const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+      request.onblocked = () => {
+        console.warn('IndexedDB upgrade blocked by another open tab; closing stale connections...');
+      };
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
         const tx = event.target.transaction;
+
+        db.onversionchange = () => {
+          try { db.close(); } catch (e) {}
+          this.db = null;
+        };
 
         // 1. Settings Store
         if (!db.objectStoreNames.contains('settings')) {
@@ -97,8 +124,8 @@ class HolyStarDatabase {
         });
       };
 
-      request.onsuccess = (event) => resolve(event.target.result);
-      request.onerror = (event) => reject(new Error('Failed to open IndexedDB: ' + event.target.error));
+      request.onsuccess = (event) => finishResolve(event.target.result);
+      request.onerror = (event) => finishReject(new Error('Failed to open IndexedDB: ' + event.target.error));
     });
 
     if (!this.legacyCleaned) {
@@ -172,6 +199,10 @@ class HolyStarDatabase {
     localStorage.removeItem(SESSION_STORAGE_KEY);
   }
 
+  clearActiveSession() {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+  }
+
   getActiveStoreId() {
     const sess = this.getActiveSession();
     return sess ? sess.store_id : null;
@@ -227,22 +258,15 @@ class HolyStarDatabase {
   /**
    * Create a brand-new Store account with 0 products, 0 sales, 0 debtors, and a 7-day trial
    */
-  async registerNewStore({
-    store_name,
-    store_category,
-    owner_name,
-    owner_phone,
-    owner_password,
-    store_location
-  }) {
+  async registerNewStore(params = {}) {
     await this.initFromExisting();
 
-    const cleanName = String(store_name || '').trim();
-    const cleanCat = String(store_category || 'Provision & Mini-Mart').trim();
-    const cleanOwner = String(owner_name || '').trim();
-    const cleanPhone = this.normalizePhone(owner_phone);
-    const cleanPass = String(owner_password || '').trim();
-    const cleanLoc = String(store_location || 'Ghana').trim();
+    const cleanName = String(params.store_name || params.storeName || '').trim();
+    const cleanCat = String(params.store_category || params.storeCategory || 'Provision & Mini-Mart').trim();
+    const cleanOwner = String(params.owner_name || params.ownerName || '').trim();
+    const cleanPhone = this.normalizePhone(params.owner_phone || params.ownerPhone);
+    const cleanPass = String(params.owner_password || params.password || '').trim();
+    const cleanLoc = String(params.store_location || params.location || 'Ghana').trim();
 
     if (!cleanName) throw new Error('Store Name is required.');
     if (!cleanOwner) throw new Error('Owner Full Name is required.');
@@ -269,6 +293,7 @@ class HolyStarDatabase {
       owner_phone: cleanPhone,
       owner_password: cleanPass,
       shop_location: cleanLoc,
+      location: cleanLoc,
       license_expiry: now + sevenDaysMs,
       license_plan: '7-Day Initial Trial',
       last_seen_timestamp: now,
@@ -538,6 +563,39 @@ class HolyStarDatabase {
       tx.objectStore('products').put(cleanProduct);
       tx.oncomplete = () => resolve(cleanProduct);
       tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async restockProduct(productId, addQty) {
+    await this.initFromExisting();
+    const storeId = this.getActiveStoreId();
+    if (!storeId) throw new Error('No active store session.');
+
+    const qtyToAdd = Math.floor(Number(addQty || 0));
+    if (isNaN(qtyToAdd) || qtyToAdd <= 0) {
+      throw new Error('Quantity to add must be at least 1.');
+    }
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(['products'], 'readwrite');
+      const store = tx.objectStore('products');
+      const getReq = store.get(productId);
+      let updatedItem = null;
+
+      getReq.onsuccess = () => {
+        const item = getReq.result;
+        if (!item || item.store_id !== storeId) {
+          tx.abort();
+          return reject(new Error('Product not found in store inventory.'));
+        }
+        item.stock_qty = Math.max(0, Number(item.stock_qty || 0) + qtyToAdd);
+        item.updated_at = Date.now();
+        updatedItem = item;
+        store.put(item);
+      };
+
+      tx.oncomplete = () => resolve(updatedItem);
+      tx.onerror = () => reject(tx.error || new Error('Failed to restock product.'));
     });
   }
 

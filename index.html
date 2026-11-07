@@ -107,10 +107,12 @@
         </form>
       </div>
 
-      <!-- Subtle Platform Super-Admin Footer Link -->
-      <div style="padding:0.75rem 1.25rem; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; align-items:center; justify-content:space-between; font-size:0.76rem; color:#64748b;">
-        <span>Holy Star POS SaaS v2.2</span>
-        <a href="super-admin.html" style="color:#475569; text-decoration:none; font-weight:700; display:inline-flex; align-items:center; gap:0.25rem;">
+      <!-- Subtle Platform Super-Admin & Emergency Cache Reset Footer -->
+      <div style="padding:0.75rem 1.25rem; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem; font-size:0.76rem; color:#64748b;">
+        <button type="button" id="btn-auth-force-reset" onclick="if(window.forceResetAppCache){window.forceResetAppCache();}" style="background:none; border:none; padding:0; color:#dc2626; font-size:0.75rem; font-weight:700; cursor:pointer; text-decoration:underline;">
+          🔄 Force Reset / Clear Cache
+        </button>
+        <a href="super-admin.html" id="link-platform-admin" style="color:#1e3a8a; text-decoration:none; font-weight:800; display:inline-flex; align-items:center; gap:0.25rem;">
           🛡️ Platform Admin
         </a>
       </div>
@@ -1053,12 +1055,46 @@
     </div>
   </div>
 
+  <!-- Bottom App Footer with Emergency Cache Reset & Super-Admin Link -->
+  <footer style="max-width:1400px; margin:1.5rem auto 0.75rem; padding:0.75rem 1.25rem; border-top:1px solid #cbd5e1; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.75rem; font-size:0.78rem; color:#64748b;">
+    <span>Holy Star POS v2.3 — Offline-First Retail &amp; Credit Book</span>
+    <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+      <a href="super-admin.html" style="color:#1e3a8a; font-weight:700; text-decoration:none;">🛡️ Platform Admin</a>
+      <button type="button" id="btn-footer-force-reset" onclick="if(window.forceResetAppCache){window.forceResetAppCache();}" style="background:none; border:none; padding:0; color:#dc2626; font-size:0.78rem; font-weight:700; cursor:pointer; text-decoration:underline;">
+        🔄 Force Reset / Clear Cache
+      </button>
+    </div>
+  </footer>
+
   <!-- Toast Container -->
   <div id="toast-container" class="toast-container"></div>
 
+  <!-- Emergency Cache & Service Worker Reset Utility -->
+  <script>
+    window.forceResetAppCache = async function () {
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const reg of regs) {
+            await reg.unregister();
+          }
+        }
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) {
+            await caches.delete(k);
+          }
+        }
+      } catch (e) {
+        console.warn('Cache reset warning:', e);
+      }
+      window.location.href = window.location.pathname + '?reset=' + Date.now();
+    };
+  </script>
+
   <!-- Scripts -->
-  <script src="catalog.js"></script>
-  <script src="db.js"></script>
-  <script src="app.js"></script>
+  <script src="catalog.js?v=2.3"></script>
+  <script src="db.js?v=2.3"></script>
+  <script src="app.js?v=2.3"></script>
 </body>
 </html>

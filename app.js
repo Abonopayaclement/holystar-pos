@@ -1,6 +1,7 @@
 /**
- * Holy Star POS v2.2 - Unified Multi-Store SaaS Application Logic (app.js)
+ * Holy Star POS v2.3 - Unified Multi-Store SaaS Application Logic (app.js)
  * Features:
+ * - Immediate non-blocking UI Event Binding (0ms button responsiveness)
  * - Clean Unified Store Login & Create New Store (0 Products, 0 Debtors, 0 Sales on New Store)
  * - Strict Store Data Isolation by `store_id`
  * - Smart Ghanaian Master Product Catalog Autocomplete + Custom Camera Photos
@@ -150,9 +151,11 @@ const AppState = {
   products: [],
   debtors: [],
   cart: [],
+  selectedPaymentMethod: 'Cash',
   selectedPosCategory: 'All',
   posSearchQuery: '',
   inventorySearchQuery: '',
+  inventoryStockFilter: 'ALL',
   debtorFilter: 'ALL',
   debtorSearchQuery: '',
   activeSaleReceipt: null,
@@ -186,6 +189,7 @@ function formatGHS(amount) {
 function formatDateTime(ts) {
   if (!ts) return '-';
   const d = new Date(Number(ts));
+  if (isNaN(d.getTime())) return '-';
   return d.toLocaleString('en-GB', {
     day: '2-digit',
     month: 'short',
@@ -198,6 +202,7 @@ function formatDateTime(ts) {
 function formatShortTime(ts) {
   if (!ts) return '-';
   const d = new Date(Number(ts));
+  if (isNaN(d.getTime())) return '-';
   return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
@@ -272,21 +277,39 @@ function compressImageToDataUrl(file, maxSize = 160) {
   });
 }
 
+function getProductThumb(p) {
+  if (!p) return 'icon-192.png';
+  if (p.image_url) return p.image_url;
+  if (p.thumbnail) return p.thumbnail;
+  if (typeof window.generateProductSvgThumbnail === 'function') {
+    return window.generateProductSvgThumbnail(p.name, p.category);
+  }
+  return 'icon-192.png';
+}
+
 // ============================================================================
-// INITIALIZATION & BOOTSTRAP
+// INITIALIZATION & BOOTSTRAP (NON-BLOCKING UI BINDING FIRST)
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // 1. Bind all UI event listeners IMMEDIATELY so buttons are never dead
+  try {
+    bindUIEvents();
+    registerServiceWorkerSafe();
+  } catch (bindErr) {
+    console.error('UI binding error:', bindErr);
+  }
+
+  // 2. Initialize IndexedDB and boot store session
   try {
     await window.HolyStarDB.init();
     AppState.selectedReportDate = window.HolyStarDB.formatLocalDate();
 
-    const dateInput = document.getElementById('report-date-picker');
+    const dateInput = document.getElementById('sales-date-picker');
     if (dateInput) {
       dateInput.value = AppState.selectedReportDate;
     }
 
-    bindUIEvents();
     await checkAuthAndBoot();
 
     // Auto-sync heartbeat when device comes back online
@@ -305,9 +328,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 30000);
   } catch (err) {
     console.error('Initialization failed:', err);
-    showToast('Failed to initialize local database: ' + err.message, 'error');
+    showToast('Database notice: ' + err.message, 'error');
+    await showAuthOverlay();
   }
 });
+
+function registerServiceWorkerSafe() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').then((reg) => {
+      reg.update().catch(() => {});
+    }).catch(() => {});
+  }
+}
 
 async function checkAuthAndBoot() {
   const session = window.HolyStarDB.getActiveSession();
@@ -316,7 +348,7 @@ async function checkAuthAndBoot() {
     : null;
 
   if (!session || !activeStore) {
-    window.HolyStarDB.clearActiveSession();
+    window.HolyStarDB.logoutSession();
     await showAuthOverlay();
     return;
   }
@@ -333,7 +365,13 @@ async function showAuthOverlay() {
   const overlay = document.getElementById('auth-screen-overlay');
   if (overlay) overlay.classList.remove('hidden');
 
-  const stores = await window.HolyStarDB.getAllStores();
+  let stores = [];
+  try {
+    stores = await window.HolyStarDB.getAllStores();
+  } catch (e) {
+    stores = [];
+  }
+
   const selectWrap = document.getElementById('login-saved-stores-wrap');
   const selectEl = document.getElementById('login-saved-store-select');
   const loginIdInput = document.getElementById('login-identifier');
@@ -346,9 +384,9 @@ async function showAuthOverlay() {
       loginIdInput.value = stores[0].owner_phone || stores[0].store_id;
       selectEl.value = stores[0].owner_phone || stores[0].store_id;
     }
-  } else if (selectWrap) {
-    selectWrap.classList.add('hidden');
-    // Default to Create New Store tab if zero stores exist on device
+    switchAuthTab('login');
+  } else {
+    if (selectWrap) selectWrap.classList.add('hidden');
     switchAuthTab('register');
   }
 }
@@ -394,6 +432,7 @@ async function refreshAllData() {
   renderPosCategories();
   renderPosProductGrid();
   renderCart();
+  populateExistingDebtorsDropdown();
   renderInventoryView();
   renderDebtorsView();
   renderReportsView();
@@ -436,46 +475,49 @@ async function verifyClockAndLicenseState() {
 function renderLicenseBannerAndPill() {
   const pill = document.getElementById('license-status-pill');
   const pillText = document.getElementById('license-pill-text');
-  const banner = document.getElementById('lock-banner');
-  const bannerTitle = document.getElementById('lock-banner-title');
-  const bannerDesc = document.getElementById('lock-banner-desc');
+  const clockBanner = document.getElementById('clock-tamper-banner');
+  const clockMsg = document.getElementById('clock-tamper-msg');
+  const expiredBanner = document.getElementById('expired-license-banner');
   const checkoutBtn = document.getElementById('btn-complete-sale');
-
-  if (!pill || !pillText || !banner) return;
 
   const { active, expired, tampered, daysLeft } = AppState.licenseStatus;
 
-  pill.classList.remove('license-active', 'license-warning', 'license-locked');
+  if (pill && pillText) {
+    pill.classList.remove('license-active', 'license-warning', 'license-locked');
+    if (tampered) {
+      pill.classList.add('license-locked');
+      pillText.textContent = '🔒 Clock Tamper Locked';
+    } else if (expired) {
+      pill.classList.add('license-locked');
+      pillText.textContent = '🔒 Subscription Expired';
+    } else if (daysLeft <= 2) {
+      pill.classList.add('license-warning');
+      pillText.textContent = `⚠️ ${daysLeft} Day${daysLeft === 1 ? '' : 's'} Left`;
+    } else {
+      pill.classList.add('license-active');
+      pillText.textContent = `✔ Active (${daysLeft}d left)`;
+    }
+  }
 
-  if (tampered) {
-    pill.classList.add('license-locked');
-    pillText.textContent = '🔒 Clock Tamper Locked';
-    banner.classList.remove('hidden');
-    bannerTitle.textContent = '🔒 System Clock Tampering Detected — POS Checkout Locked';
-    bannerDesc.textContent = AppState.licenseStatus.message || 'Your device date/time was rolled backward. Correct your phone/PC clock or activate a valid renewal token.';
-  } else if (expired) {
-    pill.classList.add('license-locked');
-    pillText.textContent = '🔒 Subscription Expired';
-    banner.classList.remove('hidden');
-    bannerTitle.textContent = '🔒 Subscription Expired — Read-Only Mode Active';
-    bannerDesc.textContent = `You can still view Inventory, Debtors, and Reports, but new POS sales are locked. Enter an 8-character renewal token for Store ID ${AppState.store?.store_id || ''} in Settings.`;
-  } else if (daysLeft <= 2) {
-    pill.classList.add('license-warning');
-    pillText.textContent = `⚠️ ${daysLeft} Day${daysLeft === 1 ? '' : 's'} Left`;
-    banner.classList.add('hidden');
-  } else {
-    pill.classList.add('license-active');
-    pillText.textContent = `✔ Active (${daysLeft}d left)`;
-    banner.classList.add('hidden');
+  if (clockBanner) {
+    clockBanner.classList.toggle('hidden', !tampered);
+    if (tampered && clockMsg && AppState.licenseStatus.message) {
+      clockMsg.textContent = AppState.licenseStatus.message;
+    }
+  }
+
+  if (expiredBanner) {
+    expiredBanner.classList.toggle('hidden', tampered || !expired);
   }
 
   if (checkoutBtn) {
+    const { totalAmount } = getCartTotals();
     if (!active) {
       checkoutBtn.disabled = true;
-      checkoutBtn.textContent = tampered ? '🔒 Locked (Fix Device Clock)' : '🔒 Locked (Renew License)';
+      checkoutBtn.textContent = tampered ? '🔒 Locked (Fix Device Clock)' : '🔒 Locked (Renew License in Settings)';
     } else {
       checkoutBtn.disabled = AppState.cart.length === 0;
-      checkoutBtn.textContent = '✅ Complete Sale & Generate Receipt';
+      checkoutBtn.textContent = `✅ Complete Sale (${formatGHS(totalAmount)})`;
     }
   }
 }
@@ -490,7 +532,7 @@ function renderHeaderInfo() {
   if (nameEl) nameEl.textContent = s.store_name || s.shop_name || 'Holy Star POS';
   if (idEl) idEl.textContent = s.store_id || s.shop_id || 'HS-0000';
   if (catEl) catEl.textContent = s.store_category || 'Retail';
-  if (locEl) locEl.textContent = s.location || 'Ghana';
+  if (locEl) locEl.textContent = s.shop_location || s.location || 'Ghana';
 }
 
 // ============================================================================
@@ -505,14 +547,12 @@ function searchMasterCatalog(query) {
   for (const item of window.MASTER_CATALOG) {
     const nameLower = String(item.name || '').toLowerCase();
     const catLower = String(item.category || '').toLowerCase();
-    const kwLower = String(item.keywords || '').toLowerCase();
-    const barcodeStr = String(item.barcode || '');
+    const barcodeStr = String(item.suggested_barcode || item.barcode || '');
 
     let score = 0;
     if (nameLower.startsWith(q)) score = 100;
     else if (nameLower.includes(q)) score = 80;
-    else if (kwLower.includes(q)) score = 65;
-    else if (catLower.includes(q)) score = 40;
+    else if (catLower.includes(q)) score = 45;
     else if (barcodeStr && barcodeStr.includes(q)) score = 90;
 
     if (score > 0) {
@@ -537,13 +577,14 @@ function renderCatalogSuggestions(query) {
 
   dropdown.classList.remove('hidden');
   dropdown.innerHTML = matches.map((m, idx) => {
-    const thumb = window.getCatalogProductThumb ? window.getCatalogProductThumb(m) : '';
+    const thumb = getProductThumb(m);
+    const barcode = m.suggested_barcode || m.barcode || '';
     return `
       <div class="autocomplete-item" data-catalog-idx="${idx}" data-catalog-name="${escapeHtml(m.name)}">
         <img src="${thumb}" alt="" />
         <div style="flex:1; min-width:0;">
           <div class="autocomplete-item-title">${escapeHtml(m.name)}</div>
-          <div class="autocomplete-item-meta">${escapeHtml(m.category)} ${m.barcode ? '• Barcode: ' + escapeHtml(m.barcode) : ''}</div>
+          <div class="autocomplete-item-meta">${escapeHtml(m.category)} ${barcode ? '• Barcode: ' + escapeHtml(barcode) : ''}</div>
         </div>
         <span class="badge badge-info" style="font-size:0.68rem;">Tap to Fill</span>
       </div>
@@ -563,48 +604,71 @@ function renderCatalogSuggestions(query) {
 }
 
 function applyCatalogItemToForm(item) {
-  const nameInput = document.getElementById('product-name-input');
-  const catInput = document.getElementById('product-category-input');
-  const barcodeInput = document.getElementById('product-barcode-input');
-  const thumbPreview = document.getElementById('product-thumb-preview');
+  const nameInput = document.getElementById('prod-name');
+  const catInput = document.getElementById('prod-category');
+  const barcodeInput = document.getElementById('prod-barcode');
+  const thumbPreview = document.getElementById('prod-image-preview');
+  const imgDataInput = document.getElementById('prod-image-data');
 
   if (nameInput) nameInput.value = item.name;
   if (catInput) catInput.value = item.category;
-  if (barcodeInput && !barcodeInput.value && item.barcode) {
-    barcodeInput.value = item.barcode;
+  const suggestedCode = item.suggested_barcode || item.barcode || '';
+  if (barcodeInput && !barcodeInput.value && suggestedCode) {
+    barcodeInput.value = suggestedCode;
   }
 
-  const thumb = window.getCatalogProductThumb ? window.getCatalogProductThumb(item) : '';
+  const thumb = getProductThumb(item);
   AppState.currentProductThumbnail = thumb;
+  if (imgDataInput) imgDataInput.value = thumb;
   if (thumbPreview && thumb) {
     thumbPreview.src = thumb;
   }
 
-  const costInput = document.getElementById('product-cost-input');
+  const costInput = document.getElementById('prod-cost');
   if (costInput) costInput.focus();
 }
 
 // ============================================================================
-// CAMERA BARCODE & QR SCANNER (BarcodeDetector + Fallback)
+// CAMERA BARCODE & QR SCANNER (BarcodeDetector + Quick-Tap Simulator)
 // ============================================================================
 
 async function openBarcodeScanner(targetMode = 'POS') {
   AppState.barcodeScanner.targetMode = targetMode;
   const modal = document.getElementById('modal-barcode-scanner');
-  const video = document.getElementById('scanner-video-el');
-  const statusEl = document.getElementById('scanner-status-text');
-  const manualInput = document.getElementById('scanner-manual-code-input');
+  const video = document.getElementById('scanner-video');
+  const statusEl = document.getElementById('scanner-status-msg');
+  const manualInput = document.getElementById('manual-barcode-input');
+  const quickList = document.getElementById('scanner-quick-list');
 
-  if (!modal || !video) return;
+  if (!modal) return;
   modal.classList.remove('hidden');
+
   if (manualInput) {
     manualInput.value = '';
-    setTimeout(() => manualInput.focus(), 150);
+    setTimeout(() => manualInput.focus(), 120);
   }
 
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  // Populate quick-tap barcode simulator chips from store products or master catalog
+  if (quickList) {
+    const sampleSource = AppState.products.length > 0
+      ? AppState.products.filter((p) => p.barcode).slice(0, 8)
+      : (window.MASTER_CATALOG || []).slice(0, 8);
+
+    quickList.innerHTML = sampleSource.map((item) => {
+      const code = item.barcode || item.suggested_barcode || '6031100100010';
+      return `<button type="button" class="btn btn-outline btn-sm btn-quick-barcode" data-code="${escapeHtml(code)}" style="font-size:0.72rem;">📊 ${escapeHtml(item.name.slice(0, 18))} (${escapeHtml(code)})</button>`;
+    }).join('');
+
+    quickList.querySelectorAll('.btn-quick-barcode').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        handleDetectedBarcode(btn.dataset.code);
+      });
+    });
+  }
+
+  if (!video || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     if (statusEl) {
-      statusEl.textContent = 'Camera access requires HTTPS or localhost. Type barcode below or use a USB/Bluetooth scanner.';
+      statusEl.textContent = 'Camera unavailable or requires HTTPS. Type barcode below or tap a quick-test barcode.';
     }
     return;
   }
@@ -641,14 +705,12 @@ async function openBarcodeScanner(targetMode = 'POS') {
           // Ignore frame detection error
         }
       }, 280);
-    } else {
-      if (statusEl) {
-        statusEl.textContent = 'Camera active! Align barcode or enter digits below if your browser lacks native BarcodeDetector.';
-      }
+    } else if (statusEl) {
+      statusEl.textContent = 'Camera active! Enter barcode digits below or tap a quick-test item.';
     }
   } catch (err) {
     if (statusEl) {
-      statusEl.textContent = 'Camera permission denied or unavailable. Enter barcode manually below.';
+      statusEl.textContent = 'Camera permission not granted. Type barcode manually or tap a quick-test barcode below.';
     }
   }
 }
@@ -663,12 +725,9 @@ function stopBarcodeScanner() {
     AppState.barcodeScanner.stream.getTracks().forEach((t) => t.stop());
     AppState.barcodeScanner.stream = null;
   }
-  const video = document.getElementById('scanner-video-el');
-  if (video) {
-    video.srcObject = null;
-  }
-  const modal = document.getElementById('modal-barcode-scanner');
-  if (modal) modal.classList.add('hidden');
+  const video = document.getElementById('scanner-video');
+  if (video) video.srcObject = null;
+  document.getElementById('modal-barcode-scanner')?.classList.add('hidden');
 }
 
 function handleDetectedBarcode(code) {
@@ -679,11 +738,13 @@ function handleDetectedBarcode(code) {
   stopBarcodeScanner();
 
   if (mode === 'STOCK_INPUT') {
-    const barcodeInput = document.getElementById('product-barcode-input');
+    const barcodeInput = document.getElementById('prod-barcode');
     if (barcodeInput) barcodeInput.value = cleanCode;
 
     if (Array.isArray(window.MASTER_CATALOG)) {
-      const catMatch = window.MASTER_CATALOG.find((m) => String(m.barcode) === cleanCode);
+      const catMatch = window.MASTER_CATALOG.find(
+        (m) => String(m.suggested_barcode || m.barcode) === cleanCode
+      );
       if (catMatch) {
         applyCatalogItemToForm(catMatch);
         showToast(`Matched "${catMatch.name}" from Master Catalog!`, 'success');
@@ -709,7 +770,7 @@ function handleDetectedBarcode(code) {
       AppState.posSearchQuery = cleanCode;
       renderPosProductGrid();
     }
-    showToast(`No item in stock with barcode "${cleanCode}". Add it in Stock & Profit tab!`, 'error');
+    showToast(`No item in your store with barcode "${cleanCode}". Click "+ Add Product" to add it!`, 'error');
   }
 }
 
@@ -718,37 +779,24 @@ function handleDetectedBarcode(code) {
 // ============================================================================
 
 function renderPosCategories() {
-  const container = document.getElementById('pos-category-pills');
+  const container = document.getElementById('pos-category-chips');
   if (!container) return;
 
   const categories = ['All', ...new Set(AppState.products.map((p) => p.category || 'General'))];
   container.innerHTML = categories
     .map((cat) => {
       const isActive = AppState.selectedPosCategory === cat ? 'active' : '';
-      return `<button type="button" class="cat-pill ${isActive}" data-cat="${escapeHtml(cat)}">${escapeHtml(cat)}</button>`;
+      return `<button type="button" class="category-chip ${isActive}" data-cat="${escapeHtml(cat)}">${escapeHtml(cat)}</button>`;
     })
     .join('');
 
-  container.querySelectorAll('.cat-pill').forEach((btn) => {
+  container.querySelectorAll('.category-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
       AppState.selectedPosCategory = btn.dataset.cat;
       renderPosCategories();
       renderPosProductGrid();
     });
   });
-}
-
-function getDisplayThumbForProduct(p) {
-  if (p.thumbnail) return p.thumbnail;
-  if (window.getCatalogProductThumb) {
-    return window.getCatalogProductThumb({
-      name: p.name,
-      category: p.category,
-      emoji: '📦',
-      color: '#1e3a8a'
-    });
-  }
-  return '';
 }
 
 function renderPosProductGrid() {
@@ -769,13 +817,13 @@ function renderPosProductGrid() {
   if (filtered.length === 0) {
     grid.innerHTML = `
       <div class="empty-state" style="grid-column: 1 / -1;">
-        <div class="empty-state-icon">📦</div>
-        <p style="font-weight:700; color:var(--text-primary); margin-bottom:0.25rem;">
+        <div style="font-size:2rem; margin-bottom:0.35rem;">📦</div>
+        <p style="font-weight:800; color:var(--text-primary); margin-bottom:0.25rem;">
           ${AppState.products.length === 0 ? 'Your Store Inventory is Empty (0 Products)' : 'No matching products found'}
         </p>
         <p style="font-size:0.82rem; margin-bottom:0.75rem;">
           ${AppState.products.length === 0
-            ? 'Go to the "Stock & Profit" tab to add your first item (with smart Ghanaian product autocomplete!).'
+            ? 'Click "➕ Add Product" above to add your first item (with smart Ghanaian product autocomplete!).'
             : 'Try clearing your search filter or switching category.'}
         </p>
       </div>
@@ -786,49 +834,48 @@ function renderPosProductGrid() {
   grid.innerHTML = filtered
     .map((p) => {
       const stock = Number(p.stock_qty || 0);
-      const alertLevel = Number(p.low_stock_alert || 5);
+      const alertLevel = Number(p.low_stock_threshold ?? p.low_stock_alert ?? 5);
       const isOut = stock <= 0;
       const isLow = !isOut && stock <= alertLevel;
 
-      let stockClass = 'stock-ok';
+      let stockBadgeClass = 'badge-success';
       let stockLabel = `${stock} in stock`;
       if (isOut) {
-        stockClass = 'stock-empty';
+        stockBadgeClass = 'badge-danger';
         stockLabel = 'Out of Stock';
       } else if (isLow) {
-        stockClass = 'stock-low';
+        stockBadgeClass = 'badge-warning';
         stockLabel = `Low: ${stock} left`;
       }
 
-      const inCartItem = AppState.cart.find((c) => c.productId === p.id);
+      const inCartItem = AppState.cart.find((c) => c.id === p.id);
       const inCartBadge = inCartItem ? `<span class="badge badge-info" style="font-size:0.7rem;">In Cart: ${inCartItem.qty}</span>` : '';
-      const thumbSrc = getDisplayThumbForProduct(p);
+      const thumbSrc = getProductThumb(p);
 
       return `
-        <div class="product-tile ${isOut ? 'out-of-stock' : ''}" data-product-id="${escapeHtml(p.id)}">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.45rem;">
-            <div style="display:flex; align-items:center; gap:0.5rem; min-width:0;">
-              ${thumbSrc ? `<img src="${thumbSrc}" class="product-tile-thumb" alt="" />` : ''}
-              <div style="min-width:0;">
-                <span class="product-tile-cat">${escapeHtml(p.category || 'General')}</span>
-                <div class="product-tile-name" style="margin-top:0.15rem;">${escapeHtml(p.name)}</div>
-              </div>
+        <div class="product-card ${isOut ? 'out-of-stock' : ''}" data-product-id="${escapeHtml(p.id)}">
+          <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.45rem;">
+            <img src="${thumbSrc}" class="product-thumb-sm" alt="" />
+            <div style="flex:1; min-width:0;">
+              <div class="product-category-tag">${escapeHtml(p.category || 'General')}</div>
+              <div class="product-name">${escapeHtml(p.name)}</div>
             </div>
-            ${inCartBadge}
           </div>
-          <div class="product-tile-footer">
-            <span class="product-tile-price">${formatGHS(p.selling_price)}</span>
-            <span class="product-tile-stock ${stockClass}">${stockLabel}</span>
+          <div class="product-meta-row">
+            <span class="product-price">${formatGHS(p.selling_price)}</span>
+            <div style="display:flex; align-items:center; gap:0.25rem; flex-wrap:wrap;">
+              ${inCartBadge}
+              <span class="badge ${stockBadgeClass}">${stockLabel}</span>
+            </div>
           </div>
         </div>
       `;
     })
     .join('');
 
-  grid.querySelectorAll('.product-tile').forEach((tile) => {
+  grid.querySelectorAll('.product-card').forEach((tile) => {
     tile.addEventListener('click', () => {
-      const pid = tile.dataset.productId;
-      addToCart(pid);
+      addToCart(tile.dataset.productId);
     });
   });
 }
@@ -843,7 +890,7 @@ function addToCart(productId) {
     return;
   }
 
-  const existing = AppState.cart.find((item) => item.productId === productId);
+  const existing = AppState.cart.find((item) => item.id === productId);
   if (existing) {
     if (existing.qty + 1 > available) {
       showToast(`Cannot exceed available stock (${available}) for "${product.name}".`, 'error');
@@ -852,6 +899,7 @@ function addToCart(productId) {
     existing.qty += 1;
   } else {
     AppState.cart.push({
+      id: product.id,
       productId: product.id,
       name: product.name,
       cost_price: Number(product.cost_price || 0),
@@ -869,7 +917,7 @@ function updateCartItemQty(productId, newQty) {
   const product = AppState.products.find((p) => p.id === productId);
   const maxStock = product ? Number(product.stock_qty || 0) : 0;
 
-  const idx = AppState.cart.findIndex((c) => c.productId === productId);
+  const idx = AppState.cart.findIndex((c) => c.id === productId);
   if (idx === -1) return;
 
   const parsed = Math.floor(Number(newQty));
@@ -909,44 +957,36 @@ function getCartTotals() {
 
 function renderCart() {
   const container = document.getElementById('cart-items-container');
-  const countBadge = document.getElementById('cart-count-badge');
-  const subtotalEl = document.getElementById('cart-subtotal-text');
-  const profitEl = document.getElementById('cart-profit-text');
-  const totalEl = document.getElementById('cart-total-text');
+  const countEl = document.getElementById('cart-total-items');
+  const totalEl = document.getElementById('cart-total-amount');
 
   if (!container) return;
 
-  const { totalAmount, totalProfit, totalItemsCount } = getCartTotals();
+  const { totalAmount, totalItemsCount } = getCartTotals();
 
-  if (countBadge) countBadge.textContent = `${totalItemsCount} item${totalItemsCount === 1 ? '' : 's'}`;
-  if (subtotalEl) subtotalEl.textContent = formatGHS(totalAmount);
-  if (profitEl) profitEl.textContent = formatGHS(totalProfit);
+  if (countEl) countEl.textContent = String(totalItemsCount);
   if (totalEl) totalEl.textContent = formatGHS(totalAmount);
 
   if (AppState.cart.length === 0) {
     container.innerHTML = `
-      <div class="empty-state" style="padding:1.5rem 0.75rem;">
-        <div class="empty-state-icon" style="font-size:1.65rem;">🛒</div>
-        <p style="font-size:0.84rem;">Cart is empty. Tap any product or scan a barcode to add it.</p>
-      </div>
+      <div class="empty-state">Cart is empty. Tap any product or scan a barcode to add it.</div>
     `;
   } else {
     container.innerHTML = AppState.cart
       .map((item) => {
         const lineSubtotal = Number((item.selling_price * item.qty).toFixed(2));
         return `
-          <div class="cart-item-row" data-cart-id="${escapeHtml(item.productId)}">
+          <div class="cart-item" data-cart-id="${escapeHtml(item.id)}">
             <div class="cart-item-info">
               <div class="cart-item-title">${escapeHtml(item.name)}</div>
-              <div class="cart-item-meta">${formatGHS(item.selling_price)} each (Max: ${item.max_stock})</div>
+              <div class="cart-item-price">${formatGHS(item.selling_price)} × ${item.qty} = <strong>${formatGHS(lineSubtotal)}</strong></div>
             </div>
             <div class="cart-qty-controls">
-              <button type="button" class="qty-btn btn-qty-dec" data-id="${escapeHtml(item.productId)}">−</button>
-              <input type="number" class="qty-input" value="${item.qty}" min="1" max="${item.max_stock}" data-id="${escapeHtml(item.productId)}" />
-              <button type="button" class="qty-btn btn-qty-inc" data-id="${escapeHtml(item.productId)}">+</button>
+              <button type="button" class="qty-btn btn-qty-dec" data-id="${escapeHtml(item.id)}">−</button>
+              <input type="number" class="qty-input" value="${item.qty}" min="1" max="${item.max_stock}" data-id="${escapeHtml(item.id)}" />
+              <button type="button" class="qty-btn btn-qty-inc" data-id="${escapeHtml(item.id)}">+</button>
+              <button type="button" class="btn-remove-item" title="Remove item" data-id="${escapeHtml(item.id)}">✕</button>
             </div>
-            <div class="cart-item-subtotal">${formatGHS(lineSubtotal)}</div>
-            <button type="button" class="cart-remove-btn" title="Remove item" data-id="${escapeHtml(item.productId)}">✕</button>
           </div>
         `;
       })
@@ -955,7 +995,7 @@ function renderCart() {
     container.querySelectorAll('.btn-qty-dec').forEach((btn) => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.id;
-        const item = AppState.cart.find((c) => c.productId === id);
+        const item = AppState.cart.find((c) => c.id === id);
         if (item) updateCartItemQty(id, item.qty - 1);
       });
     });
@@ -963,7 +1003,7 @@ function renderCart() {
     container.querySelectorAll('.btn-qty-inc').forEach((btn) => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.id;
-        const item = AppState.cart.find((c) => c.productId === id);
+        const item = AppState.cart.find((c) => c.id === id);
         if (item) updateCartItemQty(id, item.qty + 1);
       });
     });
@@ -974,36 +1014,37 @@ function renderCart() {
       });
     });
 
-    container.querySelectorAll('.cart-remove-btn').forEach((btn) => {
+    container.querySelectorAll('.btn-remove-item').forEach((btn) => {
       btn.addEventListener('click', () => {
         updateCartItemQty(btn.dataset.id, 0);
       });
     });
   }
 
-  updatePaymentcalculations();
+  updatePaymentCalculations();
   renderLicenseBannerAndPill();
 }
 
-function getSelectedPaymentMethod() {
-  const radio = document.querySelector('input[name="payment_method"]:checked');
-  return radio ? radio.value : 'Cash';
+function populateExistingDebtorsDropdown() {
+  const select = document.getElementById('credit-existing-select');
+  if (!select) return;
+
+  select.innerHTML = `<option value="">-- New Customer or Select Existing (${AppState.debtors.length}) --</option>` +
+    AppState.debtors.map((d) => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)} (${escapeHtml(d.phone)} • Owed: ${formatGHS(d.total_owed)})</option>`).join('');
 }
 
-function updatePaymentcalculations() {
-  const method = getSelectedPaymentMethod();
+function updatePaymentCalculations() {
+  const method = AppState.selectedPaymentMethod || 'Cash';
   const { totalAmount } = getCartTotals();
 
-  const cashBox = document.getElementById('cash-payment-fields');
-  const momoBox = document.getElementById('momo-payment-fields');
-  const creditBox = document.getElementById('credit-payment-fields');
+  const cashBox = document.getElementById('cash-calculator-box');
+  const creditBox = document.getElementById('credit-customer-fields');
 
   if (cashBox) cashBox.classList.toggle('hidden', method !== 'Cash');
-  if (momoBox) momoBox.classList.toggle('hidden', method !== 'MoMo');
   if (creditBox) creditBox.classList.toggle('hidden', method !== 'Credit');
 
   const tenderedInput = document.getElementById('cash-tendered-input');
-  const changeDisplay = document.getElementById('cash-change-display');
+  const changeDisplay = document.getElementById('cash-change-output');
   if (tenderedInput && changeDisplay) {
     const tenderedVal = tenderedInput.value === '' ? totalAmount : Number(tenderedInput.value);
     const change = Math.max(0, tenderedVal - totalAmount);
@@ -1011,7 +1052,7 @@ function updatePaymentcalculations() {
   }
 
   const depositInput = document.getElementById('credit-initial-deposit');
-  const balanceDisplay = document.getElementById('credit-balance-owed-display');
+  const balanceDisplay = document.getElementById('credit-balance-preview-amount');
   if (depositInput && balanceDisplay) {
     const dep = Math.max(0, Number(depositInput.value || 0));
     const owed = Math.max(0, totalAmount - dep);
@@ -1031,60 +1072,42 @@ async function handleCompleteSale() {
     return;
   }
 
-  const paymentMethod = getSelectedPaymentMethod();
+  const paymentMethod = AppState.selectedPaymentMethod || 'Cash';
   const { totalAmount } = getCartTotals();
 
   const tenderedInput = document.getElementById('cash-tendered-input');
   const cashTendered = tenderedInput && tenderedInput.value !== '' ? Number(tenderedInput.value) : totalAmount;
 
   if (paymentMethod === 'Cash' && cashTendered < totalAmount) {
-    showToast(`Cash tendered (${formatGHS(cashTendered)}) is less than total sale (${formatGHS(totalAmount)}). Use Credit Book if customer is paying partially.`, 'error');
+    showToast(`Cash given (${formatGHS(cashTendered)}) is less than total due (${formatGHS(totalAmount)}). Select Credit if customer is paying partially.`, 'error');
     return;
   }
 
-  const momoRef = document.getElementById('momo-ref-input')?.value || '';
-  const initialDeposit = Number(document.getElementById('credit-initial-deposit')?.value || 0);
-  const depositMethod = document.getElementById('credit-deposit-method')?.value || 'Cash';
-
-  const customerInfo = {
-    name: document.getElementById('credit-customer-name')?.value || '',
-    phone: document.getElementById('credit-customer-phone')?.value || '',
-    location: document.getElementById('credit-customer-location')?.value || '',
-    due_date: document.getElementById('credit-due-date')?.value || ''
+  const creditDetails = {
+    customerName: document.getElementById('credit-customer-name')?.value || '',
+    customerPhone: document.getElementById('credit-customer-phone')?.value || '',
+    customerLocation: document.getElementById('credit-customer-location')?.value || '',
+    initialDeposit: Number(document.getElementById('credit-initial-deposit')?.value || 0),
+    depositMethod: document.getElementById('credit-deposit-method')?.value || 'Cash',
+    dueDate: document.getElementById('credit-due-date')?.value || ''
   };
 
-  if (paymentMethod === 'Credit') {
-    if (!customerInfo.name.trim() || !customerInfo.phone.trim() || !customerInfo.location.trim()) {
-      showToast('Credit Sale requires Customer Name, Phone Number, and Location/Landmark.', 'error');
-      return;
-    }
-    if (initialDeposit >= totalAmount) {
-      showToast('Initial deposit equals or exceeds total amount. Choose Cash or MoMo instead of Credit.', 'error');
-      return;
-    }
-  }
-
   try {
-    const result = await window.HolyStarDB.processCheckout({
+    const result = await window.HolyStarDB.processAtomicCheckout({
       cartItems: AppState.cart,
       paymentMethod,
-      cashTendered,
-      momoRef,
-      initialDeposit,
-      depositMethod,
-      customerInfo
+      creditDetails
     });
 
     AppState.cart = [];
     if (tenderedInput) tenderedInput.value = '';
-    if (document.getElementById('momo-ref-input')) document.getElementById('momo-ref-input').value = '';
+    if (document.getElementById('credit-existing-select')) document.getElementById('credit-existing-select').value = '';
     if (document.getElementById('credit-customer-name')) document.getElementById('credit-customer-name').value = '';
     if (document.getElementById('credit-customer-phone')) document.getElementById('credit-customer-phone').value = '';
     if (document.getElementById('credit-customer-location')) document.getElementById('credit-customer-location').value = '';
     if (document.getElementById('credit-initial-deposit')) document.getElementById('credit-initial-deposit').value = '0';
 
-    const cashRadio = document.querySelector('input[name="payment_method"][value="Cash"]');
-    if (cashRadio) cashRadio.checked = true;
+    selectPaymentMethod('Cash');
 
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'checkout_sale');
@@ -1095,82 +1118,119 @@ async function handleCompleteSale() {
   }
 }
 
+function selectPaymentMethod(method) {
+  AppState.selectedPaymentMethod = method;
+  document.querySelectorAll('.pay-method-option').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.method === method);
+  });
+  updatePaymentCalculations();
+}
+
 function showSaleReceiptModal(sale) {
   if (!sale) return;
   AppState.activeSaleReceipt = sale;
-  const modal = document.getElementById('modal-sale-receipt');
-  const content = document.getElementById('receipt-preview-body');
+  const modal = document.getElementById('modal-receipt');
+  const content = document.getElementById('printable-receipt');
   if (!modal || !content) return;
 
   const s = AppState.store || {};
-  const itemsLines = (sale.items || [])
-    .map((item) => `${item.qty}x ${item.name} @ ${formatGHS(item.selling_price)} = ${formatGHS(item.subtotal)}`)
-    .join('\n');
+  const itemsHtml = (sale.items || [])
+    .map((item) => `
+      <div class="receipt-line">
+        <span>${escapeHtml(item.qty)}x ${escapeHtml(item.name)}</span>
+        <strong>${formatGHS(item.subtotal)}</strong>
+      </div>
+    `)
+    .join('');
 
-  let paymentBreakdown = `Payment Method: ${sale.payment_method}`;
-  if (sale.payment_method === 'Cash') {
-    paymentBreakdown += `\nCash Tendered: ${formatGHS(sale.cash_tendered)}\nChange Given: ${formatGHS(sale.change_given)}`;
-  } else if (sale.payment_method === 'MoMo') {
-    paymentBreakdown += `\nMoMo Ref: ${sale.momo_ref || 'Verified'}`;
-  } else if (sale.payment_method === 'Credit') {
-    paymentBreakdown += `\nCustomer: ${sale.customer_name} (${sale.customer_phone})\nInitial Deposit (${sale.deposit_method}): ${formatGHS(sale.initial_deposit)}\nBalance Owed (Debt Book): ${formatGHS(sale.balance_owed)}`;
+  let creditHtml = '';
+  if (sale.payment_method === 'Credit' && sale.customer) {
+    creditHtml = `
+      <div class="receipt-divider"></div>
+      <div class="receipt-line"><span>Customer:</span><strong>${escapeHtml(sale.customer.name)}</strong></div>
+      <div class="receipt-line"><span>Phone:</span><span>${escapeHtml(sale.customer.phone)}</span></div>
+      <div class="receipt-line"><span>Initial Deposit:</span><span>${formatGHS(sale.initial_deposit)}</span></div>
+      <div class="receipt-line"><span>Balance Owed:</span><strong>${formatGHS(sale.balance_owed)}</strong></div>
+    `;
   }
 
-  const receiptText = [
-    `★ ${String(s.store_name || 'HOLY STAR POS').toUpperCase()} ★`,
-    `Location: ${s.location || 'Ghana'} | Tel: ${s.owner_phone || '-'}`,
-    `Store ID: ${s.store_id || 'HS-0000'}`,
-    `--------------------------------`,
-    `Receipt: ${sale.id}`,
-    `Date: ${formatDateTime(sale.timestamp)}`,
-    `--------------------------------`,
-    itemsLines,
-    `--------------------------------`,
-    `TOTAL: ${formatGHS(sale.total_amount)}`,
-    paymentBreakdown,
-    `--------------------------------`,
-    `Thank you for shopping with us!`
-  ].join('\n');
+  content.innerHTML = `
+    <div class="receipt-header">
+      <h4>★ ${escapeHtml(s.store_name || 'HOLY STAR POS')} ★</h4>
+      <div>${escapeHtml(s.shop_location || s.location || 'Ghana')}</div>
+      <div>Tel: ${escapeHtml(s.owner_phone || '-')} • ID: ${escapeHtml(s.store_id || 'HS-0000')}</div>
+    </div>
+    <div class="receipt-divider"></div>
+    <div class="receipt-line"><span>Receipt:</span><strong>${escapeHtml(sale.id)}</strong></div>
+    <div class="receipt-line"><span>Date:</span><span>${escapeHtml(formatDateTime(sale.timestamp))}</span></div>
+    <div class="receipt-line"><span>Payment:</span><strong>${escapeHtml(sale.payment_method)}</strong></div>
+    <div class="receipt-divider"></div>
+    ${itemsHtml}
+    <div class="receipt-divider"></div>
+    <div class="receipt-line receipt-total">
+      <span>TOTAL PAID/DUE:</span>
+      <span>${formatGHS(sale.total_amount)}</span>
+    </div>
+    ${creditHtml}
+    <div class="receipt-divider"></div>
+    <div class="receipt-footer">Thank you for shopping with us!</div>
+  `;
 
-  content.textContent = receiptText;
   modal.classList.remove('hidden');
 }
 
 // ============================================================================
-// TAB 2: INVENTORY & PROFIT MARGIN ENGINE
+// TAB 2: INVENTORY & STOCK MANAGEMENT
 // ============================================================================
 
 function renderInventoryView() {
   const tbody = document.getElementById('inventory-table-body');
-  const totalCountEl = document.getElementById('inv-stat-products');
-  const lowStockCountEl = document.getElementById('inv-stat-low-stock');
-  const stockCostValueEl = document.getElementById('inv-stat-cost-value');
-  const projectedProfitEl = document.getElementById('inv-stat-projected-profit');
+  const totalCountEl = document.getElementById('inv-metric-count');
+  const stockCostEl = document.getElementById('inv-metric-cost');
+  const retailValEl = document.getElementById('inv-metric-retail');
+  const estMarginEl = document.getElementById('inv-metric-margin');
+  const alertsCountEl = document.getElementById('inv-metric-alerts');
+  const navBadgeStock = document.getElementById('nav-badge-stock');
 
   if (!tbody) return;
 
-  let lowStockCount = 0;
+  let lowOrOutCount = 0;
   let totalCostVal = 0;
+  let totalRetailVal = 0;
   let totalProjProfit = 0;
 
   for (const p of AppState.products) {
     const qty = Number(p.stock_qty || 0);
-    const alertLvl = Number(p.low_stock_alert || 5);
+    const alertLvl = Number(p.low_stock_threshold ?? p.low_stock_alert ?? 5);
     const cost = Number(p.cost_price || 0);
     const sell = Number(p.selling_price || 0);
 
-    if (qty <= alertLvl) lowStockCount++;
+    if (qty <= alertLvl) lowOrOutCount++;
     totalCostVal += cost * qty;
+    totalRetailVal += sell * qty;
     totalProjProfit += (sell - cost) * qty;
   }
 
   if (totalCountEl) totalCountEl.textContent = String(AppState.products.length);
-  if (lowStockCountEl) lowStockCountEl.textContent = String(lowStockCount);
-  if (stockCostValueEl) stockCostValueEl.textContent = formatGHS(totalCostVal);
-  if (projectedProfitEl) projectedProfitEl.textContent = formatGHS(totalProjProfit);
+  if (stockCostEl) stockCostEl.textContent = formatGHS(totalCostVal);
+  if (retailValEl) retailValEl.textContent = formatGHS(totalRetailVal);
+  if (estMarginEl) estMarginEl.textContent = `Est. Profit: ${formatGHS(totalProjProfit)}`;
+  if (alertsCountEl) alertsCountEl.textContent = String(lowOrOutCount);
+
+  if (navBadgeStock) {
+    navBadgeStock.textContent = String(lowOrOutCount);
+    navBadgeStock.classList.toggle('hidden', lowOrOutCount === 0);
+  }
 
   const query = AppState.inventorySearchQuery.trim().toLowerCase();
+  const stockFilter = AppState.inventoryStockFilter || 'ALL';
+
   const filtered = AppState.products.filter((p) => {
+    const qty = Number(p.stock_qty || 0);
+    const alertLvl = Number(p.low_stock_threshold ?? p.low_stock_alert ?? 5);
+    if (stockFilter === 'OUT' && qty > 0) return false;
+    if (stockFilter === 'LOW' && (qty <= 0 || qty > alertLvl)) return false;
+
     if (!query) return true;
     return (
       String(p.name || '').toLowerCase().includes(query) ||
@@ -1182,8 +1242,10 @@ function renderInventoryView() {
   if (filtered.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="7" style="text-align:center; padding:2rem; color:var(--text-secondary);">
-          No products in your store yet. Click <strong>+ Add New Product</strong> to add items (start typing for instant Ghanaian product suggestions!).
+        <td colspan="9" style="text-align:center; padding:2rem; color:var(--text-secondary);">
+          ${AppState.products.length === 0
+            ? 'Your store has 0 products. Click <strong>"➕ Add New Product"</strong> to add items (with smart Ghanaian product autocomplete!).'
+            : 'No products match your current filter.'}
         </td>
       </tr>
     `;
@@ -1197,30 +1259,27 @@ function renderInventoryView() {
       const unitProfit = Number((sell - cost).toFixed(2));
       const marginPct = sell > 0 ? Math.round(((sell - cost) / sell) * 100) : 0;
       const qty = Number(p.stock_qty || 0);
-      const alertLvl = Number(p.low_stock_alert || 5);
+      const alertLvl = Number(p.low_stock_threshold ?? p.low_stock_alert ?? 5);
 
-      let stockBadge = `<span class="badge badge-success">${qty} units</span>`;
+      let statusBadge = `<span class="badge badge-success">In Stock</span>`;
       if (qty <= 0) {
-        stockBadge = `<span class="badge badge-danger">Out of Stock (0)</span>`;
+        statusBadge = `<span class="badge badge-danger">Out of Stock</span>`;
       } else if (qty <= alertLvl) {
-        stockBadge = `<span class="badge badge-warning">Low Stock (${qty})</span>`;
+        statusBadge = `<span class="badge badge-warning">Low Stock</span>`;
       }
 
-      const thumbSrc = getDisplayThumbForProduct(p);
+      const thumbSrc = getProductThumb(p);
 
       return `
         <tr>
           <td>
-            <div style="display:flex; align-items:center; gap:0.6rem;">
-              ${thumbSrc ? `<img src="${thumbSrc}" style="width:36px; height:36px; border-radius:8px; object-fit:cover; border:1px solid var(--border);" alt="" />` : ''}
-              <div>
-                <div style="font-weight:700; color:var(--text-primary);">${escapeHtml(p.name)}</div>
-                <div style="font-size:0.75rem; color:var(--text-secondary);">
-                  ${escapeHtml(p.category || 'General')} ${p.barcode ? `• 📊 ${escapeHtml(p.barcode)}` : ''}
-                </div>
-              </div>
-            </div>
+            <img src="${thumbSrc}" class="product-thumb-sm" alt="" />
           </td>
+          <td>
+            <div style="font-weight:800; color:var(--text-primary);">${escapeHtml(p.name)}</div>
+            ${p.barcode ? `<div style="font-size:0.74rem; color:var(--text-secondary); font-family:monospace;">📊 ${escapeHtml(p.barcode)}</div>` : ''}
+          </td>
+          <td><span class="badge badge-neutral">${escapeHtml(p.category || 'General')}</span></td>
           <td style="font-weight:600;">${formatGHS(cost)}</td>
           <td style="font-weight:800; color:var(--primary);">${formatGHS(sell)}</td>
           <td>
@@ -1228,8 +1287,8 @@ function renderInventoryView() {
               ${formatGHS(unitProfit)} (${marginPct}%)
             </span>
           </td>
-          <td>${stockBadge}</td>
-          <td>${formatGHS(sell * qty)}</td>
+          <td style="font-weight:900; font-size:0.95rem;">${qty}</td>
+          <td>${statusBadge}</td>
           <td>
             <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
               <button type="button" class="btn btn-success btn-sm btn-restock-item" data-id="${escapeHtml(p.id)}">+ Restock</button>
@@ -1256,17 +1315,18 @@ function renderInventoryView() {
 }
 
 function openProductModal(productId = null) {
-  const modal = document.getElementById('modal-product-form');
+  const modal = document.getElementById('modal-product');
   const titleEl = document.getElementById('modal-product-title');
-  const idInput = document.getElementById('product-id-input');
-  const nameInput = document.getElementById('product-name-input');
-  const catInput = document.getElementById('product-category-input');
-  const barcodeInput = document.getElementById('product-barcode-input');
-  const costInput = document.getElementById('product-cost-input');
-  const sellInput = document.getElementById('product-selling-input');
-  const qtyInput = document.getElementById('product-stock-input');
-  const alertInput = document.getElementById('product-alert-input');
-  const thumbPreview = document.getElementById('product-thumb-preview');
+  const idInput = document.getElementById('prod-id');
+  const imgDataInput = document.getElementById('prod-image-data');
+  const nameInput = document.getElementById('prod-name');
+  const catInput = document.getElementById('prod-category');
+  const barcodeInput = document.getElementById('prod-barcode');
+  const costInput = document.getElementById('prod-cost');
+  const sellInput = document.getElementById('prod-price');
+  const qtyInput = document.getElementById('prod-stock');
+  const alertInput = document.getElementById('prod-threshold');
+  const thumbPreview = document.getElementById('prod-image-preview');
   const dropdown = document.getElementById('catalog-autocomplete-list');
 
   if (!modal) return;
@@ -1275,59 +1335,62 @@ function openProductModal(productId = null) {
   if (productId) {
     const p = AppState.products.find((item) => item.id === productId);
     if (!p) return;
-    titleEl.textContent = '✏️ Edit Product & Pricing';
-    idInput.value = p.id;
-    nameInput.value = p.name;
-    catInput.value = p.category || 'General';
+    if (titleEl) titleEl.textContent = '✏️ Edit Product & Pricing';
+    if (idInput) idInput.value = p.id;
+    if (nameInput) nameInput.value = p.name;
+    if (catInput) catInput.value = p.category || 'General';
     if (barcodeInput) barcodeInput.value = p.barcode || '';
-    costInput.value = p.cost_price;
-    sellInput.value = p.selling_price;
-    qtyInput.value = p.stock_qty;
-    alertInput.value = p.low_stock_alert || 5;
-    AppState.currentProductThumbnail = p.thumbnail || getDisplayThumbForProduct(p);
+    if (costInput) costInput.value = p.cost_price;
+    if (sellInput) sellInput.value = p.selling_price;
+    if (qtyInput) qtyInput.value = p.stock_qty;
+    if (alertInput) alertInput.value = p.low_stock_threshold ?? p.low_stock_alert ?? 5;
+    AppState.currentProductThumbnail = getProductThumb(p);
+    if (imgDataInput) imgDataInput.value = AppState.currentProductThumbnail;
     if (thumbPreview) thumbPreview.src = AppState.currentProductThumbnail;
   } else {
-    titleEl.textContent = '➕ Add New Product to Stock';
-    idInput.value = '';
-    nameInput.value = '';
-    catInput.value = 'Provision & Mini-Mart';
+    if (titleEl) titleEl.textContent = '➕ Add New Product';
+    if (idInput) idInput.value = '';
+    if (nameInput) nameInput.value = '';
+    if (catInput) catInput.value = '';
     if (barcodeInput) barcodeInput.value = '';
-    costInput.value = '';
-    sellInput.value = '';
-    qtyInput.value = '';
-    alertInput.value = '5';
-    AppState.currentProductThumbnail = window.createEmojiSvgDataUrl
-      ? window.createEmojiSvgDataUrl('📦', '#1e3a8a')
-      : '';
+    if (costInput) costInput.value = '';
+    if (sellInput) sellInput.value = '';
+    if (qtyInput) qtyInput.value = '10';
+    if (alertInput) alertInput.value = '5';
+    AppState.currentProductThumbnail = typeof window.generateProductSvgThumbnail === 'function'
+      ? window.generateProductSvgThumbnail('New Item', 'General')
+      : 'icon-192.png';
+    if (imgDataInput) imgDataInput.value = AppState.currentProductThumbnail;
     if (thumbPreview) thumbPreview.src = AppState.currentProductThumbnail;
   }
 
   updateLiveUnitProfitPreview();
   modal.classList.remove('hidden');
-  nameInput.focus();
+  if (nameInput) setTimeout(() => nameInput.focus(), 80);
 }
 
 function updateLiveUnitProfitPreview() {
-  const cost = Number(document.getElementById('product-cost-input')?.value || 0);
-  const sell = Number(document.getElementById('product-selling-input')?.value || 0);
-  const previewEl = document.getElementById('product-live-profit-preview');
+  const cost = Number(document.getElementById('prod-cost')?.value || 0);
+  const sell = Number(document.getElementById('prod-price')?.value || 0);
+  const previewEl = document.getElementById('prod-profit-preview');
   if (!previewEl) return;
 
   const profit = Number((sell - cost).toFixed(2));
-  previewEl.textContent = `Unit Profit: ${formatGHS(profit)}`;
-  previewEl.style.color = profit >= 0 ? 'var(--success)' : 'var(--danger)';
+  const pct = sell > 0 ? Math.round(((sell - cost) / sell) * 100) : 0;
+  previewEl.textContent = `Unit Profit: ${formatGHS(profit)} (${pct}%)`;
+  previewEl.style.color = profit >= 0 ? '#166534' : '#991b1b';
 }
 
 async function handleSaveProductForm(e) {
   e.preventDefault();
-  const id = document.getElementById('product-id-input')?.value || '';
-  const name = document.getElementById('product-name-input')?.value || '';
-  const category = document.getElementById('product-category-input')?.value || 'General';
-  const barcode = document.getElementById('product-barcode-input')?.value || '';
-  const cost_price = document.getElementById('product-cost-input')?.value;
-  const selling_price = document.getElementById('product-selling-input')?.value;
-  const stock_qty = document.getElementById('product-stock-input')?.value;
-  const low_stock_alert = document.getElementById('product-alert-input')?.value || 5;
+  const id = document.getElementById('prod-id')?.value || '';
+  const name = document.getElementById('prod-name')?.value || '';
+  const category = document.getElementById('prod-category')?.value || 'General';
+  const barcode = document.getElementById('prod-barcode')?.value || '';
+  const cost_price = document.getElementById('prod-cost')?.value;
+  const selling_price = document.getElementById('prod-price')?.value;
+  const stock_qty = document.getElementById('prod-stock')?.value;
+  const low_stock_threshold = document.getElementById('prod-threshold')?.value || 5;
 
   try {
     const saved = await window.HolyStarDB.saveProduct({
@@ -1335,14 +1398,14 @@ async function handleSaveProductForm(e) {
       name,
       category,
       barcode,
-      thumbnail: AppState.currentProductThumbnail || '',
+      image_url: AppState.currentProductThumbnail || '',
       cost_price,
       selling_price,
       stock_qty,
-      low_stock_alert
+      low_stock_threshold
     });
 
-    document.getElementById('modal-product-form')?.classList.add('hidden');
+    document.getElementById('modal-product')?.classList.add('hidden');
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'inventory_saved');
     showToast(`Saved "${saved.name}" (${saved.stock_qty} in stock).`, 'success');
@@ -1355,25 +1418,27 @@ function openRestockModal(productId) {
   const product = AppState.products.find((p) => p.id === productId);
   if (!product) return;
 
-  document.getElementById('restock-product-id').value = product.id;
-  document.getElementById('restock-product-name').textContent = `${product.name} (Current Stock: ${product.stock_qty})`;
-  document.getElementById('restock-qty-input').value = '';
-  document.getElementById('restock-cost-input').value = product.cost_price;
-  document.getElementById('restock-selling-input').value = product.selling_price;
+  const idInput = document.getElementById('restock-prod-id');
+  const nameEl = document.getElementById('restock-prod-name');
+  const curQtyEl = document.getElementById('restock-current-qty');
+  const addQtyInput = document.getElementById('restock-add-qty');
+
+  if (idInput) idInput.value = product.id;
+  if (nameEl) nameEl.textContent = product.name;
+  if (curQtyEl) curQtyEl.textContent = String(product.stock_qty);
+  if (addQtyInput) addQtyInput.value = '10';
 
   document.getElementById('modal-restock')?.classList.remove('hidden');
-  document.getElementById('restock-qty-input')?.focus();
+  if (addQtyInput) setTimeout(() => addQtyInput.focus(), 80);
 }
 
 async function handleRestockSubmit(e) {
   e.preventDefault();
-  const productId = document.getElementById('restock-product-id')?.value;
-  const addQty = document.getElementById('restock-qty-input')?.value;
-  const newCost = document.getElementById('restock-cost-input')?.value;
-  const newSell = document.getElementById('restock-selling-input')?.value;
+  const productId = document.getElementById('restock-prod-id')?.value;
+  const addQty = document.getElementById('restock-add-qty')?.value;
 
   try {
-    const updated = await window.HolyStarDB.restockProduct(productId, addQty, newCost, newSell);
+    const updated = await window.HolyStarDB.restockProduct(productId, addQty);
     document.getElementById('modal-restock')?.classList.add('hidden');
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'inventory_restocked');
@@ -1391,7 +1456,7 @@ async function handleDeleteProduct(productId) {
 
   try {
     await window.HolyStarDB.deleteProduct(productId);
-    AppState.cart = AppState.cart.filter((c) => c.productId !== productId);
+    AppState.cart = AppState.cart.filter((c) => c.id !== productId);
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'inventory_deleted');
     showToast(`Deleted "${product.name}".`, 'info');
@@ -1406,35 +1471,42 @@ async function handleDeleteProduct(productId) {
 
 function renderDebtorsView() {
   const tbody = document.getElementById('debtors-table-body');
-  const totalOwedEl = document.getElementById('debtor-stat-total-owed');
-  const unpaidCountEl = document.getElementById('debtor-stat-unpaid-count');
-  const clearedCountEl = document.getElementById('debtor-stat-cleared-count');
+  const totalOwedEl = document.getElementById('debtors-total-unpaid');
+  const unpaidCountEl = document.getElementById('debtors-unpaid-count');
+  const recoveredEl = document.getElementById('debtors-total-recovered');
+  const navBadgeDebtors = document.getElementById('nav-badge-debtors');
 
   if (!tbody) return;
 
   let totalOutstanding = 0;
   let unpaidCustomers = 0;
-  let clearedCustomers = 0;
+  let totalRecovered = 0;
 
   for (const d of AppState.debtors) {
     const owed = Number(d.total_owed || 0);
+    totalRecovered += Number(d.total_paid || 0);
     if (owed > 0) {
       totalOutstanding += owed;
       unpaidCustomers++;
-    } else {
-      clearedCustomers++;
     }
   }
 
   if (totalOwedEl) totalOwedEl.textContent = formatGHS(totalOutstanding);
   if (unpaidCountEl) unpaidCountEl.textContent = String(unpaidCustomers);
-  if (clearedCountEl) clearedCountEl.textContent = String(clearedCustomers);
+  if (recoveredEl) recoveredEl.textContent = formatGHS(totalRecovered);
+
+  if (navBadgeDebtors) {
+    navBadgeDebtors.textContent = String(unpaidCustomers);
+    navBadgeDebtors.classList.toggle('hidden', unpaidCustomers === 0);
+  }
 
   const query = AppState.debtorSearchQuery.trim().toLowerCase();
+  const statusFilter = AppState.debtorFilter || 'ALL';
+
   const filtered = AppState.debtors.filter((d) => {
     const owed = Number(d.total_owed || 0);
-    if (AppState.debtorFilter === 'UNPAID' && owed <= 0) return false;
-    if (AppState.debtorFilter === 'CLEARED' && owed > 0) return false;
+    if (statusFilter === 'Unpaid' && owed <= 0) return false;
+    if (statusFilter === 'Cleared' && owed > 0) return false;
 
     if (!query) return true;
     return (
@@ -1447,7 +1519,7 @@ function renderDebtorsView() {
   if (filtered.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="6" style="text-align:center; padding:2rem; color:var(--text-secondary);">
+        <td colspan="7" style="text-align:center; padding:2rem; color:var(--text-secondary);">
           No debtor records in this store. Credit sales from POS Checkout or manual entries will appear here.
         </td>
       </tr>
@@ -1460,43 +1532,35 @@ function renderDebtorsView() {
       const owed = Number(d.total_owed || 0);
       const isCleared = owed <= 0;
 
-      const latestItemsSummary = getDebtorItemsSummaryText(d);
-
       return `
         <tr>
           <td>
             <div style="font-weight:800; color:var(--text-primary);">${escapeHtml(d.name)}</div>
-            <div style="font-size:0.78rem; color:var(--text-secondary);">📞 ${escapeHtml(d.phone)}</div>
+            <div style="font-size:0.75rem; color:var(--text-secondary);">${escapeHtml(getDebtorItemsSummaryText(d))}</div>
           </td>
+          <td style="font-weight:700;">📞 ${escapeHtml(d.phone)}</td>
           <td>
-            <span style="font-size:0.84rem; font-weight:600;">📍 ${escapeHtml(d.location)}</span>
-            ${d.due_date ? `<div style="font-size:0.74rem; color:var(--warning);">Due: ${escapeHtml(d.due_date)}</div>` : ''}
-          </td>
-          <td style="max-width:220px; font-size:0.8rem; color:var(--text-secondary);">
-            ${escapeHtml(latestItemsSummary)}
+            <span>📍 ${escapeHtml(d.location)}</span>
+            ${d.due_date ? `<div style="font-size:0.73rem; color:var(--warning);">Due: ${escapeHtml(d.due_date)}</div>` : ''}
           </td>
           <td>
             <span style="font-weight:900; font-size:0.98rem; color:${isCleared ? 'var(--success)' : 'var(--danger)'};">
               ${formatGHS(owed)}
             </span>
-            <div style="font-size:0.73rem; color:var(--text-muted);">Paid so far: ${formatGHS(d.total_paid || 0)}</div>
           </td>
+          <td style="font-size:0.78rem; color:var(--text-secondary);">${formatDateTime(d.updated_at)}</td>
           <td>
-            ${
-              isCleared
-                ? `<span class="badge badge-success">✔ Cleared</span>`
-                : `<span class="badge badge-danger">Unpaid</span>`
-            }
+            ${isCleared
+              ? `<span class="badge badge-success">✔ Cleared</span>`
+              : `<span class="badge badge-danger">Unpaid</span>`}
           </td>
           <td>
             <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
-              ${
-                !isCleared
-                  ? `<button type="button" class="btn btn-primary btn-sm btn-pay-debt" data-id="${escapeHtml(d.id)}">💵 Record Payment</button>
-                     <button type="button" class="btn btn-whatsapp btn-sm btn-remind-whatsapp" data-id="${escapeHtml(d.id)}" title="Send WhatsApp Reminder">💬 WhatsApp</button>
-                     <button type="button" class="btn btn-outline btn-sm btn-remind-sms" data-id="${escapeHtml(d.id)}" title="Send SMS Reminder">📩 SMS</button>`
-                  : ''
-              }
+              ${!isCleared
+                ? `<button type="button" class="btn btn-primary btn-sm btn-pay-debt" data-id="${escapeHtml(d.id)}">💵 Pay</button>
+                   <button type="button" class="btn btn-whatsapp btn-sm btn-remind-whatsapp" data-id="${escapeHtml(d.id)}">💬 WhatsApp</button>
+                   <button type="button" class="btn btn-outline btn-sm btn-remind-sms" data-id="${escapeHtml(d.id)}">📩 SMS</button>`
+                : ''}
               <button type="button" class="btn btn-outline btn-sm btn-debtor-history" data-id="${escapeHtml(d.id)}">📜 History</button>
             </div>
           </td>
@@ -1559,8 +1623,7 @@ function sendDebtorReminder(debtorId, channel = 'WHATSAPP') {
     const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank', 'noopener,noreferrer');
   } else {
-    const smsUrl = `sms:${debtor.phone}?body=${encodeURIComponent(message)}`;
-    window.location.href = smsUrl;
+    window.location.href = `sms:${debtor.phone}?body=${encodeURIComponent(message)}`;
   }
 }
 
@@ -1568,24 +1631,33 @@ function openRecordPaymentModal(debtorId) {
   const debtor = AppState.debtors.find((d) => d.id === debtorId);
   if (!debtor) return;
 
-  document.getElementById('pay-debtor-id').value = debtor.id;
-  document.getElementById('pay-debtor-name').textContent = `${debtor.name} (${debtor.phone})`;
-  document.getElementById('pay-debtor-current-owed').textContent = formatGHS(debtor.total_owed);
-  const amountInput = document.getElementById('pay-debtor-amount');
-  amountInput.value = debtor.total_owed;
-  amountInput.max = debtor.total_owed;
-  document.getElementById('pay-debtor-note').value = '';
+  const idInput = document.getElementById('pay-debtor-id');
+  const nameEl = document.getElementById('pay-debtor-name');
+  const phoneEl = document.getElementById('pay-debtor-phone');
+  const owedEl = document.getElementById('pay-debtor-current-owed');
+  const amountInput = document.getElementById('pay-amount-input');
+  const noteInput = document.getElementById('pay-note-input');
 
-  document.getElementById('modal-record-payment')?.classList.remove('hidden');
-  amountInput.focus();
+  if (idInput) idInput.value = debtor.id;
+  if (nameEl) nameEl.textContent = debtor.name;
+  if (phoneEl) phoneEl.textContent = `${debtor.phone} • ${debtor.location}`;
+  if (owedEl) owedEl.textContent = formatGHS(debtor.total_owed);
+  if (amountInput) {
+    amountInput.value = debtor.total_owed;
+    amountInput.max = debtor.total_owed;
+  }
+  if (noteInput) noteInput.value = '';
+
+  document.getElementById('modal-debtor-payment')?.classList.remove('hidden');
+  if (amountInput) setTimeout(() => amountInput.focus(), 80);
 }
 
 async function handleRecordDebtorPayment(e) {
   e.preventDefault();
   const debtorId = document.getElementById('pay-debtor-id')?.value;
-  const amount = document.getElementById('pay-debtor-amount')?.value;
-  const paymentMethod = document.getElementById('pay-debtor-method')?.value || 'Cash';
-  const note = document.getElementById('pay-debtor-note')?.value || '';
+  const amount = document.getElementById('pay-amount-input')?.value;
+  const paymentMethod = document.getElementById('pay-method-select')?.value || 'Cash';
+  const note = document.getElementById('pay-note-input')?.value || '';
 
   try {
     const { debtor, paymentEntry } = await window.HolyStarDB.recordDebtorPayment({
@@ -1595,7 +1667,7 @@ async function handleRecordDebtorPayment(e) {
       note
     });
 
-    document.getElementById('modal-record-payment')?.classList.add('hidden');
+    document.getElementById('modal-debtor-payment')?.classList.add('hidden');
     await refreshAllData();
     showToast(
       `Recorded ${formatGHS(paymentEntry.amount_paid)} (${paymentMethod}) from ${debtor.name}. Remaining balance: ${formatGHS(debtor.total_owed)}`,
@@ -1608,12 +1680,12 @@ async function handleRecordDebtorPayment(e) {
 
 async function handleAddManualDebtor(e) {
   e.preventDefault();
-  const name = document.getElementById('manual-debtor-name')?.value;
-  const phone = document.getElementById('manual-debtor-phone')?.value;
-  const location = document.getElementById('manual-debtor-location')?.value;
-  const amountOwed = document.getElementById('manual-debtor-amount')?.value;
-  const itemDescription = document.getElementById('manual-debtor-items')?.value;
-  const dueDate = document.getElementById('manual-debtor-due')?.value;
+  const name = document.getElementById('mdebtor-name')?.value;
+  const phone = document.getElementById('mdebtor-phone')?.value;
+  const location = document.getElementById('mdebtor-location')?.value;
+  const amountOwed = document.getElementById('mdebtor-amount')?.value;
+  const itemDescription = document.getElementById('mdebtor-desc')?.value;
+  const dueDate = document.getElementById('mdebtor-due')?.value;
 
   try {
     const debtor = await window.HolyStarDB.addManualDebtor({
@@ -1640,13 +1712,18 @@ function openDebtorHistoryModal(debtorId) {
 
   const modal = document.getElementById('modal-debtor-history');
   const titleEl = document.getElementById('history-debtor-title');
-  const metaEl = document.getElementById('history-debtor-meta');
-  const listEl = document.getElementById('history-debtor-timeline');
+  const summaryEl = document.getElementById('history-debtor-summary');
+  const listEl = document.getElementById('history-timeline-list');
 
   if (!modal || !listEl) return;
 
-  titleEl.textContent = `📜 Credit Ledger — ${debtor.name}`;
-  metaEl.textContent = `Phone: ${debtor.phone} • Location: ${debtor.location} • Current Balance Owed: ${formatGHS(debtor.total_owed)}`;
+  if (titleEl) titleEl.textContent = `📜 Credit Ledger — ${debtor.name}`;
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <div><strong>Phone:</strong> ${escapeHtml(debtor.phone)} • <strong>Location:</strong> ${escapeHtml(debtor.location)}</div>
+      <div style="margin-top:0.25rem;"><strong>Total Paid:</strong> ${formatGHS(debtor.total_paid || 0)} • <strong>Balance Owed:</strong> <span style="color:var(--danger); font-weight:800;">${formatGHS(debtor.total_owed)}</span></div>
+    `;
+  }
 
   const history = Array.isArray(debtor.history) ? debtor.history : [];
   if (history.length === 0) {
@@ -1656,7 +1733,7 @@ function openDebtorHistoryModal(debtorId) {
       .map((h) => {
         if (h.type === 'PAYMENT') {
           return `
-            <div style="border-left:4px solid var(--success); background:var(--success-bg); padding:0.7rem; border-radius:6px; margin-bottom:0.6rem;">
+            <div style="border-left:4px solid var(--success); background:var(--success-bg); padding:0.7rem; border-radius:6px;">
               <div style="display:flex; justify-content:space-between; font-weight:800; color:var(--success);">
                 <span>💵 Debt Repayment (${escapeHtml(h.payment_method)})</span>
                 <span>− ${formatGHS(h.amount_paid)}</span>
@@ -1672,7 +1749,7 @@ function openDebtorHistoryModal(debtorId) {
             ? h.items.map((i) => `${i.qty}x ${i.name} (${formatGHS(i.subtotal)})`).join(', ')
             : h.note || 'Credit purchase';
           return `
-            <div style="border-left:4px solid var(--danger); background:var(--danger-bg); padding:0.7rem; border-radius:6px; margin-bottom:0.6rem;">
+            <div style="border-left:4px solid var(--danger); background:var(--danger-bg); padding:0.7rem; border-radius:6px;">
               <div style="display:flex; justify-content:space-between; font-weight:800; color:var(--danger);">
                 <span>📝 Credit Taken ${h.sale_id ? `(#${escapeHtml(h.sale_id)})` : ''}</span>
                 <span>+ ${formatGHS(h.amount_added_to_debt)}</span>
@@ -1732,11 +1809,12 @@ function renderReportsView() {
       salesTbody.innerHTML = report.sales
         .map((s) => {
           const itemSummary = (s.items || []).map((i) => `${i.qty}x ${i.name}`).join(', ');
+          const custName = s.customer ? s.customer.name : (s.customer_name || '');
           let methodBadge = `<span class="badge badge-success">💵 Cash</span>`;
           if (s.payment_method === 'MoMo') {
             methodBadge = `<span class="badge badge-info">📱 MoMo</span>`;
           } else if (s.payment_method === 'Credit') {
-            methodBadge = `<span class="badge badge-danger">📒 Credit (${escapeHtml(s.customer_name)})</span>`;
+            methodBadge = `<span class="badge badge-danger">📒 Credit ${custName ? `(${escapeHtml(custName)})` : ''}</span>`;
           }
 
           return `
@@ -1808,7 +1886,9 @@ function buildCloseDaySummaryText() {
     m.newCreditGiven
   );
 
-  const lowStockItems = AppState.products.filter((p) => Number(p.stock_qty || 0) <= Number(p.low_stock_alert || 5));
+  const lowStockItems = AppState.products.filter(
+    (p) => Number(p.stock_qty || 0) <= Number(p.low_stock_threshold ?? p.low_stock_alert ?? 5)
+  );
   const lowStockLine = lowStockItems.length > 0
     ? lowStockItems.slice(0, 6).map((p) => `${p.name} (${p.stock_qty})`).join(', ')
     : 'All items well stocked';
@@ -1836,10 +1916,29 @@ function buildCloseDaySummaryText() {
 
 function openCloseDayModal() {
   const modal = document.getElementById('modal-close-day');
-  const preview = document.getElementById('close-day-report-preview');
+  const preview = document.getElementById('close-day-report-text');
+  const phoneDisplay = document.getElementById('close-day-owner-phone-display');
+  const waBtn = document.getElementById('btn-close-day-whatsapp');
+  const smsBtn = document.getElementById('btn-close-day-sms');
+
   if (!modal || !preview) return;
 
-  preview.textContent = buildCloseDaySummaryText();
+  const text = buildCloseDaySummaryText();
+  preview.textContent = text;
+
+  const ownerPhone = AppState.store?.owner_phone || '';
+  if (phoneDisplay) phoneDisplay.textContent = ownerPhone || 'Not set';
+
+  const cleanPhone = cleanPhoneForWhatsApp(ownerPhone);
+  if (waBtn) {
+    waBtn.href = cleanPhone
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+  }
+  if (smsBtn) {
+    smsBtn.href = `sms:${ownerPhone}?body=${encodeURIComponent(text)}`;
+  }
+
   modal.classList.remove('hidden');
 }
 
@@ -1872,52 +1971,44 @@ async function renderSettingsView() {
 
   if (clockStatusDisplay) {
     clockStatusDisplay.innerHTML = AppState.licenseStatus.tampered
-      ? `<span style="color:var(--danger); font-weight:700;">⚠️ Clock Rollback Detected (Last valid: ${formatDateTime(s.last_seen_timestamp)})</span>`
-      : `<span style="color:var(--success); font-weight:700;">✔ Verified Monotonic (${formatDateTime(s.last_seen_timestamp)})</span>`;
+      ? `<span style="color:var(--danger); font-weight:700;">⚠️ Clock Rollback Detected</span>`
+      : `<span style="color:var(--success); font-weight:700;">✔ Verified</span>`;
   }
 
-  const nameInput = document.getElementById('settings-shop-name');
-  const catInput = document.getElementById('settings-shop-category');
-  const ownerNameInput = document.getElementById('settings-owner-name');
-  const phoneInput = document.getElementById('settings-owner-phone');
-  const locInput = document.getElementById('settings-shop-location');
+  const setShopId = document.getElementById('setting-shop-id');
+  const setShopName = document.getElementById('setting-shop-name');
+  const setOwnerPhone = document.getElementById('setting-owner-phone');
+  const setShopLoc = document.getElementById('setting-shop-location');
 
-  if (nameInput) nameInput.value = s.store_name || s.shop_name || '';
-  if (catInput && s.store_category) catInput.value = s.store_category;
-  if (ownerNameInput) ownerNameInput.value = s.owner_name || '';
-  if (phoneInput) phoneInput.value = s.owner_phone || '';
-  if (locInput) locInput.value = s.location || '';
+  if (setShopId) setShopId.value = s.store_id || s.shop_id || 'HS-0000';
+  if (setShopName) setShopName.value = s.store_name || s.shop_name || '';
+  if (setOwnerPhone) setOwnerPhone.value = s.owner_phone || '';
+  if (setShopLoc) setShopLoc.value = s.shop_location || s.location || '';
 
   const usedTokens = await window.HolyStarDB.getUsedTokens();
-  const usedBody = document.getElementById('used-tokens-tbody');
-  if (usedBody) {
+  const usedList = document.getElementById('used-tokens-list');
+  if (usedList) {
     if (usedTokens.length === 0) {
-      usedBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-secondary);">No tokens redeemed yet in this store.</td></tr>`;
+      usedList.textContent = 'No tokens used yet.';
     } else {
-      usedBody.innerHTML = usedTokens
-        .map((t) => `
-          <tr>
-            <td style="font-family:monospace; font-weight:800;">${escapeHtml(t.token)}</td>
-            <td>${escapeHtml(t.issue_code)}</td>
-            <td>+${escapeHtml(t.plan_days)} Days</td>
-            <td>${formatDateTime(t.activated_at)}</td>
-          </tr>
-        `)
+      usedList.innerHTML = usedTokens
+        .map((t) => `<div style="padding:0.2rem 0; border-bottom:1px solid #e2e8f0;"><strong>${escapeHtml(t.token_code || t.token)}</strong> (+${escapeHtml(t.plan_days)}d • #${escapeHtml(t.issue_code)}) — ${escapeHtml(formatDateTime(t.applied_at || t.activated_at))}</div>`)
         .join('');
     }
   }
+
+  const telemetryPre = document.getElementById('telemetry-json-preview');
+  if (telemetryPre) {
+    const summary = await window.HolyStarDB.getStoreTelemetrySummary(s.store_id);
+    telemetryPre.textContent = JSON.stringify(summary || {}, null, 2);
+  }
 }
 
-/**
- * Verify an 8-character token against the active store ID.
- * Supports explicit or auto-detected Issue Codes (`001`..`500`) and Plan Days (`7`, `14`, `30`, or Custom `1..365`).
- */
 function matchSubscriptionToken(shopId, enteredToken, optionalIssueCode, selectedPlanOption) {
   const candidateIssueCodes = [];
   if (optionalIssueCode) {
     candidateIssueCodes.push(optionalIssueCode);
   } else {
-    // Auto-scan standard serial codes 001..200 and 1..200 plus current month/year codes
     for (let i = 1; i <= 200; i++) {
       candidateIssueCodes.push(String(i).padStart(3, '0'));
       candidateIssueCodes.push(String(i));
@@ -1931,7 +2022,6 @@ function matchSubscriptionToken(shopId, enteredToken, optionalIssueCode, selecte
     candidateIssueCodes.push('ADMIN', 'RENEW', 'SAAS', 'POS');
   }
 
-  // Candidate plan days: prioritize selected plan or common plans (7, 14, 30, 60, 90, 180, 365), then 1..365
   const candidateDays = [];
   const pushUniqueDay = (d) => {
     const n = Number(d);
@@ -1975,7 +2065,6 @@ async function handleActivateToken(e) {
 
   const shopId = AppState.store?.store_id || 'HS-0000';
 
-  // Match token (first with user-supplied issue code if present, then auto-scan if needed)
   let matchResult = matchSubscriptionToken(shopId, enteredToken, rawIssue, selectedPlan);
   if (!matchResult && rawIssue) {
     matchResult = matchSubscriptionToken(shopId, enteredToken, '', selectedPlan);
@@ -1990,22 +2079,16 @@ async function handleActivateToken(e) {
   }
 
   const { matchedDays, matchedIssueCode } = matchResult;
-  const tokenId = `${shopId}-${matchedDays}D-${matchedIssueCode}-${enteredToken}`;
-  const alreadyUsed = await window.HolyStarDB.isTokenUsed(tokenId);
-  if (alreadyUsed) {
-    showToast(`This token (${enteredToken}) has already been used on this store and cannot be replayed.`, 'error');
-    return;
-  }
+  const tokenKey = `${shopId}-${matchedDays}D-${matchedIssueCode}-${enteredToken}`;
 
   try {
-    await window.HolyStarDB.recordUsedToken({
-      token_id: tokenId,
-      token: enteredToken,
-      issue_code: matchedIssueCode,
-      plan_days: matchedDays
+    await window.HolyStarDB.applyLicenseToken({
+      tokenKey,
+      tokenCode: enteredToken,
+      issueCode: matchedIssueCode,
+      planDays: matchedDays,
+      shopId
     });
-
-    await window.HolyStarDB.extendStoreLicense(matchedDays, `${matchedDays}-Day Prepaid Pass`);
 
     if (issueCodeInput) issueCodeInput.value = '';
     if (tokenInput) tokenInput.value = '';
@@ -2020,11 +2103,9 @@ async function handleActivateToken(e) {
 
 async function handleSaveShopSettings(e) {
   e.preventDefault();
-  const shopName = String(document.getElementById('settings-shop-name')?.value || '').trim();
-  const shopCat = String(document.getElementById('settings-shop-category')?.value || 'Provision & Mini-Mart').trim();
-  const ownerName = String(document.getElementById('settings-owner-name')?.value || '').trim();
-  const ownerPhone = String(document.getElementById('settings-owner-phone')?.value || '').trim();
-  const location = String(document.getElementById('settings-shop-location')?.value || '').trim();
+  const shopName = String(document.getElementById('setting-shop-name')?.value || '').trim();
+  const ownerPhone = String(document.getElementById('setting-owner-phone')?.value || '').trim();
+  const location = String(document.getElementById('setting-shop-location')?.value || '').trim();
 
   if (!shopName) {
     showToast('Store Name cannot be empty.', 'error');
@@ -2032,12 +2113,11 @@ async function handleSaveShopSettings(e) {
   }
 
   try {
-    await window.HolyStarDB.updateActiveStoreSettings({
+    await window.HolyStarDB.saveSettings({
       store_name: shopName,
       shop_name: shopName,
-      store_category: shopCat,
-      owner_name: ownerName,
       owner_phone: ownerPhone,
+      shop_location: location,
       location
     });
 
@@ -2051,13 +2131,13 @@ async function handleSaveShopSettings(e) {
 
 async function handleSimulateExpiredLicense() {
   try {
-    await window.HolyStarDB.updateActiveStoreSettings({
+    await window.HolyStarDB.saveSettings({
       license_expiry: Date.now() - 60 * 1000,
       license_plan: 'Expired (Simulated for Testing)'
     });
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'license_expired_sim');
-    showToast('License set to Expired! Try generating an Unlock Token in Super-Admin to unlock.', 'info');
+    showToast('License set to Expired! Generate an Unlock Token in Super-Admin to unlock.', 'info');
   } catch (err) {
     showToast('Failed to simulate expiry: ' + err.message, 'error');
   }
@@ -2082,35 +2162,37 @@ async function handleExportBackup() {
   }
 }
 
-async function handleImportBackup(e) {
-  const file = e.target.files?.[0];
-  if (!file) return;
+async function handleRestoreBackupClick() {
+  const fileInput = document.getElementById('restore-file-input');
+  const file = fileInput?.files?.[0];
+  if (!file) {
+    showToast('Please select a HolyStarPOS .json backup file first.', 'error');
+    return;
+  }
 
   try {
     const text = await file.text();
     const json = JSON.parse(text);
-    if (!confirm(`Restore backup from ${json.exported_at || 'file'}? This will update store ${json.shop_id || ''}.`)) {
-      e.target.value = '';
+    if (!confirm(`Restore backup from ${json.exported_at || 'file'}?`)) {
       return;
     }
 
     await window.HolyStarDB.restoreFullBackup(json);
-    e.target.value = '';
+    fileInput.value = '';
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'backup_restored');
-    showToast('Database backup restored!', 'success');
+    showToast('Database backup restored successfully!', 'success');
   } catch (err) {
-    e.target.value = '';
     showToast('Restore failed: ' + err.message, 'error');
   }
 }
 
 // ============================================================================
-// UI EVENT BINDINGS
+// UI EVENT BINDINGS (100% NULL-SAFE & MATCHED TO INDEX.HTML)
 // ============================================================================
 
 function bindUIEvents() {
-  // Auth Tabs
+  // 1. Auth Tabs
   document.querySelectorAll('.auth-tab-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       switchAuthTab(btn.dataset.authTab);
@@ -2137,7 +2219,8 @@ function bindUIEvents() {
       const { store, session } = await window.HolyStarDB.loginToStore({ identifier, password });
       AppState.store = store;
       AppState.session = session;
-      document.getElementById('login-password').value = '';
+      const passEl = document.getElementById('login-password');
+      if (passEl) passEl.value = '';
       hideAuthOverlay();
       await refreshAllData();
       window.HolyStarDB.syncTelemetryHeartbeat(store.store_id, 'store_login');
@@ -2150,31 +2233,30 @@ function bindUIEvents() {
   // Register New Store Form Submit (100% Empty Store Guaranteed)
   document.getElementById('form-auth-register')?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const storeName = document.getElementById('reg-store-name')?.value;
-    const storeCategory = document.getElementById('reg-store-category')?.value;
-    const ownerName = document.getElementById('reg-owner-name')?.value;
-    const ownerPhone = document.getElementById('reg-owner-phone')?.value;
-    const password = document.getElementById('reg-owner-password')?.value;
-    const location = document.getElementById('reg-store-location')?.value;
+    const store_name = document.getElementById('reg-store-name')?.value;
+    const store_category = document.getElementById('reg-store-category')?.value;
+    const owner_name = document.getElementById('reg-owner-name')?.value;
+    const owner_phone = document.getElementById('reg-owner-phone')?.value;
+    const owner_password = document.getElementById('reg-owner-password')?.value;
+    const store_location = document.getElementById('reg-store-location')?.value;
 
     try {
-      // Reset in-memory state so new store starts 100% blank
       AppState.cart = [];
       AppState.products = [];
       AppState.debtors = [];
       AppState.dailyReport = null;
 
-      const store = await window.HolyStarDB.registerNewStore({
-        storeName,
-        storeCategory,
-        ownerName,
-        ownerPhone,
-        password,
-        location
+      const { store, session } = await window.HolyStarDB.registerNewStore({
+        store_name,
+        store_category,
+        owner_name,
+        owner_phone,
+        owner_password,
+        store_location
       });
 
       AppState.store = store;
-      AppState.session = window.HolyStarDB.getActiveSession();
+      AppState.session = session;
       e.target.reset();
       hideAuthOverlay();
       await refreshAllData();
@@ -2185,9 +2267,9 @@ function bindUIEvents() {
     }
   });
 
-  // Log Out / Switch Store Button
+  // 2. Log Out / Switch Store Button (Immediate Response)
   document.getElementById('btn-logout-store')?.addEventListener('click', async () => {
-    window.HolyStarDB.clearActiveSession();
+    window.HolyStarDB.logoutSession();
     AppState.session = null;
     AppState.store = null;
     AppState.cart = [];
@@ -2197,11 +2279,10 @@ function bindUIEvents() {
     showToast('Logged out of store.', 'info');
   });
 
-  // Main Navigation Tabs
+  // 3. Main Navigation Tabs
   document.querySelectorAll('.nav-tab').forEach((tabBtn) => {
     tabBtn.addEventListener('click', () => {
-      const targetId = tabBtn.dataset.tab;
-      switchTab(targetId);
+      switchTab(tabBtn.dataset.tab);
     });
   });
 
@@ -2209,11 +2290,25 @@ function bindUIEvents() {
     switchTab('tab-settings');
   });
 
-  document.getElementById('btn-unlock-now')?.addEventListener('click', () => {
+  document.getElementById('btn-banner-unlock')?.addEventListener('click', () => {
     switchTab('tab-settings');
   });
 
-  // POS Search & Barcode Scanner
+  document.getElementById('btn-recheck-clock')?.addEventListener('click', async () => {
+    await verifyClockAndLicenseState();
+    showToast('Device clock re-checked.', 'info');
+  });
+
+  // 4. Add Product Modal Triggers (Both POS Tab & Inventory Tab)
+  document.getElementById('btn-pos-add-stock')?.addEventListener('click', () => {
+    openProductModal(null);
+  });
+
+  document.getElementById('btn-open-product-modal')?.addEventListener('click', () => {
+    openProductModal(null);
+  });
+
+  // 5. POS Search & Barcode Scanner
   const posSearch = document.getElementById('pos-search-input');
   if (posSearch) {
     posSearch.addEventListener('input', () => {
@@ -2226,40 +2321,49 @@ function bindUIEvents() {
     openBarcodeScanner('POS');
   });
 
-  document.getElementById('btn-scan-product-barcode')?.addEventListener('click', () => {
+  document.getElementById('btn-modal-scan-barcode')?.addEventListener('click', () => {
     openBarcodeScanner('STOCK_INPUT');
   });
 
-  document.getElementById('form-manual-barcode-scan')?.addEventListener('submit', (e) => {
+  document.getElementById('form-manual-barcode')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    const code = document.getElementById('scanner-manual-code-input')?.value;
+    const code = document.getElementById('manual-barcode-input')?.value;
     if (code) handleDetectedBarcode(code);
   });
 
-  document.getElementById('btn-close-scanner-modal')?.addEventListener('click', () => {
-    stopBarcodeScanner();
-  });
+  document.getElementById('btn-close-scanner')?.addEventListener('click', stopBarcodeScanner);
+  document.getElementById('btn-cancel-scanner')?.addEventListener('click', stopBarcodeScanner);
 
-  // Clear Cart
+  // 6. Cart & Payment Method Controls
   document.getElementById('btn-clear-cart')?.addEventListener('click', () => {
     AppState.cart = [];
     renderCart();
     renderPosProductGrid();
   });
 
-  // Payment Method Radio Toggle
-  document.querySelectorAll('input[name="payment_method"]').forEach((radio) => {
-    radio.addEventListener('change', updatePaymentcalculations);
+  document.querySelectorAll('.pay-method-option').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      selectPaymentMethod(btn.dataset.method || 'Cash');
+    });
   });
 
-  document.getElementById('cash-tendered-input')?.addEventListener('input', updatePaymentcalculations);
-  document.getElementById('credit-initial-deposit')?.addEventListener('input', updatePaymentcalculations);
+  document.getElementById('cash-tendered-input')?.addEventListener('input', updatePaymentCalculations);
+  document.getElementById('credit-initial-deposit')?.addEventListener('input', updatePaymentCalculations);
 
-  // Complete Sale
+  document.getElementById('credit-existing-select')?.addEventListener('change', (e) => {
+    const debtorId = e.target.value;
+    const debtor = AppState.debtors.find((d) => d.id === debtorId);
+    if (debtor) {
+      document.getElementById('credit-customer-name').value = debtor.name || '';
+      document.getElementById('credit-customer-phone').value = debtor.phone || '';
+      document.getElementById('credit-customer-location').value = debtor.location || '';
+    }
+  });
+
   document.getElementById('btn-complete-sale')?.addEventListener('click', handleCompleteSale);
 
-  // Inventory Search & Modals
-  const invSearch = document.getElementById('inventory-search-input');
+  // 7. Inventory Search, Filter & Product Form
+  const invSearch = document.getElementById('inv-search-input');
   if (invSearch) {
     invSearch.addEventListener('input', () => {
       AppState.inventorySearchQuery = invSearch.value;
@@ -2267,14 +2371,21 @@ function bindUIEvents() {
     });
   }
 
-  document.getElementById('btn-open-add-product')?.addEventListener('click', () => openProductModal(null));
-  document.getElementById('product-cost-input')?.addEventListener('input', updateLiveUnitProfitPreview);
-  document.getElementById('product-selling-input')?.addEventListener('input', updateLiveUnitProfitPreview);
+  const invFilter = document.getElementById('inv-stock-filter');
+  if (invFilter) {
+    invFilter.addEventListener('change', () => {
+      AppState.inventoryStockFilter = invFilter.value;
+      renderInventoryView();
+    });
+  }
+
+  document.getElementById('prod-cost')?.addEventListener('input', updateLiveUnitProfitPreview);
+  document.getElementById('prod-price')?.addEventListener('input', updateLiveUnitProfitPreview);
   document.getElementById('form-product')?.addEventListener('submit', handleSaveProductForm);
   document.getElementById('form-restock')?.addEventListener('submit', handleRestockSubmit);
 
-  // Smart Catalog Autocomplete on Product Name Input
-  const prodNameInput = document.getElementById('product-name-input');
+  // Smart Catalog Autocomplete on `#prod-name`
+  const prodNameInput = document.getElementById('prod-name');
   if (prodNameInput) {
     prodNameInput.addEventListener('input', () => {
       renderCatalogSuggestions(prodNameInput.value);
@@ -2294,31 +2405,24 @@ function bindUIEvents() {
   });
 
   // Product Photo Upload / Camera Capture
-  document.getElementById('product-photo-file-input')?.addEventListener('change', async (e) => {
+  document.getElementById('prod-image-file')?.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
       const dataUrl = await compressImageToDataUrl(file, 160);
       AppState.currentProductThumbnail = dataUrl;
-      const preview = document.getElementById('product-thumb-preview');
+      const preview = document.getElementById('prod-image-preview');
+      const imgData = document.getElementById('prod-image-data');
       if (preview) preview.src = dataUrl;
+      if (imgData) imgData.value = dataUrl;
       showToast('Product photo attached!', 'success');
     } catch (err) {
       showToast('Failed to process photo.', 'error');
     }
   });
 
-  // Debtors Filter & Search
-  document.querySelectorAll('.debtor-filter-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.debtor-filter-btn').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      AppState.debtorFilter = btn.dataset.filter;
-      renderDebtorsView();
-    });
-  });
-
-  const debtorSearch = document.getElementById('debtor-search-input');
+  // 8. Debtors Filter, Search & Modals
+  const debtorSearch = document.getElementById('debtors-search-input');
   if (debtorSearch) {
     debtorSearch.addEventListener('input', () => {
       AppState.debtorSearchQuery = debtorSearch.value;
@@ -2326,15 +2430,32 @@ function bindUIEvents() {
     });
   }
 
-  document.getElementById('btn-open-manual-debtor')?.addEventListener('click', () => {
+  const debtorStatusSelect = document.getElementById('debtors-status-filter');
+  if (debtorStatusSelect) {
+    debtorStatusSelect.addEventListener('change', () => {
+      AppState.debtorFilter = debtorStatusSelect.value;
+      renderDebtorsView();
+    });
+  }
+
+  document.getElementById('btn-open-manual-debtor-modal')?.addEventListener('click', () => {
     document.getElementById('modal-manual-debtor')?.classList.remove('hidden');
   });
 
   document.getElementById('form-manual-debtor')?.addEventListener('submit', handleAddManualDebtor);
-  document.getElementById('form-record-payment')?.addEventListener('submit', handleRecordDebtorPayment);
+  document.getElementById('form-debtor-payment')?.addEventListener('submit', handleRecordDebtorPayment);
 
-  // Reports Date Picker & Close-Day Report
-  const reportDateInput = document.getElementById('report-date-picker');
+  document.getElementById('btn-pay-full-balance')?.addEventListener('click', () => {
+    const debtorId = document.getElementById('pay-debtor-id')?.value;
+    const debtor = AppState.debtors.find((d) => d.id === debtorId);
+    const amountInput = document.getElementById('pay-amount-input');
+    if (debtor && amountInput) {
+      amountInput.value = debtor.total_owed;
+    }
+  });
+
+  // 9. Sales Reports & Close-Day Modal
+  const reportDateInput = document.getElementById('sales-date-picker');
   if (reportDateInput) {
     reportDateInput.addEventListener('change', async () => {
       AppState.selectedReportDate = reportDateInput.value || window.HolyStarDB.formatLocalDate();
@@ -2343,68 +2464,53 @@ function bindUIEvents() {
     });
   }
 
-  document.getElementById('btn-report-today')?.addEventListener('click', async () => {
+  document.getElementById('btn-sales-today')?.addEventListener('click', async () => {
     AppState.selectedReportDate = window.HolyStarDB.formatLocalDate();
     if (reportDateInput) reportDateInput.value = AppState.selectedReportDate;
     AppState.dailyReport = await window.HolyStarDB.getDailyReport(AppState.selectedReportDate);
     renderReportsView();
   });
 
-  document.getElementById('btn-open-close-day')?.addEventListener('click', openCloseDayModal);
+  document.getElementById('btn-open-close-day-modal')?.addEventListener('click', openCloseDayModal);
 
-  document.getElementById('btn-send-close-day-whatsapp')?.addEventListener('click', () => {
-    const text = buildCloseDaySummaryText();
-    const ownerPhone = cleanPhoneForWhatsApp(AppState.store?.owner_phone || '');
-    const url = ownerPhone
-      ? `https://wa.me/${ownerPhone}?text=${encodeURIComponent(text)}`
-      : `https://wa.me/?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
-  });
-
-  document.getElementById('btn-send-close-day-sms')?.addEventListener('click', () => {
-    const text = buildCloseDaySummaryText();
-    const ownerPhone = AppState.store?.owner_phone || '';
-    window.location.href = `sms:${ownerPhone}?body=${encodeURIComponent(text)}`;
-  });
-
-  document.getElementById('btn-copy-close-day')?.addEventListener('click', async () => {
+  document.getElementById('btn-close-day-copy')?.addEventListener('click', async () => {
     const text = buildCloseDaySummaryText();
     try {
       await navigator.clipboard.writeText(text);
       showToast('Close-Day report copied to clipboard!', 'success');
     } catch {
-      showToast('Could not copy automatically. Select and copy the text box.', 'info');
+      showToast('Select and copy the report text above.', 'info');
     }
-  });
-
-  // Receipt Modal Share & Print
-  document.getElementById('btn-share-receipt-whatsapp')?.addEventListener('click', () => {
-    const text = document.getElementById('receipt-preview-body')?.textContent || '';
-    const phone = cleanPhoneForWhatsApp(AppState.activeSaleReceipt?.customer_phone || '');
-    const url = phone
-      ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
-      : `https://wa.me/?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
   });
 
   document.getElementById('btn-print-receipt')?.addEventListener('click', () => {
     window.print();
   });
 
-  // Settings & License Activation
+  // 10. Settings & License Activation
   document.getElementById('form-activate-token')?.addEventListener('submit', handleActivateToken);
   document.getElementById('form-shop-settings')?.addEventListener('submit', handleSaveShopSettings);
   document.getElementById('btn-simulate-expiry')?.addEventListener('click', handleSimulateExpiredLicense);
   document.getElementById('btn-export-backup')?.addEventListener('click', handleExportBackup);
-  document.getElementById('input-import-backup')?.addEventListener('change', handleImportBackup);
+  document.getElementById('btn-restore-backup')?.addEventListener('click', handleRestoreBackupClick);
 
-  // Close Modal Buttons
-  document.querySelectorAll('[data-close-modal]').forEach((btn) => {
+  document.getElementById('btn-copy-telemetry')?.addEventListener('click', async () => {
+    const text = document.getElementById('telemetry-json-preview')?.textContent || '';
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Telemetry JSON copied to clipboard!', 'success');
+    } catch {
+      showToast('Could not copy automatically.', 'info');
+    }
+  });
+
+  // 11. Universal Modal Close Buttons (`[data-close]` and `[data-close-modal]`)
+  document.querySelectorAll('[data-close], [data-close-modal]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const target = btn.getAttribute('data-close-modal');
+      const target = btn.getAttribute('data-close') || btn.getAttribute('data-close-modal');
       if (target === 'modal-barcode-scanner') {
         stopBarcodeScanner();
-      } else {
+      } else if (target) {
         document.getElementById(target)?.classList.add('hidden');
       }
     });
@@ -2412,6 +2518,7 @@ function bindUIEvents() {
 }
 
 function switchTab(tabId) {
+  if (!tabId) return;
   document.querySelectorAll('.nav-tab').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.tab === tabId);
   });

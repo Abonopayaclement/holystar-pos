@@ -4,7 +4,7 @@
  * load immediately when online while still working 100% offline without internet.
  */
 
-const CACHE_NAME = 'holystar-pos-cache-v8';
+const CACHE_NAME = 'holystar-pos-cache-v9';
 const OFFLINE_ASSETS = [
   './',
   './index.html',
