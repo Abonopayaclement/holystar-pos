@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="description" content="Holy Star POS — Offline-First Retail Point of Sale, Inventory Profit Tracker & Debtors Credit Book" />
+  <title>Holy Star POS — Offline Retail & Credit Book</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ====================================================================
+       TOP APPLICATION HEADER
+       ==================================================================== -->
+  <header class="app-header">
+    <div class="brand-group">
+      <div class="brand-logo" aria-hidden="true">★</div>
+      <div class="brand-titles">
+        <h1 id="header-shop-name">Holy Star Provision Store</h1>
+        <div class="brand-meta">
+          <span>Shop ID: <strong id="header-shop-id">HS-001</strong></span>
+          <span>•</span>
+          <span id="header-shop-location">Bolgatanga Central Market</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-status">
+      <span id="network-status-badge" class="offline-badge">⚡ 100% Offline Ready</span>
+      <button type="button" id="license-status-pill" class="status-pill license-active" title="Click to manage subscription license">
+        <span id="license-pill-text">⏳ Checking License...</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ====================================================================
+       SYSTEM LOCK BANNERS (EXPIRED LICENSE / CLOCK ROLLBACK)
+       ==================================================================== -->
+  <div id="clock-tamper-banner" class="system-banner banner-clock hidden">
+    <div>
+      <strong>⛔ DEVICE CLOCK TAMPER DETECTED:</strong>
+      <span id="clock-tamper-msg">Your device date/time was rolled backward behind the last recorded transaction. Checkout is locked until your clock is corrected.</span>
+    </div>
+    <button type="button" id="btn-recheck-clock" class="btn btn-warning btn-sm">🔄 Re-Check Clock</button>
+  </div>
+
+  <div id="expired-license-banner" class="system-banner banner-expired hidden">
+    <div>
+      <strong>🔒 LICENSE EXPIRED (READ-ONLY MODE):</strong>
+      You can still view your <strong>Stock</strong>, <strong>Debtors Book</strong>, and <strong>Sales History</strong> freely, but new Sales, Stock additions, and Debtor additions are paused.
+    </div>
+    <button type="button" id="btn-banner-unlock" class="btn btn-danger btn-sm">🔑 Enter Unlock Token</button>
+  </div>
+
+  <!-- ====================================================================
+       MAIN NAVIGATION TABS
+       ==================================================================== -->
+  <nav class="app-nav" role="tablist">
+    <button type="button" class="nav-tab active" data-tab="tab-pos">
+      🛒 POS Checkout
+    </button>
+    <button type="button" class="nav-tab" data-tab="tab-inventory">
+      📦 Inventory &amp; Stock
+      <span id="nav-badge-stock" class="nav-badge badge-warning hidden">0</span>
+    </button>
+    <button type="button" class="nav-tab" data-tab="tab-debtors">
+      📒 Debtors Book
+      <span id="nav-badge-debtors" class="nav-badge hidden">0</span>
+    </button>
+    <button type="button" class="nav-tab" data-tab="tab-sales">
+      📊 Sales &amp; Close Day
+    </button>
+    <button type="button" class="nav-tab" data-tab="tab-settings">
+      ⚙️ Settings &amp; License
+    </button>
+  </nav>
+
+  <!-- ====================================================================
+       MAIN APPLICATION WORKSPACE
+       ==================================================================== -->
+  <main class="app-main">
+
+    <!-- ==================================================================
+         TAB 1: POINT OF SALE (CHECKOUT SCREEN)
+         ================================================================== -->
+    <section id="tab-pos" class="tab-panel active">
+      <div class="pos-grid">
+        
+        <!-- Left Column: Product Catalog -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">🛍️ Select Products to Sell</h2>
+            <div style="display:flex; gap:0.4rem;">
+              <button type="button" id="btn-pos-quick-demo" class="btn btn-outline btn-sm" title="Load sample Ghanaian shop items">🇬🇭 Load Demo Items</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="pos-filter-bar">
+              <div class="pos-search-wrap">
+                <input type="search" id="pos-search-input" class="form-control" placeholder="🔍 Search item name or category (e.g. Milo, Milk, Frytol, Sugar)..." autocomplete="off" />
+              </div>
+            </div>
+
+            <div id="pos-category-chips" class="category-chips">
+              <!-- Populated dynamically -->
+            </div>
+
+            <div id="pos-product-grid" class="product-grid">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Active Checkout Cart -->
+        <div class="card cart-panel">
+          <div class="card-header">
+            <h2 class="card-title">🧾 Current Sale Cart</h2>
+            <button type="button" id="btn-clear-cart" class="btn btn-outline btn-sm">Clear</button>
+          </div>
+          <div class="card-body">
+            <div id="cart-items-container" class="cart-items-list">
+              <div class="empty-state">Cart is empty. Tap any product on the left to add it.</div>
+            </div>
+
+            <div class="cart-summary-box">
+              <div class="summary-row">
+                <span>Total Items:</span>
+                <strong id="cart-total-items">0</strong>
+              </div>
+              <div class="summary-row total-row">
+                <span>TOTAL DUE:</span>
+                <span id="cart-total-amount">GHS 0.00</span>
+              </div>
+            </div>
+
+            <!-- Payment Method Selection -->
+            <div class="form-group">
+              <label class="form-label">Select Payment Method</label>
+              <div class="payment-methods-grid">
+                <button type="button" class="pay-method-option active" data-method="Cash">
+                  💵 Cash
+                </button>
+                <button type="button" class="pay-method-option" data-method="MoMo">
+                  📱 MoMo<br><small>(Manual)</small>
+                </button>
+                <button type="button" class="pay-method-option credit-opt" data-method="Credit">
+                  📒 Credit<br><small>(Put in Book)</small>
+                </button>
+              </div>
+            </div>
+
+            <!-- Optional Cash Change Calculator (Only shown for Cash) -->
+            <div id="cash-calculator-box" class="form-group" style="background:#f8fafc; padding:0.65rem; border-radius:6px; border:1px solid #e2e8f0;">
+              <div style="display:flex; gap:0.6rem; align-items:center; justify-content:space-between;">
+                <div style="flex:1;">
+                  <label class="form-label" for="cash-tendered-input" style="margin-bottom:0.15rem;">Cash Given (Optional)</label>
+                  <input type="number" id="cash-tendered-input" class="form-control" placeholder="0.00" min="0" step="0.5" />
+                </div>
+                <div style="text-align:right; min-width:110px;">
+                  <div style="font-size:0.75rem; font-weight:700; color:#64748b;">CHANGE DUE</div>
+                  <div id="cash-change-output" style="font-size:1.1rem; font-weight:900; color:#15803d;">GHS 0.00</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Credit Customer Details Form (Only shown when Credit is selected) -->
+            <div id="credit-customer-fields" class="credit-fields-panel hidden">
+              <div class="credit-fields-title">
+                <span>📒 Customer Credit Book Details</span>
+                <span style="font-size:0.72rem;">* Required</span>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="credit-existing-select">Existing Customer (Optional Quick-Fill)</label>
+                <select id="credit-existing-select" class="form-control">
+                  <option value="">-- New Customer or Select Existing --</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="credit-customer-name">Customer Full Name *</label>
+                <input type="text" id="credit-customer-name" class="form-control" placeholder="e.g. Madam Akosua Mensah" />
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="credit-customer-phone">Phone Number *</label>
+                <input type="tel" id="credit-customer-phone" class="form-control" placeholder="e.g. 0244123456" />
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="credit-customer-location">Location / Landmark *</label>
+                <input type="text" id="credit-customer-location" class="form-control" placeholder="e.g. Near Bolga Central Market" />
+              </div>
+
+              <div style="display:grid; grid-template-columns: 1fr 110px; gap:0.5rem;">
+                <div class="form-group">
+                  <label class="form-label" for="credit-initial-deposit">Initial Deposit Paid Now (GHS)</label>
+                  <input type="number" id="credit-initial-deposit" class="form-control" value="0" min="0" step="0.5" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="credit-deposit-method">Deposit Via</label>
+                  <select id="credit-deposit-method" class="form-control">
+                    <option value="Cash">Cash</option>
+                    <option value="MoMo">MoMo</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom:0.4rem;">
+                <label class="form-label" for="credit-due-date">Promised Due Date (Optional)</label>
+                <input type="date" id="credit-due-date" class="form-control" />
+              </div>
+
+              <div class="credit-balance-preview">
+                <span>Balance Owed to Book:</span>
+                <span id="credit-balance-preview-amount">GHS 0.00</span>
+              </div>
+            </div>
+
+            <button type="button" id="btn-complete-sale" class="btn btn-success btn-lg btn-block">
+              ✅ Complete Sale (GHS 0.00)
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ==================================================================
+         TAB 2: INVENTORY & STOCK MANAGEMENT
+         ================================================================== -->
+    <section id="tab-inventory" class="tab-panel">
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-label">Total Product Lines</div>
+          <div id="inv-metric-count" class="metric-value">0</div>
+          <div class="metric-sub">Active items in catalog</div>
+        </div>
+        <div class="metric-card metric-cash">
+          <div class="metric-label">Total Stock Cost Value</div>
+          <div id="inv-metric-cost" class="metric-value">GHS 0.00</div>
+          <div class="metric-sub">Capital tied in current stock</div>
+        </div>
+        <div class="metric-card metric-profit">
+          <div class="metric-label">Expected Retail Value</div>
+          <div id="inv-metric-retail" class="metric-value">GHS 0.00</div>
+          <div id="inv-metric-margin" class="metric-sub">Est. Profit: GHS 0.00</div>
+        </div>
+        <div class="metric-card metric-credit">
+          <div class="metric-label">Low / Out of Stock Alerts</div>
+          <div id="inv-metric-alerts" class="metric-value">0</div>
+          <div class="metric-sub">Items needing restock</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">📦 Product Inventory &amp; Profit Setup</h2>
+          <div class="action-group">
+            <button type="button" id="btn-open-product-modal" class="btn btn-primary">
+              ➕ Add New Product
+            </button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="pos-filter-bar">
+            <div class="pos-search-wrap">
+              <input type="search" id="inv-search-input" class="form-control" placeholder="🔍 Filter inventory by name or category..." />
+            </div>
+            <select id="inv-stock-filter" class="form-control" style="max-width:220px;">
+              <option value="ALL">All Stock Levels</option>
+              <option value="LOW">⚠️ Low Stock Only</option>
+              <option value="OUT">❌ Out of Stock Only</option>
+            </select>
+          </div>
+
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Product Name</th>
+                  <th>Category</th>
+                  <th>Cost Price</th>
+                  <th>Selling Price</th>
+                  <th>Unit Profit</th>
+                  <th>Stock Qty</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="inventory-table-body">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================================================================
+         TAB 3: THE DEBTORS BOOK ("CREDIT BOOK")
+         ================================================================== -->
+    <section id="tab-debtors" class="tab-panel">
+      <div class="metrics-grid">
+        <div class="metric-card metric-credit">
+          <div class="metric-label">Total Unpaid Credit (Owed to Shop)</div>
+          <div id="debtors-total-unpaid" class="metric-value" style="color:var(--danger);">GHS 0.00</div>
+          <div class="metric-sub">Total outstanding customer debt</div>
+        </div>
+        <div class="metric-card metric-momo">
+          <div class="metric-label">Customers Owing (Unpaid)</div>
+          <div id="debtors-unpaid-count" class="metric-value">0</div>
+          <div class="metric-sub">Active debtors with balance &gt; 0</div>
+        </div>
+        <div class="metric-card metric-profit">
+          <div class="metric-label">Total Credit Recovered</div>
+          <div id="debtors-total-recovered" class="metric-value">GHS 0.00</div>
+          <div class="metric-sub">Deposits + debt repayments received</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">📒 Customer Debtors Book (Credit Register)</h2>
+          <div class="action-group">
+            <button type="button" id="btn-open-manual-debtor-modal" class="btn btn-primary">
+              ➕ Add Debtor to Book
+            </button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="pos-filter-bar">
+            <div class="pos-search-wrap">
+              <input type="search" id="debtors-search-input" class="form-control" placeholder="🔍 Search debtor by Name, Phone Number, or Location/Landmark..." />
+            </div>
+            <select id="debtors-status-filter" class="form-control" style="max-width:200px;">
+              <option value="ALL">All Statuses</option>
+              <option value="Unpaid">🔴 Unpaid Only</option>
+              <option value="Cleared">🟢 Cleared Only</option>
+            </select>
+          </div>
+
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Customer Name</th>
+                  <th>Phone</th>
+                  <th>Location / Landmark</th>
+                  <th>Total Owed</th>
+                  <th>Last Updated</th>
+                  <th>Status</th>
+                  <th>Actions &amp; 1-Tap Reminders</th>
+                </tr>
+              </thead>
+              <tbody id="debtors-table-body">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================================================================
+         TAB 4: SALES HISTORY, RECEIPTS & OWNER "CLOSE DAY" REPORT
+         ================================================================== -->
+    <section id="tab-sales" class="tab-panel">
+      <div class="card" style="margin-bottom:1.25rem;">
+        <div class="card-header">
+          <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+            <h2 class="card-title">📅 Daily Sales &amp; Profit Report</h2>
+            <input type="date" id="sales-date-picker" class="form-control" style="width:auto; font-weight:700;" />
+            <button type="button" id="btn-sales-today" class="btn btn-outline btn-sm">Today</button>
+          </div>
+          <button type="button" id="btn-open-close-day-modal" class="btn btn-warning">
+            🔐 Owner "Close Day" Anti-Theft Report
+          </button>
+        </div>
+      </div>
+
+      <!-- 5 Required Daily Metric Cards -->
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-label">Total Revenue (GHS)</div>
+          <div id="metric-revenue" class="metric-value">GHS 0.00</div>
+          <div id="metric-sales-count" class="metric-sub">0 sales completed</div>
+        </div>
+        <div class="metric-card metric-profit">
+          <div class="metric-label">Actual Gross Profit (GHS)</div>
+          <div id="metric-profit" class="metric-value" style="color:var(--success);">GHS 0.00</div>
+          <div class="metric-sub">∑ (Selling − Cost) × Qty sold</div>
+        </div>
+        <div class="metric-card metric-cash">
+          <div class="metric-label">Cash Collected (GHS)</div>
+          <div id="metric-cash" class="metric-value">GHS 0.00</div>
+          <div id="metric-cash-sub" class="metric-sub">Sales + Cash Debt Payments</div>
+        </div>
+        <div class="metric-card metric-momo">
+          <div class="metric-label">MoMo Recorded (GHS)</div>
+          <div id="metric-momo" class="metric-value">GHS 0.00</div>
+          <div id="metric-momo-sub" class="metric-sub">Sales + MoMo Debt Payments</div>
+        </div>
+        <div class="metric-card metric-credit">
+          <div class="metric-label">New Credit Given Today (GHS)</div>
+          <div id="metric-credit" class="metric-value" style="color:var(--danger);">GHS 0.00</div>
+          <div class="metric-sub">Unpaid balance added to Book</div>
+        </div>
+      </div>
+
+      <!-- Individual Sales Table -->
+      <div class="card" style="margin-bottom:1.25rem;">
+        <div class="card-header">
+          <h3 class="card-title">🧾 Individual Sales Receipts for Selected Date</h3>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Receipt ID</th>
+                  <th>Time</th>
+                  <th>Items Sold</th>
+                  <th>Payment Type</th>
+                  <th>Total (GHS)</th>
+                  <th>Gross Profit</th>
+                  <th>Receipt</th>
+                </tr>
+              </thead>
+              <tbody id="sales-table-body">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Debt Repayments Collected on Selected Date -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">💵 Debtor Repayments Collected on Selected Date</h3>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Customer Name</th>
+                  <th>Method</th>
+                  <th>Amount Paid</th>
+                  <th>Remaining Debt</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody id="repayments-table-body">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================================================================
+         TAB 5: SETTINGS, PREPAID LICENSE & BACKUP / RESTORE
+         ================================================================== -->
+    <section id="tab-settings" class="tab-panel">
+      <div class="settings-grid">
+
+        <!-- Card 1: Prepaid Token Lock & Subscription Activation -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">🔑 Prepaid Subscription &amp; Token Unlock</h2>
+          </div>
+          <div class="card-body">
+            <div style="background:var(--bg-muted); border:1px solid var(--border); border-radius:8px; padding:0.9rem; margin-bottom:1rem;">
+              <div class="summary-row">
+                <span>Assigned Shop ID:</span>
+                <strong id="settings-display-shop-id" style="font-size:1.05rem; color:var(--primary);">HS-001</strong>
+              </div>
+              <div class="summary-row">
+                <span>Current License Status:</span>
+                <strong id="settings-license-status-text">Active</strong>
+              </div>
+              <div class="summary-row">
+                <span>Active Plan:</span>
+                <span id="settings-license-plan">7-Day Initial Trial</span>
+              </div>
+              <div class="summary-row">
+                <span>Expires On:</span>
+                <strong id="settings-license-expiry-date">-</strong>
+              </div>
+              <div class="summary-row" style="margin-bottom:0;">
+                <span>Anti-Tamper Clock Guard:</span>
+                <strong id="settings-clock-status" style="color:var(--success);">✔ Verified</strong>
+              </div>
+            </div>
+
+            <form id="form-activate-token">
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.65rem;">
+                <div class="form-group">
+                  <label class="form-label" for="token-issue-code">Issue Code / Serial *</label>
+                  <input type="text" id="token-issue-code" class="form-control" placeholder="e.g. 001 or NOV26" required style="text-transform:uppercase; font-weight:800;" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="token-plan-days">Plan Duration</label>
+                  <select id="token-plan-days" class="form-control" style="font-weight:700;">
+                    <option value="AUTO">Auto-Detect (7 or 30 Days)</option>
+                    <option value="7">7-Day Pass</option>
+                    <option value="30">30-Day Monthly Pass</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="token-code-input">8-Character Unlock Token *</label>
+                <input type="text" id="token-code-input" class="form-control" placeholder="e.g. ABCD1234" maxlength="25" required style="text-transform:uppercase; font-family:monospace; font-size:1.15rem; font-weight:900; letter-spacing:0.12em; text-align:center;" />
+                <small style="color:var(--text-muted); font-size:0.75rem;">Enter the 8-character token generated by Admin Keygen for your Shop ID and Issue Code.</small>
+              </div>
+
+              <button type="submit" class="btn btn-primary btn-block">
+                🔓 Verify &amp; Activate Unlock Token
+              </button>
+            </form>
+
+            <div style="margin-top:1rem; padding-top:0.85rem; border-top:1px dashed var(--border);">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:0.5rem; flex-wrap:wrap;">
+                <span style="font-size:0.8rem; color:var(--text-secondary); font-weight:700;">Developer / QA Testing Controls:</span>
+                <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+                  <button type="button" id="btn-simulate-expiry" class="btn btn-outline btn-sm">🧪 Simulate Expired License</button>
+                </div>
+              </div>
+            </div>
+
+            <div style="margin-top:1rem;">
+              <div class="form-label">Previously Used Tokens (Anti-Replay Log)</div>
+              <div id="used-tokens-list" style="font-size:0.78rem; color:var(--text-secondary); max-height:110px; overflow-y:auto; background:#f8fafc; padding:0.5rem; border-radius:6px; border:1px solid var(--border-light);">
+                No tokens used yet.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 2: Shop Configuration & Demo / Backup Safety Net -->
+        <div style="display:flex; flex-direction:column; gap:1.25rem;">
+          
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">🏪 Shop Profile &amp; Owner Alert Settings</h2>
+            </div>
+            <div class="card-body">
+              <form id="form-shop-settings">
+                <div class="form-group">
+                  <label class="form-label" for="setting-shop-id">Shop ID (Used for License Tokens) *</label>
+                  <input type="text" id="setting-shop-id" class="form-control" required style="text-transform:uppercase; font-weight:800;" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="setting-shop-name">Shop / Business Name *</label>
+                  <input type="text" id="setting-shop-name" class="form-control" required />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="setting-owner-phone">Owner WhatsApp / SMS Phone Number *</label>
+                  <input type="tel" id="setting-owner-phone" class="form-control" placeholder="e.g. 0244000000" required />
+                  <small style="color:var(--text-muted); font-size:0.74rem;">Receives the "Close Day" Anti-Theft Report via WhatsApp or SMS.</small>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="setting-shop-location">Shop Location / Receipt Header Address</label>
+                  <input type="text" id="setting-shop-location" class="form-control" placeholder="e.g. Bolgatanga Central Market" />
+                </div>
+                <button type="submit" class="btn btn-success btn-block">💾 Save Shop Settings</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">🛡️ Local Backup, Restore &amp; Demo Shop Data</h2>
+            </div>
+            <div class="card-body">
+              <p style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:0.9rem;">
+                All data is stored 100% offline on this device. Export regular JSON backups to keep your records safe or transfer to a new phone/laptop.
+              </p>
+
+              <div style="display:flex; flex-direction:column; gap:0.65rem;">
+                <button type="button" id="btn-load-demo-data" class="btn btn-warning btn-block">
+                  🇬🇭 Load Demo Shop Data (Ghanaian Provision Items)
+                </button>
+
+                <button type="button" id="btn-export-backup" class="btn btn-primary btn-block">
+                  ⬇️ Export Full Backup (.json)
+                </button>
+
+                <div style="border:1.5px dashed var(--border); border-radius:6px; padding:0.75rem; background:var(--bg-muted);">
+                  <label class="form-label" for="restore-file-input">⬆️ Restore Backup from .json File</label>
+                  <input type="file" id="restore-file-input" accept=".json,application/json" class="form-control" style="margin-bottom:0.5rem;" />
+                  <button type="button" id="btn-restore-backup" class="btn btn-outline btn-block">
+                    🔄 Validate &amp; Restore Backup
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ====================================================================
+       MODAL 1: ADD / EDIT / RESTOCK PRODUCT
+       ==================================================================== -->
+  <div id="modal-product" class="modal-backdrop hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 id="modal-product-title">➕ Add New Product</h3>
+        <button type="button" class="modal-close" data-close="modal-product">&times;</button>
+      </div>
+      <form id="form-product">
+        <div class="modal-body">
+          <input type="hidden" id="prod-id" />
+          <div class="form-group">
+            <label class="form-label" for="prod-name">Product Name *</label>
+            <input type="text" id="prod-name" class="form-control" placeholder="e.g. Nestle Milo Tin 400g" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="prod-category">Category *</label>
+            <input type="text" id="prod-category" class="form-control" list="category-suggestions" placeholder="e.g. Beverages" required />
+            <datalist id="category-suggestions">
+              <option value="Beverages"></option>
+              <option value="Milk & Dairy"></option>
+              <option value="Cooking & Spices"></option>
+              <option value="Canned Goods"></option>
+              <option value="Grains & Staples"></option>
+              <option value="Noodles & Pasta"></option>
+              <option value="Household & Toiletries"></option>
+              <option value="Snacks & Biscuits"></option>
+            </datalist>
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.75rem;">
+            <div class="form-group">
+              <label class="form-label" for="prod-cost">Cost Price (GHS) *</label>
+              <input type="number" id="prod-cost" class="form-control" min="0" step="0.01" placeholder="0.00" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="prod-price">Selling Price (GHS) *</label>
+              <input type="number" id="prod-price" class="form-control" min="0.01" step="0.01" placeholder="0.00" required />
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.75rem;">
+            <div class="form-group">
+              <label class="form-label" for="prod-stock">Current Stock Quantity *</label>
+              <input type="number" id="prod-stock" class="form-control" min="0" step="1" value="10" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="prod-threshold">Low Stock Alert Threshold</label>
+              <input type="number" id="prod-threshold" class="form-control" min="0" step="1" value="5" required />
+            </div>
+          </div>
+          <div id="prod-profit-preview" style="background:#f0fdf4; border:1px solid #86efac; color:#166534; padding:0.55rem 0.75rem; border-radius:6px; font-size:0.84rem; font-weight:700;">
+            Unit Profit: GHS 0.00 (0%)
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" data-close="modal-product">Cancel</button>
+          <button type="submit" class="btn btn-primary">💾 Save Product</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       MODAL 2: QUICK RESTOCK PRODUCT
+       ==================================================================== -->
+  <div id="modal-restock" class="modal-backdrop hidden">
+    <div class="modal-box" style="max-width:400px;">
+      <div class="modal-header">
+        <h3>📦 Restock Product</h3>
+        <button type="button" class="modal-close" data-close="modal-restock">&times;</button>
+      </div>
+      <form id="form-restock">
+        <div class="modal-body">
+          <input type="hidden" id="restock-prod-id" />
+          <p id="restock-prod-name" style="font-weight:800; font-size:1rem; margin-bottom:0.5rem;"></p>
+          <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:0.9rem;">
+            Current Stock: <strong id="restock-current-qty">0</strong> units
+          </p>
+          <div class="form-group">
+            <label class="form-label" for="restock-add-qty">Quantity to Add (+) *</label>
+            <input type="number" id="restock-add-qty" class="form-control" min="1" step="1" value="10" required />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" data-close="modal-restock">Cancel</button>
+          <button type="submit" class="btn btn-success">➕ Add Stock</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       MODAL 3: ADD MANUAL DEBTOR TO BOOK
+       ==================================================================== -->
+  <div id="modal-manual-debtor" class="modal-backdrop hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>📒 Add Customer to Debtors Book</h3>
+        <button type="button" class="modal-close" data-close="modal-manual-debtor">&times;</button>
+      </div>
+      <form id="form-manual-debtor">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label" for="mdebtor-name">Customer Full Name *</label>
+            <input type="text" id="mdebtor-name" class="form-control" placeholder="e.g. Mr. Kwame Asante" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="mdebtor-phone">Phone Number *</label>
+            <input type="tel" id="mdebtor-phone" class="form-control" placeholder="e.g. 0244987654" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="mdebtor-location">Location / Landmark *</label>
+            <input type="text" id="mdebtor-location" class="form-control" placeholder="e.g. Near Bolga Central Market" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="mdebtor-amount">Amount Owed (GHS) *</label>
+            <input type="number" id="mdebtor-amount" class="form-control" min="0.5" step="0.5" placeholder="0.00" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="mdebtor-desc">Items / Credit Note *</label>
+            <input type="text" id="mdebtor-desc" class="form-control" placeholder="e.g. 1x Rice 5kg, 2x Sardines" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="mdebtor-due">Promised Due Date (Optional)</label>
+            <input type="date" id="mdebtor-due" class="form-control" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" data-close="modal-manual-debtor">Cancel</button>
+          <button type="submit" class="btn btn-primary">💾 Save to Debtors Book</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       MODAL 4: RECORD DEBTOR PAYMENT (PART OR FULL)
+       ==================================================================== -->
+  <div id="modal-debtor-payment" class="modal-backdrop hidden">
+    <div class="modal-box" style="max-width:440px;">
+      <div class="modal-header">
+        <h3>💵 Record Customer Debt Payment</h3>
+        <button type="button" class="modal-close" data-close="modal-debtor-payment">&times;</button>
+      </div>
+      <form id="form-debtor-payment">
+        <div class="modal-body">
+          <input type="hidden" id="pay-debtor-id" />
+          <div style="background:var(--bg-muted); padding:0.75rem; border-radius:6px; border:1px solid var(--border); margin-bottom:0.9rem;">
+            <div style="font-weight:800; font-size:1rem;" id="pay-debtor-name">-</div>
+            <div style="font-size:0.82rem; color:var(--text-secondary);" id="pay-debtor-phone">-</div>
+            <div style="margin-top:0.4rem; font-size:0.95rem;">
+              Current Balance Owed: <strong id="pay-debtor-current-owed" style="color:var(--danger);">GHS 0.00</strong>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.3rem;">
+              <label class="form-label" for="pay-amount-input" style="margin-bottom:0;">Amount Paid Now (GHS) *</label>
+              <button type="button" id="btn-pay-full-balance" class="btn btn-outline btn-sm" style="padding:0.15rem 0.5rem; font-size:0.74rem;">Pay Full Balance</button>
+            </div>
+            <input type="number" id="pay-amount-input" class="form-control" min="0.01" step="0.01" required />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="pay-method-select">Payment Received Via *</label>
+            <select id="pay-method-select" class="form-control">
+              <option value="Cash">💵 Cash</option>
+              <option value="MoMo">📱 Mobile Money (MoMo)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="pay-note-input">Note (Optional)</label>
+            <input type="text" id="pay-note-input" class="form-control" placeholder="e.g. Part payment brought by sister" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" data-close="modal-debtor-payment">Cancel</button>
+          <button type="submit" class="btn btn-success">✅ Save Payment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       MODAL 5: VIEW DEBTOR CREDIT & PAYMENT HISTORY
+       ==================================================================== -->
+  <div id="modal-debtor-history" class="modal-backdrop hidden">
+    <div class="modal-box" style="max-width:600px;">
+      <div class="modal-header">
+        <h3 id="history-debtor-title">📜 Customer Credit History</h3>
+        <button type="button" class="modal-close" data-close="modal-debtor-history">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="history-debtor-summary" style="background:var(--bg-muted); padding:0.8rem; border-radius:6px; border:1px solid var(--border); margin-bottom:1rem;">
+          <!-- Populated dynamically -->
+        </div>
+        <div id="history-timeline-list" style="display:flex; flex-direction:column; gap:0.75rem;">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" data-close="modal-debtor-history">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       MODAL 6: VIEW / PRINT RECEIPT (THERMAL & STANDARD)
+       ==================================================================== -->
+  <div id="modal-receipt" class="modal-backdrop hidden">
+    <div class="modal-box" style="max-width:420px;">
+      <div class="modal-header">
+        <h3>🧾 Sale Receipt</h3>
+        <button type="button" class="modal-close" data-close="modal-receipt">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="printable-receipt" class="receipt-paper">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" data-close="modal-receipt">Close</button>
+        <button type="button" id="btn-print-receipt" class="btn btn-primary">🖨️ Print Receipt</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       MODAL 7: OWNER "CLOSE DAY" ANTI-THEFT REPORT
+       ==================================================================== -->
+  <div id="modal-close-day" class="modal-backdrop hidden">
+    <div class="modal-box" style="max-width:520px;">
+      <div class="modal-header">
+        <h3>🔐 Owner "Close Day" Anti-Theft Report</h3>
+        <button type="button" class="modal-close" data-close="modal-close-day">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:0.75rem;">
+          Send this tamper-evident daily closing summary directly to the Shop Owner (<strong id="close-day-owner-phone-display">-</strong>). Includes a cryptographic verification seal derived from today's revenue, profit, date, and Shop ID.
+        </p>
+        <div id="close-day-report-text" class="close-day-box"></div>
+        <div style="display:flex; flex-direction:column; gap:0.55rem;">
+          <a id="btn-close-day-whatsapp" href="#" target="_blank" rel="noopener" class="btn btn-whatsapp btn-block">
+            💬 1. Send to Owner via WhatsApp
+          </a>
+          <a id="btn-close-day-sms" href="#" class="btn btn-sms btn-block">
+            📩 2. Send via Native SMS (Offline)
+          </a>
+          <button type="button" id="btn-close-day-copy" class="btn btn-outline btn-block">
+            📋 3. Copy Summary Text
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" data-close="modal-close-day">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="db.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
+
