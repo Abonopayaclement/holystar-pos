@@ -1,7 +1,11 @@
 /**
- * Holy Star POS - Main Application Logic (app.js)
- * Complete offline-first retail POS, Inventory Profit Tracker, Debtors Credit Book,
- * Owner Anti-Theft Close Day Reporting, and Cryptographic Prepaid Token Verification.
+ * Holy Star POS v2.0 - Multi-Store SaaS Application Logic (app.js)
+ * Features:
+ * - Multi-Store Registration & Login (Store Owner/Boss vs. Cashier/Attendant)
+ * - 4-Digit Boss PIN Lock (Hides Cost Price & Gross Profit in Cashier Mode)
+ * - Smart Ghanaian Master Product Catalog Autocomplete + Custom Camera Photos
+ * - Live Camera Barcode & QR Scanner (Checkout & Stock Entry)
+ * - Hardened Atomic Checkout, Debtors Credit Book, Close-Day Seal & Telemetry
  */
 
 const HOLY_STAR_SECRET = 'HOLY_STAR_SECRET_2026';
@@ -16,7 +20,6 @@ function sha256Bytes(asciiStr) {
     return (value >>> amount) | (value << (32 - amount));
   }
 
-  // UTF-8 encode string to byte array
   const utf8 = unescape(encodeURIComponent(asciiStr));
   const words = [];
   const asciiBitLength = utf8.length * 8;
@@ -95,10 +98,6 @@ function sha256Bytes(asciiStr) {
   return bytes;
 }
 
-/**
- * Deterministic 8-Character Uppercase Alphanumeric Token Generator
- * Formula: SHA-256( SHOP_ID + "|" + PLAN_DAYS + "|" + ISSUE_CODE + "|" + SECRET )
- */
 function generateLicenseToken(shopId, planDays, issueCode) {
   const cleanShop = String(shopId || '').trim().toUpperCase();
   const cleanDays = String(Number(planDays));
@@ -118,14 +117,10 @@ function generateLicenseToken(shopId, planDays, issueCode) {
   return token;
 }
 
-/**
- * Generate 6-Character Anti-Tamper Seal for Owner Close-Day Report
- * Formula: SHA-256( DATE + "|" + REVENUE + "|" + PROFIT + "|" + SHOP_ID + "|" + SECRET )
- */
 function generateCloseDaySeal(dateStr, totalRevenue, grossProfit, shopId) {
   const rev = Number(totalRevenue || 0).toFixed(2);
   const prof = Number(grossProfit || 0).toFixed(2);
-  const shop = String(shopId || 'HS-001').trim().toUpperCase();
+  const shop = String(shopId || 'HS-0000').trim().toUpperCase();
   const payload = `SEAL|${dateStr}|${rev}|${prof}|${shop}|${HOLY_STAR_SECRET}`;
   const digest = sha256Bytes(payload);
   let code = '';
@@ -141,21 +136,28 @@ function generateCloseDaySeal(dateStr, totalRevenue, grossProfit, shopId) {
 // ============================================================================
 
 const AppState = {
+  session: null, // { store_id, role_mode: 'boss' | 'cashier', staff_name }
+  roleMode: 'boss',
   settings: {},
   products: [],
   debtors: [],
   sales: [],
-  cart: [], // [{ id, name, selling_price, cost_price, stock_qty, qty }]
+  staffList: [],
+  cart: [],
   selectedCategory: 'ALL',
   posSearchQuery: '',
   selectedPaymentMethod: 'Cash',
-  isProcessingSale: false, // Rule 4: Prevent double-click duplicate checkout
+  isProcessingSale: false,
   isLicenseActive: true,
-  isClockValid: true
+  isClockValid: true,
+  pendingBossCallback: null,
+  scannerStream: null,
+  scannerActive: false,
+  scannerTargetMode: 'POS' // 'POS' | 'PRODUCT_MODAL'
 };
 
 // ============================================================================
-// INITIALIZATION & SERVICE WORKER REGISTRATION
+// INITIALIZATION & PWA INSTALL PROMPT
 // ============================================================================
 
 let deferredPwaPrompt = null;
@@ -163,61 +165,119 @@ let deferredPwaPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredPwaPrompt = e;
-  const installBtn = document.getElementById('btn-install-pwa');
-  if (installBtn) {
-    installBtn.classList.remove('hidden');
-  }
+  document.getElementById('btn-install-pwa')?.classList.remove('hidden');
 });
 
 window.addEventListener('appinstalled', () => {
   deferredPwaPrompt = null;
-  const installBtn = document.getElementById('btn-install-pwa');
-  if (installBtn) {
-    installBtn.classList.add('hidden');
-  }
-  showToast('🎉 Holy Star POS installed! You can now open it 100% offline from your home screen.', 'success');
+  document.getElementById('btn-install-pwa')?.classList.add('hidden');
+  showToast('🎉 Holy Star POS installed! Open it 100% offline from your home screen.', 'success');
 });
 
 document.addEventListener('DOMContentLoaded', async () => {
   registerServiceWorker();
   setupEventListeners();
-  await refreshAllData();
+  await window.HolyStarDB.init();
+  await checkAuthAndBoot();
 });
 
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker
-      .register('./sw.js')
-      .catch(() => {
-        // Ignore SW errors on file:// protocol
-      });
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
 }
 
+async function checkAuthAndBoot() {
+  const session = window.HolyStarDB.getActiveSession();
+  if (!session || !session.store_id) {
+    await showAuthOverlay();
+    return;
+  }
+
+  const store = await window.HolyStarDB.getStoreById(session.store_id);
+  if (!store) {
+    window.HolyStarDB.logoutSession();
+    await showAuthOverlay();
+    return;
+  }
+
+  AppState.session = session;
+  AppState.roleMode = session.role_mode === 'cashier' ? 'cashier' : 'boss';
+  document.getElementById('auth-screen-overlay').classList.add('hidden');
+  await refreshAllData();
+}
+
+async function showAuthOverlay() {
+  const overlay = document.getElementById('auth-screen-overlay');
+  overlay.classList.remove('hidden');
+
+  const stores = await window.HolyStarDB.getAllStores();
+  const savedWrap = document.getElementById('login-saved-stores-wrap');
+  const savedSelect = document.getElementById('login-saved-store-select');
+
+  if (stores.length > 0) {
+    savedWrap.classList.remove('hidden');
+    savedSelect.innerHTML = stores
+      .map(
+        (s) =>
+          `<option value="${escapeHtml(s.owner_phone)}">${escapeHtml(s.store_name)} (${escapeHtml(s.store_id)} • ${escapeHtml(s.owner_phone)})</option>`
+      )
+      .join('');
+    document.getElementById('login-identifier').value = stores[0].owner_phone;
+    switchAuthTab('login');
+  } else {
+    savedWrap.classList.add('hidden');
+    // No store created on this device yet -> open Create New Store tab by default
+    switchAuthTab('register');
+  }
+}
+
+function switchAuthTab(tabName) {
+  document.querySelectorAll('.auth-tab-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.authTab === tabName);
+  });
+  document.getElementById('auth-panel-login').classList.toggle('hidden', tabName !== 'login');
+  document.getElementById('auth-panel-register').classList.toggle('hidden', tabName !== 'register');
+}
+
+// ============================================================================
+// DATA REFRESH & ROLE / LICENSE ENFORCEMENT
+// ============================================================================
+
 async function refreshAllData() {
   try {
-    await window.HolyStarDB.init();
+    const session = window.HolyStarDB.getActiveSession();
+    if (!session) {
+      await showAuthOverlay();
+      return;
+    }
+
+    AppState.session = session;
+    AppState.roleMode = session.role_mode === 'cashier' ? 'cashier' : 'boss';
+
     const clockStatus = await window.HolyStarDB.TouchClock();
     AppState.isClockValid = clockStatus.valid;
 
-    const [settings, products, debtors, sales] = await Promise.all([
+    const [settings, products, debtors, sales, staffList] = await Promise.all([
       window.HolyStarDB.getSettings(),
       window.HolyStarDB.getAllProducts(),
       window.HolyStarDB.getAllDebtors(),
-      window.HolyStarDB.getAllSales()
+      window.HolyStarDB.getAllSales(),
+      window.HolyStarDB.getStoreStaff()
     ]);
 
     AppState.settings = settings;
     AppState.products = products;
     AppState.debtors = debtors;
     AppState.sales = sales;
+    AppState.staffList = staffList;
 
-    // Set default date picker if empty
     const datePicker = document.getElementById('sales-date-picker');
     if (datePicker && !datePicker.value) {
       datePicker.value = window.HolyStarDB.formatLocalDate();
     }
 
+    applyRoleModeUI();
     evaluateLicenseAndClock(clockStatus);
     renderHeaderAndSettings();
     renderPOSCatalog();
@@ -226,14 +286,42 @@ async function refreshAllData() {
     renderDebtorsTab();
     await renderSalesTab();
     await renderUsedTokensList();
+    renderStaffList();
+    await renderTelemetrySummary();
   } catch (err) {
-    showToast(err.message || 'Error loading application data.', 'error');
+    showToast(err.message || 'Error loading store data.', 'error');
   }
 }
 
-// ============================================================================
-// LICENSE & ANTI-TAMPER CLOCK ENFORCEMENT
-// ============================================================================
+function applyRoleModeUI() {
+  const isCashier = AppState.roleMode === 'cashier';
+  document.body.classList.toggle('mode-cashier', isCashier);
+
+  const roleBtn = document.getElementById('btn-role-mode-toggle');
+  const roleText = document.getElementById('role-pill-text');
+  const cashierLockCard = document.getElementById('cashier-settings-lock-card');
+
+  if (isCashier) {
+    roleBtn.className = 'role-pill role-cashier';
+    roleText.textContent = '👤 Cashier Mode (Tap for Boss PIN)';
+    cashierLockCard?.classList.remove('hidden');
+  } else {
+    roleBtn.className = 'role-pill role-boss';
+    roleText.textContent = '👑 Boss Mode (Tap to Lock)';
+    cashierLockCard?.classList.add('hidden');
+  }
+}
+
+function requireBossMode(actionCallback) {
+  if (AppState.roleMode === 'boss') {
+    actionCallback();
+    return;
+  }
+  AppState.pendingBossCallback = actionCallback;
+  document.getElementById('boss-pin-input').value = '';
+  openModal('modal-boss-pin');
+  setTimeout(() => document.getElementById('boss-pin-input')?.focus(), 80);
+}
 
 function evaluateLicenseAndClock(clockStatus) {
   const now = Date.now();
@@ -265,61 +353,53 @@ function evaluateLicenseAndClock(clockStatus) {
 
   if (clockTampered) {
     pill.classList.add('license-expired');
-    pillText.textContent = '⛔ Clock Tamper Locked';
+    pillText.textContent = '⛔ Clock Locked';
     expiredBanner.classList.add('hidden');
   } else if (msRemaining <= 0) {
     pill.classList.add('license-expired');
-    pillText.textContent = '🔒 License Expired (Read-Only)';
+    pillText.textContent = '🔒 License Expired';
     expiredBanner.classList.remove('hidden');
   } else if (daysRemaining <= 2) {
     pill.classList.add('license-warning');
-    pillText.textContent = `⚠️ ${daysRemaining} Day${daysRemaining === 1 ? '' : 's'} Left`;
+    pillText.textContent = `⚠️ ${daysRemaining}d Left`;
     expiredBanner.classList.add('hidden');
   } else {
     pill.classList.add('license-active');
-    pillText.textContent = `✅ Active: ${daysRemaining} Days Left`;
+    pillText.textContent = `✅ ${daysRemaining} Days Left`;
     expiredBanner.classList.add('hidden');
   }
 
-  // Enforce Read-Only locks when License is Expired or Clock Tampered:
-  // Stock, Debtors Book, and Sales History remain 100% readable,
-  // while Checkout, Adding Stock, and Adding New Debtors are disabled.
   const canMutate = AppState.isLicenseActive;
-
   const btnCheckout = document.getElementById('btn-complete-sale');
   const btnAddProduct = document.getElementById('btn-open-product-modal');
+  const btnPosAddStock = document.getElementById('btn-pos-add-stock');
   const btnAddDebtor = document.getElementById('btn-open-manual-debtor-modal');
 
-  if (btnCheckout) {
-    btnCheckout.disabled = !canMutate || AppState.isProcessingSale;
-  }
-  if (btnAddProduct) {
-    btnAddProduct.disabled = !canMutate;
-    btnAddProduct.title = canMutate ? '' : 'License expired — Enter an unlock token to add new stock';
-  }
-  if (btnAddDebtor) {
-    btnAddDebtor.disabled = !canMutate;
-    btnAddDebtor.title = canMutate ? '' : 'License expired — Enter an unlock token to add new debtors';
-  }
+  if (btnCheckout) btnCheckout.disabled = !canMutate || AppState.isProcessingSale;
+  if (btnAddProduct) btnAddProduct.disabled = !canMutate;
+  if (btnPosAddStock) btnPosAddStock.disabled = !canMutate;
+  if (btnAddDebtor) btnAddDebtor.disabled = !canMutate;
 }
 
 function renderHeaderAndSettings() {
   const s = AppState.settings;
-  const shopName = s.shop_name || 'Holy Star Provision Store';
-  const shopId = s.shop_id || 'HS-001';
-  const shopLoc = s.shop_location || 'Bolgatanga Central Market';
+  const shopName = s.store_name || s.shop_name || 'Holy Star POS';
+  const shopId = s.store_id || s.shop_id || 'HS-0000';
+  const shopCat = s.store_category || 'Retail Store';
+  const shopLoc = s.shop_location || 'Ghana';
   const ownerPhone = s.owner_phone || '';
+  const bossPin = s.boss_pin || '';
   const expiry = Number(s.license_expiry || 0);
   const now = Date.now();
   const daysRemaining = Math.max(0, Math.ceil((expiry - now) / (1000 * 60 * 60 * 24)));
 
   document.getElementById('header-shop-name').textContent = shopName;
   document.getElementById('header-shop-id').textContent = shopId;
+  document.getElementById('header-shop-category').textContent = shopCat;
   document.getElementById('header-shop-location').textContent = shopLoc;
 
-  // Settings tab display
   document.getElementById('settings-display-shop-id').textContent = shopId;
-  document.getElementById('settings-license-plan').textContent = s.license_plan || 'Prepaid License';
+  document.getElementById('settings-license-plan').textContent = s.license_plan || '7-Day Initial Trial';
   document.getElementById('settings-license-expiry-date').textContent = expiry
     ? `${new Date(expiry).toLocaleString()} (${daysRemaining} day${daysRemaining === 1 ? '' : 's'} left)`
     : 'Expired';
@@ -345,13 +425,14 @@ function renderHeaderAndSettings() {
     clockEl.style.color = 'var(--danger)';
   }
 
-  // Populate settings form inputs if not currently focused
   const inputShopId = document.getElementById('setting-shop-id');
+  const inputBossPin = document.getElementById('setting-boss-pin');
   const inputShopName = document.getElementById('setting-shop-name');
   const inputOwnerPhone = document.getElementById('setting-owner-phone');
   const inputShopLoc = document.getElementById('setting-shop-location');
 
   if (document.activeElement !== inputShopId) inputShopId.value = shopId;
+  if (document.activeElement !== inputBossPin) inputBossPin.value = bossPin;
   if (document.activeElement !== inputShopName) inputShopName.value = shopName;
   if (document.activeElement !== inputOwnerPhone) inputOwnerPhone.value = ownerPhone;
   if (document.activeElement !== inputShopLoc) inputShopLoc.value = shopLoc;
@@ -361,7 +442,7 @@ async function renderUsedTokensList() {
   const container = document.getElementById('used-tokens-list');
   const used = await window.HolyStarDB.getUsedTokens();
   if (!used.length) {
-    container.innerHTML = 'No unlock tokens used yet on this device.';
+    container.innerHTML = 'No unlock tokens used yet on this store.';
     return;
   }
   used.sort((a, b) => (b.applied_at || 0) - (a.applied_at || 0));
@@ -376,9 +457,47 @@ async function renderUsedTokensList() {
     .join('');
 }
 
+function renderStaffList() {
+  const container = document.getElementById('staff-list-container');
+  if (!container) return;
+  if (!AppState.staffList.length) {
+    container.innerHTML = '<div style="color:var(--text-muted);">No additional cashier accounts created yet.</div>';
+    return;
+  }
+  container.innerHTML = AppState.staffList
+    .map(
+      (st) => `
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:0.45rem 0; border-bottom:1px solid var(--border-light);">
+        <div>
+          <strong>👤 ${escapeHtml(st.name)}</strong>
+          <span style="color:var(--text-muted);">(${escapeHtml(st.device_label || 'Counter Device')})</span>
+          <div style="font-size:0.74rem; color:var(--text-secondary);">Login Pass/PIN: <code>${escapeHtml(st.pin_or_pass)}</code></div>
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" style="color:var(--danger);" data-del-staff="${escapeHtml(st.id)}">Remove</button>
+      </div>
+    `
+    )
+    .join('');
+}
+
+async function renderTelemetrySummary() {
+  const pre = document.getElementById('telemetry-json-preview');
+  if (!pre) return;
+  const summary = await window.HolyStarDB.getStoreTelemetrySummary();
+  pre.textContent = summary ? JSON.stringify(summary, null, 2) : '{}';
+}
+
 // ============================================================================
-// TAB 1: POS CATALOG & HARDENED CART LOGIC
+// TAB 1: POS CATALOG (WITH PRODUCT IMAGES & BARCODE) & HARDENED CART
 // ============================================================================
+
+function getThumbForProduct(p) {
+  if (p.image_url) return p.image_url;
+  if (typeof window.generateProductSvgThumbnail === 'function') {
+    return window.generateProductSvgThumbnail(p.name, p.category);
+  }
+  return 'icon-192.png';
+}
 
 function renderPOSCatalog() {
   const categories = ['ALL', ...new Set(AppState.products.map((p) => p.category || 'General'))];
@@ -399,7 +518,8 @@ function renderPOSCatalog() {
     const matchesQuery =
       !query ||
       p.name.toLowerCase().includes(query) ||
-      (p.category && p.category.toLowerCase().includes(query));
+      (p.category && p.category.toLowerCase().includes(query)) ||
+      (p.barcode && p.barcode.toLowerCase().includes(query));
     return matchesCat && matchesQuery;
   });
 
@@ -407,10 +527,16 @@ function renderPOSCatalog() {
   if (AppState.products.length === 0) {
     grid.innerHTML = `
       <div class="empty-state" style="grid-column: 1 / -1;">
-        <p style="margin-bottom:0.75rem; font-weight:700;">No products in inventory yet.</p>
-        <button type="button" class="btn btn-warning" onclick="handleLoadDemoData()">
-          🇬🇭 Load Realistic Ghanaian Shop Demo Data
-        </button>
+        <div style="font-size:2.2rem; margin-bottom:0.4rem;">📦</div>
+        <p style="margin-bottom:0.4rem; font-weight:800; color:var(--text-main);">Your Store Inventory is Empty (0 Products)</p>
+        <p style="margin-bottom:1rem; font-size:0.84rem;">
+          Click <strong>"➕ Add Product"</strong> to use our Smart Ghanaian Product Autocomplete (65+ built-in items with photos), or load sample items in Settings.
+        </p>
+        <div style="display:flex; gap:0.5rem; justify-content:center; flex-wrap:wrap;">
+          <button type="button" class="btn btn-primary" onclick="openAddProductModal()">
+            ➕ Add Your First Product
+          </button>
+        </div>
       </div>`;
     return;
   }
@@ -425,20 +551,25 @@ function renderPOSCatalog() {
       const isOut = p.stock_qty <= 0;
       const isLow = !isOut && p.stock_qty <= (p.low_stock_threshold ?? 5);
       let badgeClass = 'badge-ok';
-      let badgeLabel = `In Stock: ${p.stock_qty}`;
+      let badgeLabel = `${p.stock_qty} in stock`;
       if (isOut) {
         badgeClass = 'badge-out';
         badgeLabel = 'Out of Stock';
       } else if (isLow) {
         badgeClass = 'badge-low';
-        badgeLabel = `Low: ${p.stock_qty} left`;
+        badgeLabel = `Low: ${p.stock_qty}`;
       }
+
+      const thumbUrl = getThumbForProduct(p);
 
       return `
         <div class="product-tile ${isOut ? 'out-of-stock' : ''}" data-prod-id="${escapeHtml(p.id)}">
-          <div>
-            <div class="product-tile-cat">${escapeHtml(p.category)}</div>
-            <div class="product-tile-name">${escapeHtml(p.name)}</div>
+          <div class="product-tile-top">
+            <img class="product-tile-thumb" src="${thumbUrl}" alt="${escapeHtml(p.name)}" loading="lazy" />
+            <div style="min-width:0; flex:1;">
+              <div class="product-tile-cat">${escapeHtml(p.category)}</div>
+              <div class="product-tile-name">${escapeHtml(p.name)}</div>
+            </div>
           </div>
           <div class="product-tile-footer">
             <span class="product-tile-price">GHS ${Number(p.selling_price).toFixed(2)}</span>
@@ -449,7 +580,6 @@ function renderPOSCatalog() {
     })
     .join('');
 
-  // Populate existing debtors quick-select in Credit checkout panel
   const existingSelect = document.getElementById('credit-existing-select');
   if (existingSelect) {
     const currentVal = existingSelect.value;
@@ -481,7 +611,6 @@ function addToCart(productId) {
 
   const existing = AppState.cart.find((c) => c.id === productId);
   if (existing) {
-    // Reliability Rule 3: Prevent cart quantity from exceeding stock_qty
     if (existing.qty + 1 > product.stock_qty) {
       showToast(`Cannot exceed available stock (${product.stock_qty}) for "${product.name}".`, 'warning');
       return;
@@ -507,15 +636,12 @@ function updateCartItemQty(productId, rawQty) {
   if (!item || !product) return;
 
   const parsed = Number(rawQty);
-
-  // Reliability Rule 2: Reject zero, negative, decimal, or NaN quantities
   if (isNaN(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
     showToast('Quantity must be a positive whole number (1 or more).', 'error');
     renderCart();
     return;
   }
 
-  // Reliability Rule 3: Prevent cart quantity from exceeding stock_qty
   if (parsed > product.stock_qty) {
     showToast(`Only ${product.stock_qty} units of "${product.name}" available in stock.`, 'warning');
     item.qty = product.stock_qty;
@@ -538,7 +664,6 @@ function renderCart() {
   const totalAmountEl = document.getElementById('cart-total-amount');
   const btnComplete = document.getElementById('btn-complete-sale');
 
-  // Sync stock_qty with latest products state
   AppState.cart = AppState.cart.filter((c) => {
     const p = AppState.products.find((prod) => prod.id === c.id);
     if (!p || p.stock_qty <= 0) return false;
@@ -550,7 +675,7 @@ function renderCart() {
   });
 
   if (AppState.cart.length === 0) {
-    container.innerHTML = `<div class="empty-state">Cart is empty. Tap any product on the left to add it.</div>`;
+    container.innerHTML = `<div class="empty-state">Cart is empty. Tap any product or scan a barcode to add it.</div>`;
     totalItemsEl.textContent = '0';
     totalAmountEl.textContent = 'GHS 0.00';
     btnComplete.textContent = AppState.isLicenseActive
@@ -632,7 +757,6 @@ function updateCashChangeAndCreditPreview(totalAmount) {
 }
 
 async function handleCheckoutSubmit() {
-  // Reliability Rule 4: Prevent duplicate sales from double-clicking Checkout
   if (AppState.isProcessingSale) return;
 
   if (!AppState.isLicenseActive) {
@@ -640,13 +764,11 @@ async function handleCheckoutSubmit() {
     return;
   }
 
-  // Reliability Rule 1: Reject empty-cart checkouts
   if (!Array.isArray(AppState.cart) || AppState.cart.length === 0) {
     showToast('Cannot complete sale: Your cart is empty.', 'error');
     return;
   }
 
-  // Reliability Rules 2 & 3: Validate every item quantity and stock limit before starting transaction
   for (const item of AppState.cart) {
     const q = Number(item.qty);
     if (isNaN(q) || !Number.isInteger(q) || q <= 0) {
@@ -705,19 +827,16 @@ async function handleCheckoutSubmit() {
     };
   }
 
-  // Acquire checkout lock
   AppState.isProcessingSale = true;
   renderCart();
 
   try {
-    // Reliability Rule 5: Single atomic IndexedDB transaction for stock deduction + sale record + debtor update
     const result = await window.HolyStarDB.processAtomicCheckout({
       cartItems: AppState.cart.map((c) => ({ id: c.id, qty: c.qty })),
       paymentMethod: AppState.selectedPaymentMethod,
       creditDetails
     });
 
-    // Clear cart & credit form inputs on success
     AppState.cart = [];
     document.getElementById('cash-tendered-input').value = '';
     document.getElementById('credit-existing-select').value = '';
@@ -739,7 +858,7 @@ async function handleCheckoutSubmit() {
 }
 
 // ============================================================================
-// TAB 2: INVENTORY & STOCK RENDERING
+// TAB 2: INVENTORY & STOCK RENDERING (WITH PHOTOS, BARCODES & ROLE PROTECTION)
 // ============================================================================
 
 function renderInventoryTab() {
@@ -779,7 +898,8 @@ function renderInventoryTab() {
     const matchesSearch =
       !searchQ ||
       p.name.toLowerCase().includes(searchQ) ||
-      p.category.toLowerCase().includes(searchQ);
+      p.category.toLowerCase().includes(searchQ) ||
+      (p.barcode && p.barcode.toLowerCase().includes(searchQ));
     if (!matchesSearch) return false;
     if (stockFilter === 'OUT') return p.stock_qty === 0;
     if (stockFilter === 'LOW') return p.stock_qty > 0 && p.stock_qty <= (p.low_stock_threshold ?? 5);
@@ -788,11 +908,11 @@ function renderInventoryTab() {
 
   const tbody = document.getElementById('inventory-table-body');
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty-state">No inventory items match your filter.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state">No inventory items in store yet. Click "➕ Add New Product" to start adding items.</td></tr>`;
     return;
   }
 
-  const canEdit = AppState.isLicenseActive;
+  const canMutate = AppState.isLicenseActive;
 
   tbody.innerHTML = filtered
     .map((p) => {
@@ -806,26 +926,319 @@ function renderInventoryTab() {
         statusBadge = `<span class="badge badge-low">Low Stock (≤${p.low_stock_threshold ?? 5})</span>`;
       }
 
+      const thumbUrl = getThumbForProduct(p);
+
       return `
         <tr>
-          <td><strong>${escapeHtml(p.name)}</strong></td>
+          <td><img class="inv-thumb" src="${thumbUrl}" alt="" loading="lazy" /></td>
+          <td>
+            <strong>${escapeHtml(p.name)}</strong>
+            ${p.barcode ? `<div style="font-size:0.72rem; color:var(--text-muted); font-family:monospace;">🏷️ ${escapeHtml(p.barcode)}</div>` : ''}
+          </td>
           <td>${escapeHtml(p.category)}</td>
-          <td>GHS ${Number(p.cost_price).toFixed(2)}</td>
+          <td class="boss-only">GHS ${Number(p.cost_price).toFixed(2)}</td>
           <td><strong>GHS ${Number(p.selling_price).toFixed(2)}</strong></td>
-          <td style="color:var(--success); font-weight:700;">+GHS ${unitProfit.toFixed(2)} <small>(${marginPct}%)</small></td>
+          <td class="boss-only" style="color:var(--success); font-weight:700;">+GHS ${unitProfit.toFixed(2)} <small>(${marginPct}%)</small></td>
           <td><strong>${p.stock_qty}</strong></td>
           <td>${statusBadge}</td>
           <td>
             <div class="action-group">
-              <button type="button" class="btn btn-success btn-sm" ${canEdit ? '' : 'disabled'} data-inv-restock="${escapeHtml(p.id)}">+ Restock</button>
-              <button type="button" class="btn btn-outline btn-sm" ${canEdit ? '' : 'disabled'} data-inv-edit="${escapeHtml(p.id)}">Edit</button>
-              <button type="button" class="btn btn-outline btn-sm" style="color:var(--danger);" ${canEdit ? '' : 'disabled'} data-inv-delete="${escapeHtml(p.id)}">Del</button>
+              <button type="button" class="btn btn-success btn-sm" ${canMutate ? '' : 'disabled'} data-inv-restock="${escapeHtml(p.id)}">+ Restock</button>
+              <button type="button" class="btn btn-outline btn-sm" ${canMutate ? '' : 'disabled'} data-inv-edit="${escapeHtml(p.id)}">Edit</button>
+              <button type="button" class="btn btn-outline btn-sm" style="color:var(--danger);" ${canMutate ? '' : 'disabled'} data-inv-delete="${escapeHtml(p.id)}">Del</button>
             </div>
           </td>
         </tr>
       `;
     })
     .join('');
+}
+
+// ============================================================================
+// SMART GHANAIAN PRODUCT AUTOCOMPLETE & CAMERA PHOTO UPLOAD
+// ============================================================================
+
+function openAddProductModal(prefill = {}) {
+  requireBossMode(() => {
+    if (!AppState.isLicenseActive) {
+      showToast('License expired. Enter an unlock token to add products.', 'error');
+      return;
+    }
+    document.getElementById('modal-product-title').textContent = '➕ Add New Product';
+    document.getElementById('prod-id').value = '';
+    document.getElementById('form-product').reset();
+
+    const name = prefill.name || '';
+    const category = prefill.category || '';
+    const barcode = prefill.barcode || '';
+    const thumb =
+      prefill.image_url ||
+      (typeof window.generateProductSvgThumbnail === 'function'
+        ? window.generateProductSvgThumbnail(name || 'New Item', category || 'Beverages')
+        : 'icon-192.png');
+
+    document.getElementById('prod-name').value = name;
+    document.getElementById('prod-category').value = category;
+    document.getElementById('prod-barcode').value = barcode;
+    document.getElementById('prod-image-data').value = thumb;
+    document.getElementById('prod-image-preview').src = thumb;
+    document.getElementById('prod-stock').value = '10';
+    document.getElementById('prod-threshold').value = '5';
+    document.getElementById('catalog-autocomplete-list').classList.add('hidden');
+    updateProductModalProfitPreview();
+    openModal('modal-product');
+    setTimeout(() => document.getElementById('prod-name')?.focus(), 80);
+  });
+}
+
+window.openAddProductModal = openAddProductModal;
+
+function handleProductAutocompleteInput(queryStr) {
+  const dropdown = document.getElementById('catalog-autocomplete-list');
+  const q = String(queryStr || '').trim().toLowerCase();
+
+  // Also refresh live SVG preview if user hasn't uploaded a custom photo
+  const currentImg = document.getElementById('prod-image-data').value;
+  if (!currentImg || currentImg.startsWith('data:image/svg+xml')) {
+    const cat = document.getElementById('prod-category').value || 'Beverages';
+    const newSvg = window.generateProductSvgThumbnail(queryStr || 'Item', cat);
+    document.getElementById('prod-image-data').value = newSvg;
+    document.getElementById('prod-image-preview').src = newSvg;
+  }
+
+  if (!q || !Array.isArray(window.MASTER_CATALOG)) {
+    dropdown.classList.add('hidden');
+    return;
+  }
+
+  const matches = window.MASTER_CATALOG.filter(
+    (item) =>
+      item.name.toLowerCase().includes(q) ||
+      item.category.toLowerCase().includes(q) ||
+      (item.suggested_barcode && item.suggested_barcode.includes(q))
+  ).slice(0, 8);
+
+  if (matches.length === 0) {
+    dropdown.classList.add('hidden');
+    return;
+  }
+
+  dropdown.innerHTML = matches
+    .map(
+      (item) => `
+      <div class="autocomplete-item" data-cat-id="${escapeHtml(item.catalog_id)}">
+        <img src="${item.image_url}" alt="" />
+        <div style="flex:1; min-width:0;">
+          <div class="autocomplete-item-title">${escapeHtml(item.name)}</div>
+          <div class="autocomplete-item-sub">${escapeHtml(item.category)} • 🏷️ ${escapeHtml(item.suggested_barcode)}</div>
+        </div>
+        <span class="badge badge-ok">Select</span>
+      </div>
+    `
+    )
+    .join('');
+
+  dropdown.classList.remove('hidden');
+}
+
+function selectCatalogAutocompleteItem(catalogId) {
+  const item = (window.MASTER_CATALOG || []).find((x) => x.catalog_id === catalogId);
+  if (!item) return;
+
+  document.getElementById('prod-name').value = item.name;
+  document.getElementById('prod-category').value = item.category;
+  document.getElementById('prod-barcode').value = item.suggested_barcode || '';
+  document.getElementById('prod-image-data').value = item.image_url;
+  document.getElementById('prod-image-preview').src = item.image_url;
+  document.getElementById('catalog-autocomplete-list').classList.add('hidden');
+
+  document.getElementById('prod-cost').focus();
+}
+
+function handleProductImageFileSelect(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const maxDim = 180;
+      let w = img.width;
+      let h = img.height;
+      if (w > h && w > maxDim) {
+        h = Math.round((h * maxDim) / w);
+        w = maxDim;
+      } else if (h > maxDim) {
+        w = Math.round((w * maxDim) / h);
+        h = maxDim;
+      }
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+      document.getElementById('prod-image-data').value = dataUrl;
+      document.getElementById('prod-image-preview').src = dataUrl;
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ============================================================================
+// CAMERA BARCODE & QR SCANNER (NATIVE BARCODEDETECTOR + FALLBACK SIMULATOR)
+// ============================================================================
+
+function playScannerBeep() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1480, ctx.currentTime);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.11);
+  } catch {
+    // Ignore audio context errors
+  }
+}
+
+async function openBarcodeScanner(targetMode = 'POS') {
+  AppState.scannerTargetMode = targetMode;
+  document.getElementById('scanner-modal-title').textContent =
+    targetMode === 'POS' ? '📷 Scan Barcode to Add to Cart' : '📷 Scan Product Barcode';
+  document.getElementById('manual-barcode-input').value = '';
+
+  // Populate Quick-Tap Barcode Simulator chips
+  const quickList = document.getElementById('scanner-quick-list');
+  const sourceItems =
+    targetMode === 'POS' && AppState.products.length > 0
+      ? AppState.products.filter((p) => p.barcode).map((p) => ({ name: p.name, barcode: p.barcode }))
+      : (window.MASTER_CATALOG || []).slice(0, 10).map((c) => ({ name: c.name, barcode: c.suggested_barcode }));
+
+  quickList.innerHTML = sourceItems
+    .map(
+      (item) => `
+      <button type="button" class="btn btn-outline btn-sm" data-sim-barcode="${escapeHtml(item.barcode)}">
+        🏷️ ${escapeHtml(item.name.slice(0, 22))} (${escapeHtml(item.barcode)})
+      </button>
+    `
+    )
+    .join('');
+
+  openModal('modal-barcode-scanner');
+  await startCameraStream();
+}
+
+async function startCameraStream() {
+  const video = document.getElementById('scanner-video');
+  const statusEl = document.getElementById('scanner-status-msg');
+  AppState.scannerActive = true;
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    statusEl.textContent = 'Camera API unavailable on this connection. Use the manual input or quick-tap buttons below.';
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' },
+      audio: false
+    });
+    AppState.scannerStream = stream;
+    video.srcObject = stream;
+    await video.play();
+
+    if ('BarcodeDetector' in window) {
+      statusEl.textContent = '🟢 Live Camera Barcode Scanner active — point at any product barcode...';
+      const detector = new window.BarcodeDetector({
+        formats: ['ean_13', 'ean_8', 'code_128', 'upc_a', 'upc_e', 'qr_code']
+      });
+
+      const scanLoop = async () => {
+        if (!AppState.scannerActive) return;
+        try {
+          const barcodes = await detector.detect(video);
+          if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+            const code = barcodes[0].rawValue.trim();
+            handleBarcodeDetected(code);
+            return;
+          }
+        } catch {
+          // continue loop
+        }
+        if (AppState.scannerActive) {
+          requestAnimationFrame(scanLoop);
+        }
+      };
+      requestAnimationFrame(scanLoop);
+    } else {
+      statusEl.textContent = '📷 Camera active! Tap a quick-scan item below or type barcode number.';
+    }
+  } catch {
+    statusEl.textContent = 'Camera permission declined or unavailable. Use manual barcode entry or quick-tap below.';
+  }
+}
+
+function stopCameraScanner() {
+  AppState.scannerActive = false;
+  if (AppState.scannerStream) {
+    AppState.scannerStream.getTracks().forEach((t) => t.stop());
+    AppState.scannerStream = null;
+  }
+  const video = document.getElementById('scanner-video');
+  if (video) video.srcObject = null;
+  closeModal('modal-barcode-scanner');
+}
+
+function handleBarcodeDetected(rawCode) {
+  const code = String(rawCode || '').trim();
+  if (!code) return;
+
+  playScannerBeep();
+  stopCameraScanner();
+
+  if (AppState.scannerTargetMode === 'PRODUCT_MODAL') {
+    document.getElementById('prod-barcode').value = code;
+    const catMatch = (window.MASTER_CATALOG || []).find((c) => c.suggested_barcode === code);
+    if (catMatch && !document.getElementById('prod-name').value.trim()) {
+      selectCatalogAutocompleteItem(catMatch.catalog_id);
+      showToast(`Matched "${catMatch.name}" from Ghanaian Master Catalog!`, 'success');
+    } else {
+      showToast(`Barcode ${code} scanned into product form!`, 'success');
+    }
+    return;
+  }
+
+  // POS Checkout Mode: find matching product in store inventory
+  const existingProd = AppState.products.find((p) => String(p.barcode || '').trim() === code);
+  if (existingProd) {
+    addToCart(existingProd.id);
+    showToast(`Scanned: "${existingProd.name}" added to cart!`, 'success');
+    return;
+  }
+
+  // Check if barcode exists in MASTER_CATALOG so Boss can add it immediately
+  const masterItem = (window.MASTER_CATALOG || []).find((c) => c.suggested_barcode === code);
+  if (masterItem) {
+    showToast(`Scanned "${masterItem.name}" (${code}) — not in your inventory yet. Opening Add Product...`, 'warning');
+    openAddProductModal({
+      name: masterItem.name,
+      category: masterItem.category,
+      barcode: masterItem.suggested_barcode,
+      image_url: masterItem.image_url
+    });
+  } else {
+    showToast(`No product found with barcode ${code}.`, 'warning');
+    if (AppState.roleMode === 'boss') {
+      openAddProductModal({ barcode: code });
+    }
+  }
 }
 
 // ============================================================================
@@ -886,11 +1299,11 @@ function renderDebtorsTab() {
 
   const tbody = document.getElementById('debtors-table-body');
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">No debtor records found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">No debtor records found in your Credit Book.</td></tr>`;
     return;
   }
 
-  const shopName = AppState.settings.shop_name || 'Holy Star Provision Store';
+  const shopName = AppState.settings.store_name || AppState.settings.shop_name || 'Holy Star POS';
 
   tbody.innerHTML = filtered
     .map((d) => {
@@ -1045,7 +1458,6 @@ async function renderSalesTab() {
   document.getElementById('metric-momo-sub').textContent = `Sales: GHS ${m.momoFromSales.toFixed(2)} + Debt Paid: GHS ${m.momoFromDebtors.toFixed(2)}`;
   document.getElementById('metric-credit').textContent = `GHS ${m.newCreditGiven.toFixed(2)}`;
 
-  // Sales table
   const salesBody = document.getElementById('sales-table-body');
   if (report.sales.length === 0) {
     salesBody.innerHTML = `<tr><td colspan="7" class="empty-state">No sales recorded on ${escapeHtml(dateStr)}.</td></tr>`;
@@ -1079,7 +1491,7 @@ async function renderSalesTab() {
               }
             </td>
             <td><strong>GHS ${Number(s.total_amount).toFixed(2)}</strong></td>
-            <td style="color:var(--success); font-weight:700;">GHS ${Number(s.total_profit).toFixed(2)}</td>
+            <td class="boss-only" style="color:var(--success); font-weight:700;">GHS ${Number(s.total_profit).toFixed(2)}</td>
             <td>
               <button type="button" class="btn btn-outline btn-sm" data-view-receipt="${escapeHtml(s.id)}">
                 🖨️ View / Print
@@ -1091,7 +1503,6 @@ async function renderSalesTab() {
       .join('');
   }
 
-  // Debt Repayments table
   const repBody = document.getElementById('repayments-table-body');
   if (report.repayments.length === 0) {
     repBody.innerHTML = `<tr><td colspan="6" class="empty-state">No debtor repayments recorded on ${escapeHtml(dateStr)}.</td></tr>`;
@@ -1118,8 +1529,8 @@ function openReceiptModal(saleId) {
   if (!sale) return;
 
   const s = AppState.settings;
-  const shopName = s.shop_name || 'Holy Star Provision Store';
-  const shopLoc = s.shop_location || 'Bolgatanga Central Market';
+  const shopName = s.store_name || s.shop_name || 'Holy Star POS';
+  const shopLoc = s.shop_location || 'Ghana';
   const shopPhone = s.owner_phone || '';
 
   const itemsRows = (sale.items || [])
@@ -1163,11 +1574,12 @@ function openReceiptModal(saleId) {
       <div class="receipt-shop-title">${escapeHtml(shopName)}</div>
       <div>${escapeHtml(shopLoc)}</div>
       ${shopPhone ? `<div>Tel: ${escapeHtml(shopPhone)}</div>` : ''}
-      <div>Shop ID: ${escapeHtml(s.shop_id || 'HS-001')}</div>
+      <div>Store ID: ${escapeHtml(s.store_id || 'HS-0000')}</div>
     </div>
     <div class="receipt-divider"></div>
     <div><strong>Receipt:</strong> ${escapeHtml(sale.id)}</div>
     <div><strong>Date:</strong> ${new Date(sale.timestamp).toLocaleString()}</div>
+    <div><strong>Attendant:</strong> ${escapeHtml(sale.served_by || 'Cashier')}</div>
     <div class="receipt-divider"></div>
     <table class="receipt-items-table">
       <thead>
@@ -1202,25 +1614,34 @@ async function openCloseDayModal() {
   const report = await window.HolyStarDB.getDailyReport(dateStr);
   const m = report.metrics;
   const s = AppState.settings;
-  const shopId = s.shop_id || 'HS-001';
-  const shopName = s.shop_name || 'Holy Star Provision Store';
+  const shopId = s.store_id || s.shop_id || 'HS-0000';
+  const shopName = s.store_name || s.shop_name || 'Holy Star POS';
   const ownerPhone = s.owner_phone || '0240000000';
 
   const seal = generateCloseDaySeal(dateStr, m.totalRevenue, m.grossProfit, shopId);
 
-  const summaryText = [
+  const lines = [
     `📊 *HOLY STAR POS — CLOSE DAY REPORT*`,
-    `🏪 Shop: ${shopName} (${shopId})`,
+    `🏪 Store: ${shopName} (${shopId})`,
     `📅 Date: ${dateStr}`,
     `------------------------------`,
-    `💰 Total Revenue: GHS ${m.totalRevenue.toFixed(2)} (${m.salesCount} sales)`,
-    `📈 Actual Gross Profit: GHS ${m.grossProfit.toFixed(2)}`,
+    `💰 Total Revenue: GHS ${m.totalRevenue.toFixed(2)} (${m.salesCount} sales)`
+  ];
+
+  // Show Gross Profit line only in Boss Mode on screen
+  if (AppState.roleMode === 'boss') {
+    lines.push(`📈 Actual Gross Profit: GHS ${m.grossProfit.toFixed(2)}`);
+  }
+
+  lines.push(
     `💵 Cash Collected: GHS ${m.cashCollected.toFixed(2)}`,
     `📱 MoMo Recorded: GHS ${m.momoRecorded.toFixed(2)}`,
     `📒 New Credit Given: GHS ${m.newCreditGiven.toFixed(2)}`,
     `------------------------------`,
     `🔐 Anti-Tamper Seal: #${seal}`
-  ].join('\n');
+  );
+
+  const summaryText = lines.join('\n');
 
   document.getElementById('close-day-owner-phone-display').textContent = ownerPhone;
   document.getElementById('close-day-report-text').textContent = summaryText;
@@ -1237,6 +1658,117 @@ async function openCloseDayModal() {
 // ============================================================================
 
 function setupEventListeners() {
+  // Auth Screen Tab Switcher
+  document.querySelectorAll('.auth-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => switchAuthTab(btn.dataset.authTab));
+  });
+
+  // Saved Store selector on Login screen
+  document.getElementById('login-saved-store-select').addEventListener('change', (e) => {
+    document.getElementById('login-identifier').value = e.target.value;
+  });
+
+  // Login Role Selector Cards
+  document.querySelectorAll('.role-option-card').forEach((card) => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.role-option-card').forEach((c) => c.classList.remove('active'));
+      card.classList.add('active');
+      document.getElementById('login-role-input').value = card.dataset.loginRole;
+    });
+  });
+
+  // Login Form Submit
+  document.getElementById('form-auth-login').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const res = await window.HolyStarDB.loginToStore({
+        identifier: document.getElementById('login-identifier').value,
+        password: document.getElementById('login-password').value,
+        role: document.getElementById('login-role-input').value
+      });
+      document.getElementById('login-password').value = '';
+      document.getElementById('auth-screen-overlay').classList.add('hidden');
+      await refreshAllData();
+      showToast(
+        `Welcome to ${res.store.store_name} (${res.session.role_mode === 'boss' ? '👑 Boss Mode' : '👤 Cashier Mode'})!`,
+        'success'
+      );
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  // Register New Store Form Submit
+  document.getElementById('form-auth-register').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const res = await window.HolyStarDB.registerNewStore({
+        store_name: document.getElementById('reg-store-name').value,
+        store_category: document.getElementById('reg-store-category').value,
+        owner_name: document.getElementById('reg-owner-name').value,
+        owner_phone: document.getElementById('reg-owner-phone').value,
+        owner_password: document.getElementById('reg-owner-password').value,
+        boss_pin: document.getElementById('reg-boss-pin').value,
+        store_location: document.getElementById('reg-store-location').value
+      });
+      document.getElementById('form-auth-register').reset();
+      document.getElementById('auth-screen-overlay').classList.add('hidden');
+      await refreshAllData();
+      showToast(
+        `🎉 Store "${res.store.store_name}" created! Assigned ID: ${res.store.store_id} (7-Day Free Trial Active)`,
+        'success'
+      );
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  // Role Mode Header Toggle (Boss <-> Cashier)
+  document.getElementById('btn-role-mode-toggle').addEventListener('click', async () => {
+    if (AppState.roleMode === 'boss') {
+      window.HolyStarDB.switchToCashierMode();
+      await refreshAllData();
+      showToast('🔒 Switched to Cashier Mode. Cost prices, profits & settings are now hidden.', 'warning');
+    } else {
+      requireBossMode(async () => {
+        await refreshAllData();
+      });
+    }
+  });
+
+  document.getElementById('btn-settings-unlock-boss').addEventListener('click', () => {
+    requireBossMode(async () => {
+      await refreshAllData();
+    });
+  });
+
+  // 4-Digit Boss PIN Modal Submit
+  document.getElementById('form-boss-pin').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pin = document.getElementById('boss-pin-input').value;
+    const ok = await window.HolyStarDB.verifyBossPin(pin);
+    if (!ok) {
+      showToast('Incorrect 4-Digit Boss PIN or Password.', 'error');
+      return;
+    }
+    closeModal('modal-boss-pin');
+    await refreshAllData();
+    showToast('👑 Boss Mode Unlocked!', 'success');
+    if (typeof AppState.pendingBossCallback === 'function') {
+      const cb = AppState.pendingBossCallback;
+      AppState.pendingBossCallback = null;
+      cb();
+    }
+  });
+
+  // Log Out / Switch Store Button
+  document.getElementById('btn-logout-store').addEventListener('click', async () => {
+    AppState.cart = [];
+    window.HolyStarDB.logoutSession();
+    await showAuthOverlay();
+    showToast('Logged out of store session.', 'info');
+  });
+
   // Navigation Tabs
   document.querySelectorAll('.nav-tab').forEach((tabBtn) => {
     tabBtn.addEventListener('click', () => {
@@ -1256,7 +1788,7 @@ function setupEventListeners() {
     });
   }
 
-  // License status pill & banner unlock button jump to Settings tab
+  // License status pill & banner unlock button
   document.getElementById('license-status-pill').addEventListener('click', () => {
     switchTab('tab-settings');
     document.getElementById('token-issue-code')?.focus();
@@ -1288,6 +1820,27 @@ function setupEventListeners() {
     if (!chip) return;
     AppState.selectedCategory = chip.dataset.cat;
     renderPOSCatalog();
+  });
+
+  // Barcode Scanner Buttons
+  document.getElementById('btn-pos-scan-barcode').addEventListener('click', () => {
+    openBarcodeScanner('POS');
+  });
+  document.getElementById('btn-modal-scan-barcode').addEventListener('click', () => {
+    openBarcodeScanner('PRODUCT_MODAL');
+  });
+  document.getElementById('btn-close-scanner').addEventListener('click', stopCameraScanner);
+  document.getElementById('btn-cancel-scanner').addEventListener('click', stopCameraScanner);
+
+  document.getElementById('form-manual-barcode').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const code = document.getElementById('manual-barcode-input').value.trim();
+    if (code) handleBarcodeDetected(code);
+  });
+
+  document.getElementById('scanner-quick-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-sim-barcode]');
+    if (btn) handleBarcodeDetected(btn.dataset.simBarcode);
   });
 
   // Clicking Product Tile adds to Cart
@@ -1358,7 +1911,6 @@ function setupEventListeners() {
     });
   });
 
-  // Cash tendered & Credit initial deposit live calculators
   document.getElementById('cash-tendered-input').addEventListener('input', () => {
     const total = AppState.cart.reduce((s, i) => s + i.selling_price * i.qty, 0);
     updateCashChangeAndCreditPreview(total);
@@ -1369,7 +1921,6 @@ function setupEventListeners() {
     updateCashChangeAndCreditPreview(total);
   });
 
-  // Existing Debtor quick-fill in Credit Checkout
   document.getElementById('credit-existing-select').addEventListener('change', (e) => {
     const debtor = AppState.debtors.find((d) => d.id === e.target.value);
     if (debtor) {
@@ -1379,29 +1930,34 @@ function setupEventListeners() {
     }
   });
 
-  // Complete Sale Button
   document.getElementById('btn-complete-sale').addEventListener('click', handleCheckoutSubmit);
 
   // Inventory Search & Filter
   document.getElementById('inv-search-input').addEventListener('input', renderInventoryTab);
   document.getElementById('inv-stock-filter').addEventListener('change', renderInventoryTab);
 
-  // Open Add Product Modal
-  document.getElementById('btn-open-product-modal').addEventListener('click', () => {
-    if (!AppState.isLicenseActive) {
-      showToast('License expired. Enter an unlock token to add products.', 'error');
-      return;
-    }
-    document.getElementById('modal-product-title').textContent = '➕ Add New Product';
-    document.getElementById('prod-id').value = '';
-    document.getElementById('form-product').reset();
-    document.getElementById('prod-stock').value = '10';
-    document.getElementById('prod-threshold').value = '5';
-    updateProductModalProfitPreview();
-    openModal('modal-product');
+  // Open Add Product Modal (Protected by Boss PIN if in Cashier Mode)
+  document.getElementById('btn-open-product-modal').addEventListener('click', () => openAddProductModal());
+  document.getElementById('btn-pos-add-stock').addEventListener('click', () => openAddProductModal());
+
+  // Smart Ghanaian Catalog Autocomplete in Product Modal
+  document.getElementById('prod-name').addEventListener('input', (e) => {
+    handleProductAutocompleteInput(e.target.value);
   });
 
-  // Product Modal Profit Preview
+  document.getElementById('catalog-autocomplete-list').addEventListener('click', (e) => {
+    const item = e.target.closest('[data-cat-id]');
+    if (item) {
+      selectCatalogAutocompleteItem(item.dataset.catId);
+    }
+  });
+
+  document.getElementById('prod-image-file').addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+      handleProductImageFileSelect(e.target.files[0]);
+    }
+  });
+
   ['prod-cost', 'prod-price'].forEach((id) => {
     document.getElementById(id).addEventListener('input', updateProductModalProfitPreview);
   });
@@ -1414,6 +1970,8 @@ function setupEventListeners() {
         id: document.getElementById('prod-id').value || undefined,
         name: document.getElementById('prod-name').value,
         category: document.getElementById('prod-category').value,
+        barcode: document.getElementById('prod-barcode').value,
+        image_url: document.getElementById('prod-image-data').value,
         cost_price: document.getElementById('prod-cost').value,
         selling_price: document.getElementById('prod-price').value,
         stock_qty: document.getElementById('prod-stock').value,
@@ -1421,52 +1979,63 @@ function setupEventListeners() {
       });
       closeModal('modal-product');
       await refreshAllData();
-      showToast('Product saved to inventory!', 'success');
+      showToast('Product saved to store inventory!', 'success');
     } catch (err) {
       showToast(err.message, 'error');
     }
   });
 
-  // Inventory Table Actions (Restock, Edit, Delete)
-  document.getElementById('inventory-table-body').addEventListener('click', async (e) => {
+  // Inventory Table Actions (Protected by Boss PIN if in Cashier Mode)
+  document.getElementById('inventory-table-body').addEventListener('click', (e) => {
     const restockBtn = e.target.closest('[data-inv-restock]');
     if (restockBtn) {
-      const p = AppState.products.find((x) => x.id === restockBtn.dataset.invRestock);
-      if (!p) return;
-      document.getElementById('restock-prod-id').value = p.id;
-      document.getElementById('restock-prod-name').textContent = p.name;
-      document.getElementById('restock-current-qty').textContent = String(p.stock_qty);
-      document.getElementById('restock-add-qty').value = '10';
-      openModal('modal-restock');
+      requireBossMode(() => {
+        const p = AppState.products.find((x) => x.id === restockBtn.dataset.invRestock);
+        if (!p) return;
+        document.getElementById('restock-prod-id').value = p.id;
+        document.getElementById('restock-prod-name').textContent = p.name;
+        document.getElementById('restock-current-qty').textContent = String(p.stock_qty);
+        document.getElementById('restock-add-qty').value = '10';
+        openModal('modal-restock');
+      });
       return;
     }
 
     const editBtn = e.target.closest('[data-inv-edit]');
     if (editBtn) {
-      const p = AppState.products.find((x) => x.id === editBtn.dataset.invEdit);
-      if (!p) return;
-      document.getElementById('modal-product-title').textContent = '✏️ Edit Product';
-      document.getElementById('prod-id').value = p.id;
-      document.getElementById('prod-name').value = p.name;
-      document.getElementById('prod-category').value = p.category;
-      document.getElementById('prod-cost').value = p.cost_price;
-      document.getElementById('prod-price').value = p.selling_price;
-      document.getElementById('prod-stock').value = p.stock_qty;
-      document.getElementById('prod-threshold').value = p.low_stock_threshold ?? 5;
-      updateProductModalProfitPreview();
-      openModal('modal-product');
+      requireBossMode(() => {
+        const p = AppState.products.find((x) => x.id === editBtn.dataset.invEdit);
+        if (!p) return;
+        const thumb = getThumbForProduct(p);
+        document.getElementById('modal-product-title').textContent = '✏️ Edit Product';
+        document.getElementById('prod-id').value = p.id;
+        document.getElementById('prod-name').value = p.name;
+        document.getElementById('prod-category').value = p.category;
+        document.getElementById('prod-barcode').value = p.barcode || '';
+        document.getElementById('prod-image-data').value = thumb;
+        document.getElementById('prod-image-preview').src = thumb;
+        document.getElementById('prod-cost').value = p.cost_price;
+        document.getElementById('prod-price').value = p.selling_price;
+        document.getElementById('prod-stock').value = p.stock_qty;
+        document.getElementById('prod-threshold').value = p.low_stock_threshold ?? 5;
+        document.getElementById('catalog-autocomplete-list').classList.add('hidden');
+        updateProductModalProfitPreview();
+        openModal('modal-product');
+      });
       return;
     }
 
     const delBtn = e.target.closest('[data-inv-delete]');
     if (delBtn) {
-      const p = AppState.products.find((x) => x.id === delBtn.dataset.invDelete);
-      if (!p) return;
-      if (confirm(`Delete "${p.name}" from inventory?`)) {
-        await window.HolyStarDB.deleteProduct(p.id);
-        await refreshAllData();
-        showToast(`Deleted "${p.name}".`, 'warning');
-      }
+      requireBossMode(async () => {
+        const p = AppState.products.find((x) => x.id === delBtn.dataset.invDelete);
+        if (!p) return;
+        if (confirm(`Delete "${p.name}" from inventory?`)) {
+          await window.HolyStarDB.deleteProduct(p.id);
+          await refreshAllData();
+          showToast(`Deleted "${p.name}".`, 'warning');
+        }
+      });
     }
   });
 
@@ -1497,7 +2066,6 @@ function setupEventListeners() {
   document.getElementById('debtors-search-input').addEventListener('input', renderDebtorsTab);
   document.getElementById('debtors-status-filter').addEventListener('change', renderDebtorsTab);
 
-  // Open Manual Debtor Modal
   document.getElementById('btn-open-manual-debtor-modal').addEventListener('click', () => {
     if (!AppState.isLicenseActive) {
       showToast('License expired. Enter an unlock token to add new debtors.', 'error');
@@ -1507,7 +2075,6 @@ function setupEventListeners() {
     openModal('modal-manual-debtor');
   });
 
-  // Submit Manual Debtor
   document.getElementById('form-manual-debtor').addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
@@ -1527,7 +2094,6 @@ function setupEventListeners() {
     }
   });
 
-  // Debtors Table Actions (History, Record Payment, Cloud SMS Placeholder)
   document.getElementById('debtors-table-body').addEventListener('click', (e) => {
     const histBtn = e.target.closest('[data-debtor-history]');
     if (histBtn) {
@@ -1545,13 +2111,12 @@ function setupEventListeners() {
     if (cloudSmsBtn) {
       const d = AppState.debtors.find((x) => x.id === cloudSmsBtn.dataset.cloudSms);
       showToast(
-        `Cloud SMS (Arkesel / Hubtel API) ready for online integration for ${d ? d.name : 'customer'}. Use the "📩 SMS" or "💬 WhatsApp" buttons for immediate offline/mobile dispatch!`,
+        `Cloud SMS (Arkesel / Hubtel API) ready for online integration for ${d ? d.name : 'customer'}. Use "📩 SMS" or "💬 WhatsApp" for immediate dispatch!`,
         'warning'
       );
     }
   });
 
-  // Pay Full Balance Quick Button
   document.getElementById('btn-pay-full-balance').addEventListener('click', () => {
     const id = document.getElementById('pay-debtor-id').value;
     const d = AppState.debtors.find((x) => x.id === id);
@@ -1560,7 +2125,6 @@ function setupEventListeners() {
     }
   });
 
-  // Submit Debtor Payment
   document.getElementById('form-debtor-payment').addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
@@ -1582,10 +2146,7 @@ function setupEventListeners() {
   });
 
   // Sales Date Picker & Close Day Report
-  document.getElementById('sales-date-picker').addEventListener('change', () => {
-    renderSalesTab();
-  });
-
+  document.getElementById('sales-date-picker').addEventListener('change', () => renderSalesTab());
   document.getElementById('btn-sales-today').addEventListener('click', () => {
     document.getElementById('sales-date-picker').value = window.HolyStarDB.formatLocalDate();
     renderSalesTab();
@@ -1593,15 +2154,10 @@ function setupEventListeners() {
 
   document.getElementById('sales-table-body').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-view-receipt]');
-    if (btn) {
-      openReceiptModal(btn.dataset.viewReceipt);
-    }
+    if (btn) openReceiptModal(btn.dataset.viewReceipt);
   });
 
-  document.getElementById('btn-print-receipt').addEventListener('click', () => {
-    window.print();
-  });
-
+  document.getElementById('btn-print-receipt').addEventListener('click', () => window.print());
   document.getElementById('btn-open-close-day-modal').addEventListener('click', openCloseDayModal);
 
   document.getElementById('btn-close-day-copy').addEventListener('click', async () => {
@@ -1614,10 +2170,9 @@ function setupEventListeners() {
     }
   });
 
-  // Token Unlock Form Submission
+  // Token Unlock Form
   document.getElementById('form-activate-token').addEventListener('submit', handleActivateToken);
 
-  // Simulate Expired License (Testing helper)
   document.getElementById('btn-simulate-expiry').addEventListener('click', async () => {
     await window.HolyStarDB.setSetting('license_expiry', Date.now() - 60000);
     await window.HolyStarDB.setSetting('license_plan', 'Expired (Test Simulation)');
@@ -1625,58 +2180,92 @@ function setupEventListeners() {
     showToast('License set to Expired! Notice Read-Only mode is active and Checkout is locked.', 'warning');
   });
 
-  // Shop Settings Form
+  // Store Profile Settings Form
   document.getElementById('form-shop-settings').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const shopId = document.getElementById('setting-shop-id').value.trim().toUpperCase();
     const shopName = document.getElementById('setting-shop-name').value.trim();
     const ownerPhone = document.getElementById('setting-owner-phone').value.trim();
     const shopLocation = document.getElementById('setting-shop-location').value.trim();
+    const bossPin = document.getElementById('setting-boss-pin').value.trim();
 
-    if (!shopId || !shopName || !ownerPhone) {
-      showToast('Shop ID, Shop Name, and Owner Phone are required.', 'error');
+    if (!shopName || !ownerPhone) {
+      showToast('Store Name and Owner Phone are required.', 'error');
+      return;
+    }
+    if (!/^\d{4}$/.test(bossPin)) {
+      showToast('Boss PIN must be a 4-digit number.', 'error');
       return;
     }
 
     await window.HolyStarDB.saveSettings({
-      shop_id: shopId,
+      store_name: shopName,
       shop_name: shopName,
       owner_phone: ownerPhone,
-      shop_location: shopLocation
+      shop_location: shopLocation,
+      boss_pin: bossPin
     });
 
     await refreshAllData();
-    showToast('Shop profile settings saved!', 'success');
+    showToast('Store profile & Boss PIN saved!', 'success');
   });
 
-  // Load Demo Data Buttons
-  document.getElementById('btn-load-demo-data').addEventListener('click', handleLoadDemoData);
-  document.getElementById('btn-pos-quick-demo').addEventListener('click', handleLoadDemoData);
+  // Add Cashier / Staff Account Form
+  document.getElementById('form-add-staff').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await window.HolyStarDB.addStoreStaff({
+        name: document.getElementById('staff-name-input').value,
+        pin_or_pass: document.getElementById('staff-pass-input').value,
+        device_label: document.getElementById('staff-device-input').value
+      });
+      document.getElementById('form-add-staff').reset();
+      await refreshAllData();
+      showToast('Cashier login added!', 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
 
-  // Backup & Restore
+  document.getElementById('staff-list-container').addEventListener('click', async (e) => {
+    const delBtn = e.target.closest('[data-del-staff]');
+    if (!delBtn) return;
+    await window.HolyStarDB.deleteStoreStaff(delBtn.dataset.delStaff);
+    await refreshAllData();
+    showToast('Removed cashier login.', 'warning');
+  });
+
+  // Sample Items, Backup, Restore & Telemetry Copy
+  document.getElementById('btn-load-demo-data').addEventListener('click', handleLoadDemoData);
   document.getElementById('btn-export-backup').addEventListener('click', handleExportBackup);
   document.getElementById('btn-restore-backup').addEventListener('click', handleRestoreBackup);
 
+  document.getElementById('btn-copy-telemetry').addEventListener('click', async () => {
+    const text = document.getElementById('telemetry-json-preview').textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Store Telemetry JSON copied!', 'success');
+    } catch {
+      showToast('Copied telemetry JSON!', 'success');
+    }
+  });
+
   // Close Modals
   document.querySelectorAll('[data-close]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      closeModal(btn.dataset.close);
-    });
+    btn.addEventListener('click', () => closeModal(btn.dataset.close));
   });
 }
 
 // ============================================================================
-// TOKEN VERIFICATION, DEMO DATA & BACKUP HANDLERS
+// TOKEN VERIFICATION, SAMPLE ITEMS & BACKUP HANDLERS
 // ============================================================================
 
 async function handleActivateToken(e) {
   e.preventDefault();
-  const shopId = String(AppState.settings.shop_id || 'HS-001').trim().toUpperCase();
+  const shopId = String(AppState.settings.store_id || AppState.settings.shop_id || 'HS-0000').trim().toUpperCase();
   let issueCode = document.getElementById('token-issue-code').value.trim().toUpperCase();
   const planSelection = document.getElementById('token-plan-days').value;
   let enteredToken = document.getElementById('token-code-input').value.trim().toUpperCase();
 
-  // Support combined format if user pasted "ISSUE:TOKEN" or "ISSUE-TOKEN"
   if (enteredToken.includes(':') || (enteredToken.includes('-') && enteredToken.length > 8)) {
     const parts = enteredToken.split(/[:\-]/);
     if (parts.length === 2 && parts[1].length === 8) {
@@ -1704,10 +2293,7 @@ async function handleActivateToken(e) {
   }
 
   if (!matchedPlan) {
-    showToast(
-      `Invalid Unlock Token for Shop ID "${shopId}" and Issue Code "${issueCode}". Verify details in Admin Keygen.`,
-      'error'
-    );
+    showToast(`Invalid Unlock Token for Store ID "${shopId}" and Issue Code "${issueCode}".`, 'error');
     return;
   }
 
@@ -1735,9 +2321,9 @@ async function handleLoadDemoData() {
   try {
     await window.HolyStarDB.loadDemoShopData();
     await refreshAllData();
-    showToast('🇬🇭 Loaded realistic Ghanaian provision shop items, sample sales & debtor!', 'success');
+    showToast('🇬🇭 Loaded 8 sample Ghanaian provision products into your store!', 'success');
   } catch (err) {
-    showToast(err.message || 'Failed to load demo data.', 'error');
+    showToast(err.message || 'Failed to load sample data.', 'error');
   }
 }
 
@@ -1745,7 +2331,7 @@ async function handleExportBackup() {
   try {
     const backup = await window.HolyStarDB.exportFullBackup();
     const dateStr = window.HolyStarDB.formatLocalDate();
-    const shopId = (AppState.settings.shop_id || 'HS-001').toLowerCase();
+    const shopId = (AppState.settings.store_id || 'HS-0000').toLowerCase();
     const filename = `holystar-pos-backup-${shopId}-${dateStr}.json`;
 
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
@@ -1758,7 +2344,7 @@ async function handleExportBackup() {
     a.remove();
     URL.revokeObjectURL(url);
 
-    showToast(`Exported full backup: ${filename}`, 'success');
+    showToast(`Exported full store backup: ${filename}`, 'success');
   } catch (err) {
     showToast(err.message || 'Failed to export backup.', 'error');
   }
@@ -1785,7 +2371,7 @@ async function handleRestoreBackup() {
 }
 
 // ============================================================================
-// UI HELPERS (TABS, MODALS, TOASTS, ESCAPING)
+// UI HELPERS
 // ============================================================================
 
 function switchTab(tabId) {
@@ -1848,4 +2434,3 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
-

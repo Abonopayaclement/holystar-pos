@@ -1,13 +1,14 @@
 /**
  * Holy Star POS - Offline Service Worker (sw.js)
- * Caches all application shell files and icons so the POS works 100% offline without internet.
+ * Caches all application shell files, Master Catalog, and icons so the POS works 100% offline.
  */
 
-const CACHE_NAME = 'holystar-pos-cache-v4';
+const CACHE_NAME = 'holystar-pos-cache-v5';
 const OFFLINE_ASSETS = [
   './',
   './index.html',
   './style.css',
+  './catalog.js',
   './db.js',
   './app.js',
   './manifest.json',

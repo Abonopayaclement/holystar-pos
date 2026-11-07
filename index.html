@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#0f172a" />
-  <meta name="description" content="Holy Star POS — Offline-First Retail Point of Sale, Inventory Profit Tracker & Debtors Credit Book" />
-  <title>Holy Star POS — Offline Retail & Credit Book</title>
+  <meta name="description" content="Holy Star POS — Multi-Store Offline-First Retail POS, Smart Ghanaian Product Catalog, Barcode Scanner & Credit Book" />
+  <title>Holy Star POS — Multi-Store Retail &amp; Credit Book</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
   <link rel="apple-touch-icon" href="icon-192.png" />
@@ -14,17 +14,136 @@
 <body>
 
   <!-- ====================================================================
+       LANDING / AUTHENTICATION ONBOARDING OVERLAY (MULTI-STORE SAAS)
+       ==================================================================== -->
+  <div id="auth-screen-overlay" class="auth-overlay hidden">
+    <div class="auth-card">
+      <div class="auth-brand-header">
+        <div class="auth-logo-circle">★</div>
+        <h2 style="font-size:1.35rem; font-weight:900;">Holy Star POS</h2>
+        <p style="font-size:0.82rem; color:#cbd5e1; margin-top:0.2rem;">
+          Offline-First Retail POS, Inventory Profit Tracker &amp; Credit Book
+        </p>
+      </div>
+
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab-btn active" data-auth-tab="login">
+          🔑 Login to Store
+        </button>
+        <button type="button" class="auth-tab-btn" data-auth-tab="register">
+          🏪 Create New Store
+        </button>
+      </div>
+
+      <!-- TAB 1: LOGIN TO EXISTING STORE -->
+      <div id="auth-panel-login" class="auth-body">
+        <form id="form-auth-login">
+          <div id="login-saved-stores-wrap" class="form-group hidden">
+            <label class="form-label" for="login-saved-store-select">Select Store on This Device</label>
+            <select id="login-saved-store-select" class="form-control" style="font-weight:700;"></select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="login-identifier">Store Phone Number or Store ID *</label>
+            <input type="text" id="login-identifier" class="form-control" placeholder="e.g. 0244123456 or HS-XXXX" required />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Select Login Role *</label>
+            <div class="role-selector-grid">
+              <div class="role-option-card active" data-login-role="boss">
+                👑 Store Owner / Boss
+                <div style="font-size:0.7rem; font-weight:500; color:var(--text-muted); margin-top:0.15rem;">Full Profit &amp; Stock Control</div>
+              </div>
+              <div class="role-option-card" data-login-role="cashier">
+                👤 Cashier / Attendant
+                <div style="font-size:0.7rem; font-weight:500; color:var(--text-muted); margin-top:0.15rem;">Sales &amp; Credit Book Only</div>
+              </div>
+            </div>
+            <input type="hidden" id="login-role-input" value="boss" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="login-password">Password or 4-Digit PIN *</label>
+            <input type="password" id="login-password" class="form-control" placeholder="Enter your Password or PIN" required />
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-lg btn-block">
+            🚀 Login to POS
+          </button>
+        </form>
+      </div>
+
+      <!-- TAB 2: CREATE NEW STORE (SIGN UP) -->
+      <div id="auth-panel-register" class="auth-body hidden">
+        <form id="form-auth-register">
+          <div class="form-group">
+            <label class="form-label" for="reg-store-name">Store / Business Name *</label>
+            <input type="text" id="reg-store-name" class="form-control" placeholder="e.g. Mother's Grace Enterprise" required />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="reg-store-category">Store Category *</label>
+            <select id="reg-store-category" class="form-control" required>
+              <option value="Provision & Mini-Mart">🛒 Provision &amp; Mini-Mart</option>
+              <option value="Boutique & Fashion">👗 Boutique &amp; Fashion</option>
+              <option value="Pharmacy/Over-the-Counter">💊 Pharmacy / Over-the-Counter</option>
+              <option value="Cosmetics">🧴 Cosmetics &amp; Beauty</option>
+              <option value="Electronics/Phone Shop">📱 Electronics / Phone Shop</option>
+              <option value="Food/Restaurant">🍲 Food / Restaurant</option>
+              <option value="Other">📦 Other Retail Business</option>
+            </select>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.65rem;">
+            <div class="form-group">
+              <label class="form-label" for="reg-owner-name">Owner Full Name *</label>
+              <input type="text" id="reg-owner-name" class="form-control" placeholder="e.g. Grace Mensah" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="reg-owner-phone">Owner Phone (Login ID) *</label>
+              <input type="tel" id="reg-owner-phone" class="form-control" placeholder="e.g. 0244123456" required />
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.65rem;">
+            <div class="form-group">
+              <label class="form-label" for="reg-owner-password">Owner Password *</label>
+              <input type="password" id="reg-owner-password" class="form-control" placeholder="Min 4 chars" minlength="4" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="reg-boss-pin">4-Digit Boss PIN *</label>
+              <input type="password" id="reg-boss-pin" class="form-control" placeholder="e.g. 1234" pattern="\d{4}" maxlength="4" inputmode="numeric" required />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="reg-store-location">Shop Location / Landmark</label>
+            <input type="text" id="reg-store-location" class="form-control" placeholder="e.g. Bolgatanga Central Market" value="Accra, Ghana" />
+          </div>
+
+          <button type="submit" class="btn btn-success btn-lg btn-block">
+            ✨ Create Store &amp; Start 7-Day Free Trial
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
        TOP APPLICATION HEADER
        ==================================================================== -->
   <header class="app-header">
     <div class="brand-group">
       <div class="brand-logo" aria-hidden="true">★</div>
       <div class="brand-titles">
-        <h1 id="header-shop-name">Holy Star Provision Store</h1>
+        <h1 id="header-shop-name">Holy Star POS</h1>
         <div class="brand-meta">
-          <span>Shop ID: <strong id="header-shop-id">HS-001</strong></span>
+          <span>ID: <strong id="header-shop-id">HS-0000</strong></span>
           <span>•</span>
-          <span id="header-shop-location">Bolgatanga Central Market</span>
+          <span id="header-shop-category">Retail</span>
+          <span>•</span>
+          <span id="header-shop-location">Ghana</span>
         </div>
       </div>
     </div>
@@ -33,9 +152,20 @@
       <button type="button" id="btn-install-pwa" class="btn btn-warning btn-sm hidden" title="Install Holy Star POS as an offline app">
         📲 Install App
       </button>
-      <span id="network-status-badge" class="offline-badge">⚡ 100% Offline Ready</span>
+
+      <!-- Boss Mode vs Cashier Mode Toggle -->
+      <button type="button" id="btn-role-mode-toggle" class="role-pill role-boss" title="Click to switch between Cashier Mode and Boss Mode">
+        <span id="role-pill-text">👑 Boss Mode (Unlocked)</span>
+      </button>
+
+      <!-- License Status Badge -->
       <button type="button" id="license-status-pill" class="status-pill license-active" title="Click to manage subscription license">
         <span id="license-pill-text">⏳ Checking License...</span>
+      </button>
+
+      <!-- Switch Store / Logout -->
+      <button type="button" id="btn-logout-store" class="btn btn-outline btn-sm" style="background:#1e293b; color:#e2e8f0; border-color:#334155;" title="Log Out or Switch Store">
+        🚪 Log Out
       </button>
     </div>
   </header>
@@ -98,14 +228,17 @@
           <div class="card-header">
             <h2 class="card-title">🛍️ Select Products to Sell</h2>
             <div style="display:flex; gap:0.4rem;">
-              <button type="button" id="btn-pos-quick-demo" class="btn btn-outline btn-sm" title="Load sample Ghanaian shop items">🇬🇭 Load Demo Items</button>
+              <button type="button" id="btn-pos-add-stock" class="btn btn-primary btn-sm">➕ Add Product</button>
             </div>
           </div>
           <div class="card-body">
             <div class="pos-filter-bar">
               <div class="pos-search-wrap">
-                <input type="search" id="pos-search-input" class="form-control" placeholder="🔍 Search item name or category (e.g. Milo, Milk, Frytol, Sugar)..." autocomplete="off" />
+                <input type="search" id="pos-search-input" class="form-control" placeholder="🔍 Search product name, category, or barcode..." autocomplete="off" />
               </div>
+              <button type="button" id="btn-pos-scan-barcode" class="btn btn-warning" title="Scan Product Barcode with Camera">
+                📷 Scan Barcode
+              </button>
             </div>
 
             <div id="pos-category-chips" class="category-chips">
@@ -126,7 +259,7 @@
           </div>
           <div class="card-body">
             <div id="cart-items-container" class="cart-items-list">
-              <div class="empty-state">Cart is empty. Tap any product on the left to add it.</div>
+              <div class="empty-state">Cart is empty. Tap any product or scan a barcode to add it.</div>
             </div>
 
             <div class="cart-summary-box">
@@ -241,14 +374,14 @@
         <div class="metric-card">
           <div class="metric-label">Total Product Lines</div>
           <div id="inv-metric-count" class="metric-value">0</div>
-          <div class="metric-sub">Active items in catalog</div>
+          <div class="metric-sub">Active items in store</div>
         </div>
-        <div class="metric-card metric-cash">
+        <div class="metric-card metric-cash boss-only">
           <div class="metric-label">Total Stock Cost Value</div>
           <div id="inv-metric-cost" class="metric-value">GHS 0.00</div>
           <div class="metric-sub">Capital tied in current stock</div>
         </div>
-        <div class="metric-card metric-profit">
+        <div class="metric-card metric-profit boss-only">
           <div class="metric-label">Expected Retail Value</div>
           <div id="inv-metric-retail" class="metric-value">GHS 0.00</div>
           <div id="inv-metric-margin" class="metric-sub">Est. Profit: GHS 0.00</div>
@@ -262,7 +395,7 @@
 
       <div class="card">
         <div class="card-header">
-          <h2 class="card-title">📦 Product Inventory &amp; Profit Setup</h2>
+          <h2 class="card-title">📦 Product Inventory &amp; Stock Control</h2>
           <div class="action-group">
             <button type="button" id="btn-open-product-modal" class="btn btn-primary">
               ➕ Add New Product
@@ -272,7 +405,7 @@
         <div class="card-body">
           <div class="pos-filter-bar">
             <div class="pos-search-wrap">
-              <input type="search" id="inv-search-input" class="form-control" placeholder="🔍 Filter inventory by name or category..." />
+              <input type="search" id="inv-search-input" class="form-control" placeholder="🔍 Filter inventory by name, category, or barcode..." />
             </div>
             <select id="inv-stock-filter" class="form-control" style="max-width:220px;">
               <option value="ALL">All Stock Levels</option>
@@ -285,11 +418,12 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Product Name</th>
+                  <th>Photo</th>
+                  <th>Product Name &amp; Barcode</th>
                   <th>Category</th>
-                  <th>Cost Price</th>
+                  <th class="boss-only">Cost Price</th>
                   <th>Selling Price</th>
-                  <th>Unit Profit</th>
+                  <th class="boss-only">Unit Profit</th>
                   <th>Stock Qty</th>
                   <th>Status</th>
                   <th>Actions</th>
@@ -376,7 +510,7 @@
       <div class="card" style="margin-bottom:1.25rem;">
         <div class="card-header">
           <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
-            <h2 class="card-title">📅 Daily Sales &amp; Profit Report</h2>
+            <h2 class="card-title">📅 Daily Sales Report</h2>
             <input type="date" id="sales-date-picker" class="form-control" style="width:auto; font-weight:700;" />
             <button type="button" id="btn-sales-today" class="btn btn-outline btn-sm">Today</button>
           </div>
@@ -386,14 +520,14 @@
         </div>
       </div>
 
-      <!-- 5 Required Daily Metric Cards -->
+      <!-- Daily Metric Cards (Actual Gross Profit hidden in Cashier Mode) -->
       <div class="metrics-grid">
         <div class="metric-card">
           <div class="metric-label">Total Revenue (GHS)</div>
           <div id="metric-revenue" class="metric-value">GHS 0.00</div>
           <div id="metric-sales-count" class="metric-sub">0 sales completed</div>
         </div>
-        <div class="metric-card metric-profit">
+        <div class="metric-card metric-profit boss-only">
           <div class="metric-label">Actual Gross Profit (GHS)</div>
           <div id="metric-profit" class="metric-value" style="color:var(--success);">GHS 0.00</div>
           <div class="metric-sub">∑ (Selling − Cost) × Qty sold</div>
@@ -430,7 +564,7 @@
                   <th>Items Sold</th>
                   <th>Payment Type</th>
                   <th>Total (GHS)</th>
-                  <th>Gross Profit</th>
+                  <th class="boss-only">Gross Profit</th>
                   <th>Receipt</th>
                 </tr>
               </thead>
@@ -470,7 +604,7 @@
     </section>
 
     <!-- ==================================================================
-         TAB 5: SETTINGS, PREPAID LICENSE & BACKUP / RESTORE
+         TAB 5: SETTINGS, PREPAID LICENSE, STAFF & BACKUP / RESTORE
          ================================================================== -->
     <section id="tab-settings" class="tab-panel">
       <div class="settings-grid">
@@ -483,8 +617,8 @@
           <div class="card-body">
             <div style="background:var(--bg-muted); border:1px solid var(--border); border-radius:8px; padding:0.9rem; margin-bottom:1rem;">
               <div class="summary-row">
-                <span>Assigned Shop ID:</span>
-                <strong id="settings-display-shop-id" style="font-size:1.05rem; color:var(--primary);">HS-001</strong>
+                <span>Assigned Store ID:</span>
+                <strong id="settings-display-shop-id" style="font-size:1.05rem; color:var(--primary);">HS-0000</strong>
               </div>
               <div class="summary-row">
                 <span>Current License Status:</span>
@@ -523,7 +657,7 @@
               <div class="form-group">
                 <label class="form-label" for="token-code-input">8-Character Unlock Token *</label>
                 <input type="text" id="token-code-input" class="form-control" placeholder="e.g. ABCD1234" maxlength="25" required style="text-transform:uppercase; font-family:monospace; font-size:1.15rem; font-weight:900; letter-spacing:0.12em; text-align:center;" />
-                <small style="color:var(--text-muted); font-size:0.75rem;">Enter the 8-character token generated by Admin Keygen for your Shop ID and Issue Code.</small>
+                <small style="color:var(--text-muted); font-size:0.75rem;">Enter the 8-character token generated for your Store ID and Issue Code.</small>
               </div>
 
               <button type="submit" class="btn btn-primary btn-block">
@@ -531,12 +665,10 @@
               </button>
             </form>
 
-            <div style="margin-top:1rem; padding-top:0.85rem; border-top:1px dashed var(--border);">
+            <div class="boss-only" style="margin-top:1rem; padding-top:0.85rem; border-top:1px dashed var(--border);">
               <div style="display:flex; align-items:center; justify-content:space-between; gap:0.5rem; flex-wrap:wrap;">
-                <span style="font-size:0.8rem; color:var(--text-secondary); font-weight:700;">Developer / QA Testing Controls:</span>
-                <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
-                  <button type="button" id="btn-simulate-expiry" class="btn btn-outline btn-sm">🧪 Simulate Expired License</button>
-                </div>
+                <span style="font-size:0.8rem; color:var(--text-secondary); font-weight:700;">QA Testing Control:</span>
+                <button type="button" id="btn-simulate-expiry" class="btn btn-outline btn-sm">🧪 Simulate Expired License</button>
               </div>
             </div>
 
@@ -549,53 +681,85 @@
           </div>
         </div>
 
-        <!-- Card 2: Shop Configuration & Demo / Backup Safety Net -->
+        <!-- Card 2: Boss Store Settings, Staff Accounts & Backup -->
         <div style="display:flex; flex-direction:column; gap:1.25rem;">
-          
-          <div class="card">
+
+          <!-- Notice shown when in Cashier Mode -->
+          <div id="cashier-settings-lock-card" class="card hidden">
+            <div class="card-body" style="text-align:center; padding:2rem 1.2rem;">
+              <div style="font-size:2rem; margin-bottom:0.5rem;">🔒</div>
+              <h3 style="margin-bottom:0.4rem;">Boss Settings Locked in Cashier Mode</h3>
+              <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:1rem;">
+                Store configuration, staff management, profit reports, and backups require the 4-Digit Boss PIN.
+              </p>
+              <button type="button" id="btn-settings-unlock-boss" class="btn btn-warning">
+                👑 Enter 4-Digit Boss PIN
+              </button>
+            </div>
+          </div>
+
+          <div class="card boss-only">
             <div class="card-header">
-              <h2 class="card-title">🏪 Shop Profile &amp; Owner Alert Settings</h2>
+              <h2 class="card-title">🏪 Store Profile &amp; Security PIN</h2>
             </div>
             <div class="card-body">
               <form id="form-shop-settings">
-                <div class="form-group">
-                  <label class="form-label" for="setting-shop-id">Shop ID (Used for License Tokens) *</label>
-                  <input type="text" id="setting-shop-id" class="form-control" required style="text-transform:uppercase; font-weight:800;" />
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.65rem;">
+                  <div class="form-group">
+                    <label class="form-label" for="setting-shop-id">Store ID (Read-Only)</label>
+                    <input type="text" id="setting-shop-id" class="form-control" readonly style="background:#f1f5f9; font-weight:800;" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="setting-boss-pin">4-Digit Boss PIN *</label>
+                    <input type="password" id="setting-boss-pin" class="form-control" pattern="\d{4}" maxlength="4" inputmode="numeric" required />
+                  </div>
                 </div>
                 <div class="form-group">
-                  <label class="form-label" for="setting-shop-name">Shop / Business Name *</label>
+                  <label class="form-label" for="setting-shop-name">Store / Business Name *</label>
                   <input type="text" id="setting-shop-name" class="form-control" required />
                 </div>
                 <div class="form-group">
                   <label class="form-label" for="setting-owner-phone">Owner WhatsApp / SMS Phone Number *</label>
                   <input type="tel" id="setting-owner-phone" class="form-control" placeholder="e.g. 0244000000" required />
-                  <small style="color:var(--text-muted); font-size:0.74rem;">Receives the "Close Day" Anti-Theft Report via WhatsApp or SMS.</small>
                 </div>
                 <div class="form-group">
                   <label class="form-label" for="setting-shop-location">Shop Location / Receipt Header Address</label>
                   <input type="text" id="setting-shop-location" class="form-control" placeholder="e.g. Bolgatanga Central Market" />
                 </div>
-                <button type="submit" class="btn btn-success btn-block">💾 Save Shop Settings</button>
+                <button type="submit" class="btn btn-success btn-block">💾 Save Store Profile</button>
               </form>
             </div>
           </div>
 
-          <div class="card">
+          <!-- Staff / Cashier Accounts Management (Boss Only) -->
+          <div class="card boss-only">
             <div class="card-header">
-              <h2 class="card-title">🛡️ Local Backup, Restore &amp; Demo Shop Data</h2>
+              <h2 class="card-title">👥 Cashier Logins &amp; Shop Devices</h2>
             </div>
             <div class="card-body">
-              <p style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:0.9rem;">
-                All data is stored 100% offline on this device. Export regular JSON backups to keep your records safe or transfer to a new phone/laptop.
-              </p>
+              <form id="form-add-staff" style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:0.85rem;">
+                <input type="text" id="staff-name-input" class="form-control" placeholder="Cashier Name *" required />
+                <input type="text" id="staff-pass-input" class="form-control" placeholder="Cashier PIN / Pass *" required />
+                <input type="text" id="staff-device-input" class="form-control" placeholder="Device (e.g. Counter Phone)" />
+                <button type="submit" class="btn btn-primary">➕ Add Cashier</button>
+              </form>
+              <div id="staff-list-container" style="font-size:0.82rem;"></div>
+            </div>
+          </div>
 
+          <!-- Backup, Restore, Sample Items & Telemetry Summary (Boss Only) -->
+          <div class="card boss-only">
+            <div class="card-header">
+              <h2 class="card-title">🛡️ Local Backup, Sample Data &amp; Telemetry</h2>
+            </div>
+            <div class="card-body">
               <div style="display:flex; flex-direction:column; gap:0.65rem;">
                 <button type="button" id="btn-load-demo-data" class="btn btn-warning btn-block">
-                  🇬🇭 Load Demo Shop Data (Ghanaian Provision Items)
+                  🇬🇭 Load Sample Items (8 Ghanaian Provision Products)
                 </button>
 
                 <button type="button" id="btn-export-backup" class="btn btn-primary btn-block">
-                  ⬇️ Export Full Backup (.json)
+                  ⬇️ Export Full Store Backup (.json)
                 </button>
 
                 <div style="border:1.5px dashed var(--border); border-radius:6px; padding:0.75rem; background:var(--bg-muted);">
@@ -604,6 +768,14 @@
                   <button type="button" id="btn-restore-backup" class="btn btn-outline btn-block">
                     🔄 Validate &amp; Restore Backup
                   </button>
+                </div>
+
+                <div style="margin-top:0.5rem; padding-top:0.75rem; border-top:1px solid var(--border-light);">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
+                    <span class="form-label" style="margin-bottom:0;">📡 Store Sync Telemetry Payload (Stage 3/4 Ready)</span>
+                    <button type="button" id="btn-copy-telemetry" class="btn btn-outline btn-sm">📋 Copy JSON</button>
+                  </div>
+                  <pre id="telemetry-json-preview" style="background:#0f172a; color:#38bdf8; padding:0.65rem; border-radius:6px; font-size:0.74rem; overflow-x:auto; max-height:150px;"></pre>
                 </div>
               </div>
             </div>
@@ -617,7 +789,7 @@
   </main>
 
   <!-- ====================================================================
-       MODAL 1: ADD / EDIT / RESTOCK PRODUCT
+       MODAL 1: ADD / EDIT PRODUCT (WITH SMART GHANAIAN AUTOCOMPLETE & PHOTO)
        ==================================================================== -->
   <div id="modal-product" class="modal-backdrop hidden">
     <div class="modal-box">
@@ -625,27 +797,53 @@
         <h3 id="modal-product-title">➕ Add New Product</h3>
         <button type="button" class="modal-close" data-close="modal-product">&times;</button>
       </div>
-      <form id="form-product">
+      <form id="form-product" autocomplete="off">
         <div class="modal-body">
           <input type="hidden" id="prod-id" />
+          <input type="hidden" id="prod-image-data" />
+
+          <!-- Smart Autocomplete Product Name Input -->
           <div class="form-group">
-            <label class="form-label" for="prod-name">Product Name *</label>
-            <input type="text" id="prod-name" class="form-control" placeholder="e.g. Nestle Milo Tin 400g" required />
+            <label class="form-label" for="prod-name">Product Name * <small style="color:var(--primary);">(Type e.g. "biscuit", "milo", "milk" for instant suggestions)</small></label>
+            <input type="text" id="prod-name" class="form-control" placeholder="Start typing product name..." required autocomplete="off" />
+            <div id="catalog-autocomplete-list" class="autocomplete-dropdown hidden"></div>
           </div>
-          <div class="form-group">
-            <label class="form-label" for="prod-category">Category *</label>
-            <input type="text" id="prod-category" class="form-control" list="category-suggestions" placeholder="e.g. Beverages" required />
-            <datalist id="category-suggestions">
-              <option value="Beverages"></option>
-              <option value="Milk & Dairy"></option>
-              <option value="Cooking & Spices"></option>
-              <option value="Canned Goods"></option>
-              <option value="Grains & Staples"></option>
-              <option value="Noodles & Pasta"></option>
-              <option value="Household & Toiletries"></option>
-              <option value="Snacks & Biscuits"></option>
-            </datalist>
+
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.75rem;">
+            <div class="form-group">
+              <label class="form-label" for="prod-category">Category *</label>
+              <input type="text" id="prod-category" class="form-control" list="category-suggestions" placeholder="e.g. Biscuits & Snacks" required />
+              <datalist id="category-suggestions">
+                <option value="Biscuits & Snacks"></option>
+                <option value="Beverages"></option>
+                <option value="Milk & Dairy"></option>
+                <option value="Tin & Canned Foods"></option>
+                <option value="Grains & Oils"></option>
+                <option value="Toiletries & Household"></option>
+                <option value="Pharmacy / OTC"></option>
+                <option value="Cosmetics & Beauty"></option>
+                <option value="Phone & Electronics"></option>
+              </datalist>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="prod-barcode">Barcode / SKU (Optional)</label>
+              <div style="display:flex; gap:0.35rem;">
+                <input type="text" id="prod-barcode" class="form-control" placeholder="Scan or type..." />
+                <button type="button" id="btn-modal-scan-barcode" class="btn btn-warning btn-sm" title="Scan Barcode with Camera">📷</button>
+              </div>
+            </div>
           </div>
+
+          <!-- Product Thumbnail Preview & Camera Upload -->
+          <div class="form-group" style="background:var(--bg-muted); padding:0.65rem; border-radius:8px; border:1px solid var(--border-light); display:flex; align-items:center; gap:0.85rem;">
+            <img id="prod-image-preview" src="icon-192.png" alt="Product Thumbnail" style="width:54px; height:54px; border-radius:10px; object-fit:cover; border:1px solid var(--border);" />
+            <div style="flex:1;">
+              <label class="form-label" for="prod-image-file" style="margin-bottom:0.2rem;">Product Photo (Auto-Generated or Snap Real Photo)</label>
+              <input type="file" id="prod-image-file" accept="image/*" capture="environment" class="form-control" style="padding:0.3rem; font-size:0.78rem;" />
+            </div>
+          </div>
+
           <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.75rem;">
             <div class="form-group">
               <label class="form-label" for="prod-cost">Cost Price (GHS) *</label>
@@ -656,9 +854,10 @@
               <input type="number" id="prod-price" class="form-control" min="0.01" step="0.01" placeholder="0.00" required />
             </div>
           </div>
+
           <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.75rem;">
             <div class="form-group">
-              <label class="form-label" for="prod-stock">Current Stock Quantity *</label>
+              <label class="form-label" for="prod-stock">Initial / Current Stock Qty *</label>
               <input type="number" id="prod-stock" class="form-control" min="0" step="1" value="10" required />
             </div>
             <div class="form-group">
@@ -666,6 +865,7 @@
               <input type="number" id="prod-threshold" class="form-control" min="0" step="1" value="5" required />
             </div>
           </div>
+
           <div id="prod-profit-preview" style="background:#f0fdf4; border:1px solid #86efac; color:#166534; padding:0.55rem 0.75rem; border-radius:6px; font-size:0.84rem; font-weight:700;">
             Unit Profit: GHS 0.00 (0%)
           </div>
@@ -855,7 +1055,7 @@
       </div>
       <div class="modal-body">
         <p style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:0.75rem;">
-          Send this tamper-evident daily closing summary directly to the Shop Owner (<strong id="close-day-owner-phone-display">-</strong>). Includes a cryptographic verification seal derived from today's revenue, profit, date, and Shop ID.
+          Send this tamper-evident daily closing summary directly to the Store Owner (<strong id="close-day-owner-phone-display">-</strong>).
         </p>
         <div id="close-day-report-text" class="close-day-box"></div>
         <div style="display:flex; flex-direction:column; gap:0.55rem;">
@@ -876,12 +1076,72 @@
     </div>
   </div>
 
+  <!-- ====================================================================
+       MODAL 8: CAMERA BARCODE & QR SCANNER
+       ==================================================================== -->
+  <div id="modal-barcode-scanner" class="modal-backdrop hidden">
+    <div class="modal-box" style="max-width:480px;">
+      <div class="modal-header">
+        <h3 id="scanner-modal-title">📷 Scan Product Barcode</h3>
+        <button type="button" class="modal-close" id="btn-close-scanner">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="scanner-video-wrap">
+          <video id="scanner-video" playsinline muted></video>
+          <div class="scanner-laser"></div>
+        </div>
+        <div id="scanner-status-msg" style="font-size:0.8rem; color:var(--text-secondary); text-align:center; margin-bottom:0.85rem;">
+          Point camera at product barcode (EAN-13 / QR / Code-128)...
+        </div>
+
+        <form id="form-manual-barcode" style="display:flex; gap:0.45rem; margin-bottom:0.9rem;">
+          <input type="text" id="manual-barcode-input" class="form-control" placeholder="Or type/paste barcode number here..." />
+          <button type="submit" class="btn btn-primary">Apply</button>
+        </form>
+
+        <div>
+          <div class="form-label">⚡ Quick-Tap Barcode Simulator (For Testing Without Physical Label)</div>
+          <div id="scanner-quick-list" style="display:flex; flex-wrap:wrap; gap:0.35rem; max-height:120px; overflow-y:auto;"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" id="btn-cancel-scanner">Close Scanner</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       MODAL 9: 4-DIGIT BOSS PIN UNLOCK
+       ==================================================================== -->
+  <div id="modal-boss-pin" class="modal-backdrop hidden">
+    <div class="modal-box" style="max-width:380px;">
+      <div class="modal-header">
+        <h3>👑 Unlock Boss Mode</h3>
+        <button type="button" class="modal-close" data-close="modal-boss-pin">&times;</button>
+      </div>
+      <form id="form-boss-pin">
+        <div class="modal-body" style="text-align:center;">
+          <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:0.9rem;">
+            Enter your <strong>4-Digit Boss PIN</strong> (or Owner Password) to unlock profit reports, stock editing, and store settings.
+          </p>
+          <div class="form-group">
+            <input type="password" id="boss-pin-input" class="form-control" placeholder="••••" maxlength="20" required style="font-size:1.5rem; font-weight:900; text-align:center; letter-spacing:0.25em;" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" data-close="modal-boss-pin">Cancel</button>
+          <button type="submit" class="btn btn-warning">🔓 Unlock Boss Mode</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Toast Container -->
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Scripts -->
+  <script src="catalog.js"></script>
   <script src="db.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
-

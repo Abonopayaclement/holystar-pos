@@ -1,12 +1,14 @@
 /**
- * Holy Star POS - IndexedDB Wrapper (db.js)
- * Complete offline-first storage layer with atomic transactions,
- * anti-tamper clock tracking, license store, products, sales, and debtors.
+ * Holy Star POS - Multi-Store SaaS IndexedDB Wrapper (db.js)
+ * Supports Store Registration/Login, Boss vs. Cashier roles, Staff/Device accounts,
+ * Barcode & Image-enabled Inventory, Atomic Checkout, Debtors Book, Prepaid Tokens,
+ * and Super-Admin Sync Telemetry Summary.
  */
 
 const DB_NAME = 'HolyStarPOS_DB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const CLOCK_DRIFT_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes tolerance
+const SESSION_STORAGE_KEY = 'holystar_active_session_v2';
 
 class HolyStarDatabase {
   constructor() {
@@ -14,7 +16,7 @@ class HolyStarDatabase {
   }
 
   /**
-   * Initialize IndexedDB and ensure default settings & 7-day trial exist
+   * Initialize IndexedDB (v2 schema with multi-store support)
    */
   async init() {
     if (this.db) return this.db;
@@ -25,34 +27,50 @@ class HolyStarDatabase {
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
 
-        // 1. Settings Store (key-value style using 'key')
+        // 1. Settings Store
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings', { keyPath: 'key' });
         }
 
-        // 2. Products Store
+        // 2. Stores Registry (Multi-Store SaaS support)
+        if (!db.objectStoreNames.contains('stores')) {
+          const storeObj = db.createObjectStore('stores', { keyPath: 'store_id' });
+          storeObj.createIndex('owner_phone', 'owner_phone', { unique: false });
+        }
+
+        // 3. Staff & Devices Store
+        if (!db.objectStoreNames.contains('staff_devices')) {
+          const staffStore = db.createObjectStore('staff_devices', { keyPath: 'id' });
+          staffStore.createIndex('store_id', 'store_id', { unique: false });
+        }
+
+        // 4. Products Store
         if (!db.objectStoreNames.contains('products')) {
           const productStore = db.createObjectStore('products', { keyPath: 'id' });
           productStore.createIndex('name', 'name', { unique: false });
           productStore.createIndex('category', 'category', { unique: false });
+          productStore.createIndex('store_id', 'store_id', { unique: false });
+          productStore.createIndex('barcode', 'barcode', { unique: false });
         }
 
-        // 3. Sales Store
+        // 5. Sales Store
         if (!db.objectStoreNames.contains('sales')) {
           const salesStore = db.createObjectStore('sales', { keyPath: 'id' });
           salesStore.createIndex('date_str', 'date_str', { unique: false });
           salesStore.createIndex('timestamp', 'timestamp', { unique: false });
           salesStore.createIndex('payment_method', 'payment_method', { unique: false });
+          salesStore.createIndex('store_id', 'store_id', { unique: false });
         }
 
-        // 4. Debtors Store
+        // 6. Debtors Store
         if (!db.objectStoreNames.contains('debtors')) {
           const debtorStore = db.createObjectStore('debtors', { keyPath: 'id' });
           debtorStore.createIndex('phone', 'phone', { unique: false });
           debtorStore.createIndex('status', 'status', { unique: false });
+          debtorStore.createIndex('store_id', 'store_id', { unique: false });
         }
 
-        // 5. License Store (stores used tokens/issue codes to prevent replay)
+        // 7. License Store
         if (!db.objectStoreNames.contains('license')) {
           const licenseStore = db.createObjectStore('license', { keyPath: 'token_id' });
           licenseStore.createIndex('applied_at', 'applied_at', { unique: false });
@@ -63,80 +81,7 @@ class HolyStarDatabase {
       request.onerror = (event) => reject(new Error('Failed to open IndexedDB: ' + event.target.error));
     });
 
-    await this.ensureDefaults();
     return this.db;
-  }
-
-  /**
-   * Ensure initial shop settings and 7-day trial are initialized on first load
-   */
-  async ensureDefaults() {
-    const settings = await this.getSettings();
-    const now = Date.now();
-
-    if (!settings.initialized) {
-      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-      const defaultSettings = {
-        initialized: true,
-        shop_id: 'HS-001',
-        shop_name: 'Holy Star Provision Store',
-        owner_phone: '0240000000',
-        shop_location: 'Bolgatanga Central Market',
-        license_expiry: now + sevenDaysMs,
-        license_plan: '7-Day Initial Trial',
-        last_seen_timestamp: now,
-        clock_tampered: false,
-        created_at: now
-      };
-      await this.saveSettings(defaultSettings);
-    } else {
-      await this.TouchClock();
-    }
-  }
-
-  /**
-   * Anti-tamper check: updates last_seen_timestamp or flags clock rollback
-   */
-  async TouchClock() {
-    const settings = await this.getSettings();
-    const now = Date.now();
-    const lastSeen = Number(settings.last_seen_timestamp || 0);
-
-    if (now + CLOCK_DRIFT_TOLERANCE_MS < lastSeen) {
-      // Device clock was rolled backward significantly
-      await this.setSetting('clock_tampered', true);
-      return {
-        valid: false,
-        lastSeen,
-        now,
-        message: `System clock rollback detected! Current device time (${new Date(now).toLocaleString()}) is behind last recorded activity (${new Date(lastSeen).toLocaleString()}). Please fix your device date and time.`
-      };
-    }
-
-    // Clock is valid and moving forward
-    const updates = { last_seen_timestamp: Math.max(now, lastSeen), clock_tampered: false };
-    await this.saveSettings(updates);
-    return { valid: true, lastSeen: updates.last_seen_timestamp, now };
-  }
-
-  /**
-   * Get all settings as a flat object
-   */
-  async getSettings() {
-    await this.initFromExisting();
-    return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['settings'], 'readonly');
-      const store = tx.objectStore('settings');
-      const req = store.getAll();
-      req.onsuccess = () => {
-        const result = {};
-        for (const item of req.result) {
-          result[item.key] = item.value;
-        }
-        resolve(result);
-      };
-      req.onerror = () => reject(req.error);
-    });
   }
 
   async initFromExisting() {
@@ -145,56 +90,416 @@ class HolyStarDatabase {
     }
   }
 
+  // =========================================================================
+  // SESSION, AUTHENTICATION & MULTI-STORE ONBOARDING
+  // =========================================================================
+
   /**
-   * Save single setting key/value
+   * Returns current active session:
+   * { store_id, role_mode: 'boss' | 'cashier', staff_name, logged_in_at } or null
    */
-  async setSetting(key, value) {
-    await this.initFromExisting();
-    return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['settings'], 'readwrite');
-      const store = tx.objectStore('settings');
-      store.put({ key, value });
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => reject(tx.error);
-    });
+  getActiveSession() {
+    try {
+      const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !parsed.store_id) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  setActiveSession(sessionObj) {
+    if (!sessionObj) {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionObj));
+  }
+
+  logoutSession() {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+  }
+
+  getActiveStoreId() {
+    const sess = this.getActiveSession();
+    return sess ? sess.store_id : null;
+  }
+
+  normalizePhone(phone) {
+    return String(phone || '').replace(/\s+/g, '').replace(/^\+233/, '0');
   }
 
   /**
-   * Save multiple settings at once
+   * Generate unique `HS-XXXX` store_id
    */
-  async saveSettings(obj) {
-    await this.initFromExisting();
-    return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['settings'], 'readwrite');
-      const store = tx.objectStore('settings');
-      for (const [key, value] of Object.entries(obj)) {
-        store.put({ key, value });
+  generateStoreId(existingIds = []) {
+    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    for (let attempt = 0; attempt < 50; attempt++) {
+      let code = 'HS-';
+      for (let i = 0; i < 4; i++) {
+        code += chars[Math.floor(Math.random() * chars.length)];
       }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => reject(tx.error);
-    });
+      if (!existingIds.includes(code)) return code;
+    }
+    return 'HS-' + Date.now().toString(36).slice(-4).toUpperCase();
   }
 
-  // =========================================================================
-  // LICENSE & TOKEN MANAGEMENT
-  // =========================================================================
-
-  async getUsedTokens() {
+  async getAllStores() {
     await this.initFromExisting();
     return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['license'], 'readonly');
-      const req = tx.objectStore('license').getAll();
-      req.onsuccess = () => resolve(req.result || []);
+      const tx = this.db.transaction(['stores'], 'readonly');
+      const req = tx.objectStore('stores').getAll();
+      req.onsuccess = () => {
+        const list = req.result || [];
+        list.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+        resolve(list);
+      };
       req.onerror = () => reject(req.error);
     });
   }
 
-  async isTokenUsed(tokenKey) {
+  async getStoreById(storeId) {
+    await this.initFromExisting();
+    if (!storeId) return null;
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(['stores'], 'readonly');
+      const req = tx.objectStore('stores').get(storeId);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async getActiveStore() {
+    const storeId = this.getActiveStoreId();
+    if (!storeId) return null;
+    return this.getStoreById(storeId);
+  }
+
+  /**
+   * Create a new Store account with 0 products, 0 sales, 0 debtors, and a 7-day trial
+   */
+  async registerNewStore({
+    store_name,
+    store_category,
+    owner_name,
+    owner_phone,
+    owner_password,
+    boss_pin,
+    store_location
+  }) {
+    await this.initFromExisting();
+
+    const cleanName = String(store_name || '').trim();
+    const cleanCat = String(store_category || 'Provision & Mini-Mart').trim();
+    const cleanOwner = String(owner_name || '').trim();
+    const cleanPhone = this.normalizePhone(owner_phone);
+    const cleanPass = String(owner_password || '').trim();
+    const cleanPin = String(boss_pin || '').trim();
+    const cleanLoc = String(store_location || 'Ghana').trim();
+
+    if (!cleanName) throw new Error('Store Name is required.');
+    if (!cleanOwner) throw new Error('Owner Full Name is required.');
+    if (!cleanPhone || cleanPhone.length < 9) throw new Error('Valid Owner Phone Number is required.');
+    if (!cleanPass || cleanPass.length < 4) throw new Error('Password must be at least 4 characters.');
+    if (!/^\d{4}$/.test(cleanPin)) throw new Error('Boss PIN must be an exact 4-digit number (e.g. 1234).');
+
+    const existingStores = await this.getAllStores();
+    const duplicatePhone = existingStores.find((s) => this.normalizePhone(s.owner_phone) === cleanPhone);
+    if (duplicatePhone) {
+      throw new Error(`A store ("${duplicatePhone.store_name}") is already registered with phone ${cleanPhone}. Please log in instead.`);
+    }
+
+    const storeId = this.generateStoreId(existingStores.map((s) => s.store_id));
+    const now = Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+    const newStore = {
+      store_id: storeId,
+      shop_id: storeId, // alias for backward compatibility
+      store_name: cleanName,
+      shop_name: cleanName,
+      store_category: cleanCat,
+      owner_name: cleanOwner,
+      owner_phone: cleanPhone,
+      owner_password: cleanPass,
+      boss_pin: cleanPin,
+      shop_location: cleanLoc,
+      license_expiry: now + sevenDaysMs,
+      license_plan: '7-Day Initial Trial',
+      last_seen_timestamp: now,
+      last_active_at: now,
+      clock_tampered: false,
+      created_at: now
+    };
+
+    const defaultStaff = {
+      id: 'STF-' + now,
+      store_id: storeId,
+      name: 'Shop Cashier',
+      phone: cleanPhone,
+      role: 'cashier',
+      pin_or_pass: cleanPass,
+      device_label: 'Main Counter Device',
+      created_at: now
+    };
+
+    await new Promise((resolve, reject) => {
+      const tx = this.db.transaction(['stores', 'staff_devices'], 'readwrite');
+      tx.objectStore('stores').put(newStore);
+      tx.objectStore('staff_devices').put(defaultStaff);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error || new Error('Failed to create store.'));
+    });
+
+    const session = {
+      store_id: storeId,
+      role_mode: 'boss',
+      staff_name: cleanOwner,
+      logged_in_at: now
+    };
+    this.setActiveSession(session);
+    return { store: newStore, session };
+  }
+
+  /**
+   * Login to an existing Store as Boss or Cashier
+   */
+  async loginToStore({ identifier, password, role }) {
+    await this.initFromExisting();
+    const cleanId = String(identifier || '').trim();
+    const cleanPhone = this.normalizePhone(cleanId);
+    const cleanPass = String(password || '').trim();
+    const requestedRole = role === 'boss' ? 'boss' : 'cashier';
+
+    if (!cleanId || !cleanPass) {
+      throw new Error('Please enter your Store Phone / ID and Password.');
+    }
+
+    const stores = await this.getAllStores();
+    if (stores.length === 0) {
+      throw new Error('No store registered on this device yet. Please switch to "Create New Store (Sign Up)" first.');
+    }
+
+    const store = stores.find(
+      (s) =>
+        this.normalizePhone(s.owner_phone) === cleanPhone ||
+        s.store_id.toUpperCase() === cleanId.toUpperCase() ||
+        s.store_name.toLowerCase() === cleanId.toLowerCase()
+    );
+
+    if (!store) {
+      throw new Error('Store not found. Check your Store Phone Number or Store ID.');
+    }
+
+    if (requestedRole === 'boss') {
+      if (cleanPass !== store.owner_password && cleanPass !== store.boss_pin) {
+        throw new Error('Invalid Boss Password or PIN.');
+      }
+      const session = {
+        store_id: store.store_id,
+        role_mode: 'boss',
+        staff_name: store.owner_name,
+        logged_in_at: Date.now()
+      };
+      this.setActiveSession(session);
+      await this.TouchClock();
+      return { store, session };
+    }
+
+    // Cashier login: check staff_devices or store password/PIN
+    const staffList = await this.getStoreStaff(store.store_id);
+    const matchedStaff = staffList.find(
+      (st) => st.pin_or_pass === cleanPass || this.normalizePhone(st.phone) === cleanPhone && st.pin_or_pass === cleanPass
+    );
+
+    if (!matchedStaff && cleanPass !== store.owner_password && cleanPass !== store.boss_pin) {
+      throw new Error('Invalid Cashier Password or PIN.');
+    }
+
+    const session = {
+      store_id: store.store_id,
+      role_mode: 'cashier',
+      staff_name: matchedStaff ? matchedStaff.name : 'Cashier / Attendant',
+      logged_in_at: Date.now()
+    };
+    this.setActiveSession(session);
+    await this.TouchClock();
+    return { store, session };
+  }
+
+  /**
+   * Verify 4-digit Boss PIN (or Boss Password) to unlock Boss Mode
+   */
+  async verifyBossPin(pinInput) {
+    const store = await this.getActiveStore();
+    if (!store) throw new Error('No active store session.');
+    const clean = String(pinInput || '').trim();
+    if (clean === store.boss_pin || clean === store.owner_password) {
+      const sess = this.getActiveSession() || { store_id: store.store_id };
+      sess.role_mode = 'boss';
+      sess.staff_name = store.owner_name;
+      this.setActiveSession(sess);
+      return true;
+    }
+    return false;
+  }
+
+  switchToCashierMode() {
+    const sess = this.getActiveSession();
+    if (!sess) return;
+    sess.role_mode = 'cashier';
+    this.setActiveSession(sess);
+  }
+
+  // =========================================================================
+  // STAFF / CASHIER DEVICE MANAGEMENT
+  // =========================================================================
+
+  async getStoreStaff(storeId = this.getActiveStoreId()) {
+    await this.initFromExisting();
+    if (!storeId) return [];
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(['staff_devices'], 'readonly');
+      const req = tx.objectStore('staff_devices').getAll();
+      req.onsuccess = () => {
+        const all = req.result || [];
+        resolve(all.filter((s) => s.store_id === storeId));
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async addStoreStaff({ name, phone, pin_or_pass, device_label }) {
+    await this.initFromExisting();
+    const storeId = this.getActiveStoreId();
+    if (!storeId) throw new Error('No active store.');
+
+    const cleanName = String(name || '').trim();
+    const cleanPass = String(pin_or_pass || '').trim();
+    if (!cleanName || !cleanPass) {
+      throw new Error('Staff Name and Cashier Password/PIN are required.');
+    }
+
+    const record = {
+      id: 'STF-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5).toUpperCase(),
+      store_id: storeId,
+      name: cleanName,
+      phone: String(phone || '').trim(),
+      role: 'cashier',
+      pin_or_pass: cleanPass,
+      device_label: String(device_label || 'Shop Counter Phone').trim(),
+      created_at: Date.now()
+    };
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(['staff_devices'], 'readwrite');
+      tx.objectStore('staff_devices').put(record);
+      tx.oncomplete = () => resolve(record);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async deleteStoreStaff(staffId) {
     await this.initFromExisting();
     return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(['staff_devices'], 'readwrite');
+      tx.objectStore('staff_devices').delete(staffId);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  // =========================================================================
+  // ANTI-TAMPER CLOCK & STORE SETTINGS
+  // =========================================================================
+
+  async TouchClock() {
+    const store = await this.getActiveStore();
+    const now = Date.now();
+    if (!store) {
+      return { valid: true, lastSeen: now, now };
+    }
+
+    const lastSeen = Number(store.last_seen_timestamp || 0);
+    if (now + CLOCK_DRIFT_TOLERANCE_MS < lastSeen) {
+      store.clock_tampered = true;
+      await this.saveActiveStoreRecord(store);
+      return {
+        valid: false,
+        lastSeen,
+        now,
+        message: `System clock rollback detected! Current device time (${new Date(now).toLocaleString()}) is behind last recorded activity (${new Date(lastSeen).toLocaleString()}). Please fix your device date and time.`
+      };
+    }
+
+    store.last_seen_timestamp = Math.max(now, lastSeen);
+    store.last_active_at = now;
+    store.clock_tampered = false;
+    await this.saveActiveStoreRecord(store);
+    return { valid: true, lastSeen: store.last_seen_timestamp, now };
+  }
+
+  async saveActiveStoreRecord(storeObj) {
+    await this.initFromExisting();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(['stores'], 'readwrite');
+      tx.objectStore('stores').put(storeObj);
+      tx.oncomplete = () => resolve(storeObj);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  /**
+   * Returns active store settings mapped cleanly for app.js
+   */
+  async getSettings() {
+    const store = await this.getActiveStore();
+    if (!store) return {};
+    return {
+      ...store,
+      shop_id: store.store_id,
+      shop_name: store.store_name
+    };
+  }
+
+  async setSetting(key, value) {
+    const store = await this.getActiveStore();
+    if (!store) return false;
+    store[key] = value;
+    if (key === 'shop_name' || key === 'store_name') {
+      store.store_name = value;
+      store.shop_name = value;
+    }
+    await this.saveActiveStoreRecord(store);
+    return true;
+  }
+
+  async saveSettings(updates) {
+    const store = await this.getActiveStore();
+    if (!store) return false;
+    Object.assign(store, updates);
+    if (updates.shop_name) store.store_name = updates.shop_name;
+    if (updates.store_name) store.shop_name = updates.store_name;
+    await this.saveActiveStoreRecord(store);
+    return true;
+  }
+
+  // =========================================================================
+  // LICENSE & TOKEN MANAGEMENT (SCOPED BY STORE_ID)
+  // =========================================================================
+
+  async getUsedTokens() {
+    await this.initFromExisting();
+    const storeId = this.getActiveStoreId();
+    return new Promise((resolve, reject) => {
       const tx = this.db.transaction(['license'], 'readonly');
-      const req = tx.objectStore('license').get(tokenKey);
-      req.onsuccess = () => resolve(Boolean(req.result));
+      const req = tx.objectStore('license').getAll();
+      req.onsuccess = () => {
+        const all = req.result || [];
+        resolve(storeId ? all.filter((t) => !t.shop_id || t.shop_id === storeId) : all);
+      };
       req.onerror = () => reject(req.error);
     });
   }
@@ -206,23 +511,24 @@ class HolyStarDatabase {
       throw new Error(clockCheck.message);
     }
 
-    const settings = await this.getSettings();
+    const store = await this.getActiveStore();
+    if (!store) throw new Error('No active store.');
     const now = Date.now();
 
     return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['license', 'settings'], 'readwrite');
+      const tx = this.db.transaction(['license', 'stores'], 'readwrite');
       const licenseStore = tx.objectStore('license');
-      const settingsStore = tx.objectStore('settings');
+      const storesStore = tx.objectStore('stores');
 
       const checkReq = licenseStore.get(tokenKey);
       checkReq.onsuccess = () => {
         if (checkReq.result) {
           tx.abort();
-          reject(new Error('This token / issue code has already been used on this shop device.'));
+          reject(new Error('This token / issue code has already been used on this store.'));
           return;
         }
 
-        const currentExpiry = Number(settings.license_expiry || 0);
+        const currentExpiry = Number(store.license_expiry || 0);
         const baseTime = currentExpiry > now ? currentExpiry : now;
         const addedMs = Number(planDays) * 24 * 60 * 60 * 1000;
         const newExpiry = baseTime + addedMs;
@@ -233,13 +539,16 @@ class HolyStarDatabase {
           issue_code: issueCode,
           plan_days: Number(planDays),
           shop_id: shopId,
+          store_id: store.store_id,
           applied_at: now,
           new_expiry: newExpiry
         });
 
-        settingsStore.put({ key: 'license_expiry', value: newExpiry });
-        settingsStore.put({ key: 'license_plan', value: `${planDays}-Day Prepaid License` });
-        settingsStore.put({ key: 'last_seen_timestamp', value: now });
+        store.license_expiry = newExpiry;
+        store.license_plan = `${planDays}-Day Prepaid License`;
+        store.last_seen_timestamp = now;
+        store.last_active_at = now;
+        storesStore.put(store);
       };
 
       tx.oncomplete = () => resolve(true);
@@ -248,16 +557,17 @@ class HolyStarDatabase {
   }
 
   // =========================================================================
-  // PRODUCTS / INVENTORY STORE
+  // PRODUCTS / INVENTORY STORE (WITH BARCODE & THUMBNAIL IMAGE)
   // =========================================================================
 
-  async getAllProducts() {
+  async getAllProducts(storeId = this.getActiveStoreId()) {
     await this.initFromExisting();
+    if (!storeId) return [];
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction(['products'], 'readonly');
       const req = tx.objectStore('products').getAll();
       req.onsuccess = () => {
-        const list = req.result || [];
+        const list = (req.result || []).filter((p) => !p.store_id || p.store_id === storeId);
         list.sort((a, b) => a.name.localeCompare(b.name));
         resolve(list);
       };
@@ -267,13 +577,27 @@ class HolyStarDatabase {
 
   async saveProduct(product) {
     await this.initFromExisting();
+    const storeId = this.getActiveStoreId();
+    if (!storeId) throw new Error('No active store session.');
+
     const clockCheck = await this.TouchClock();
     if (!clockCheck.valid) throw new Error(clockCheck.message);
 
+    const name = String(product.name || '').trim();
+    const category = String(product.category || 'General').trim();
+    const barcode = String(product.barcode || '').trim();
+    const fallbackThumb =
+      typeof window.generateProductSvgThumbnail === 'function'
+        ? window.generateProductSvgThumbnail(name, category)
+        : '';
+
     const cleanProduct = {
       id: product.id || ('PRD-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase()),
-      name: String(product.name || '').trim(),
-      category: String(product.category || 'General').trim(),
+      store_id: storeId,
+      name,
+      category,
+      barcode,
+      image_url: product.image_url || fallbackThumb,
       cost_price: Number(Number(product.cost_price || 0).toFixed(2)),
       selling_price: Number(Number(product.selling_price || 0).toFixed(2)),
       stock_qty: Math.max(0, Math.floor(Number(product.stock_qty || 0))),
@@ -304,25 +628,21 @@ class HolyStarDatabase {
   }
 
   // =========================================================================
-  // ATOMIC CHECKOUT TRANSACTION (Products + Sales + Debtors + Clock)
+  // ATOMIC CHECKOUT TRANSACTION (Products + Sales + Debtors + Store Clock)
   // =========================================================================
 
-  /**
-   * Process a checkout atomically in a single IndexedDB transaction.
-   * Enforces stock quantities, deducts stock, saves sale record, and updates/creates debtor if Credit.
-   */
   async processAtomicCheckout(checkoutPayload) {
     await this.initFromExisting();
+    const storeId = this.getActiveStoreId();
+    if (!storeId) throw new Error('No active store session.');
+
     const clockCheck = await this.TouchClock();
     if (!clockCheck.valid) {
       throw new Error(clockCheck.message);
     }
 
-    const {
-      cartItems, // [{ id, qty }]
-      paymentMethod, // 'Cash' | 'MoMo' | 'Credit'
-      creditDetails // { customerName, customerPhone, customerLocation, initialDeposit, depositMethod, dueDate }
-    } = checkoutPayload;
+    const session = this.getActiveSession();
+    const { cartItems, paymentMethod, creditDetails } = checkoutPayload;
 
     if (!Array.isArray(cartItems) || cartItems.length === 0) {
       throw new Error('Cannot checkout an empty cart.');
@@ -332,11 +652,11 @@ class HolyStarDatabase {
     const todayStr = this.formatLocalDate(now);
 
     return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['products', 'sales', 'debtors', 'settings'], 'readwrite');
+      const tx = this.db.transaction(['products', 'sales', 'debtors', 'stores'], 'readwrite');
       const productStore = tx.objectStore('products');
       const salesStore = tx.objectStore('sales');
       const debtorsStore = tx.objectStore('debtors');
-      const settingsStore = tx.objectStore('settings');
+      const storesStore = tx.objectStore('stores');
 
       let aborted = false;
       const failTransaction = (msg) => {
@@ -347,7 +667,6 @@ class HolyStarDatabase {
         }
       };
 
-      // Step 1: Fetch and verify all products inside the atomic transaction
       const verifiedItems = [];
       let totalAmount = 0;
       let totalProfit = 0;
@@ -363,14 +682,13 @@ class HolyStarDatabase {
         getReq.onsuccess = () => {
           if (aborted) return;
           const dbProduct = getReq.result;
-          if (!dbProduct) {
-            return failTransaction(`Product not found in database (ID: ${cartItem.id}).`);
+          if (!dbProduct || (dbProduct.store_id && dbProduct.store_id !== storeId)) {
+            return failTransaction(`Product not found in store inventory (ID: ${cartItem.id}).`);
           }
           if (qty > dbProduct.stock_qty) {
             return failTransaction(`Insufficient stock for "${dbProduct.name}". Available: ${dbProduct.stock_qty}, Requested: ${qty}.`);
           }
 
-          // Deduct stock immediately within the transaction
           dbProduct.stock_qty -= qty;
           dbProduct.updated_at = now;
           productStore.put(dbProduct);
@@ -387,6 +705,7 @@ class HolyStarDatabase {
             id: dbProduct.id,
             name: dbProduct.name,
             category: dbProduct.category,
+            barcode: dbProduct.barcode || '',
             cost_price: unitCost,
             selling_price: unitPrice,
             qty,
@@ -446,22 +765,31 @@ class HolyStarDatabase {
 
         const saleRecord = {
           id: receiptId,
+          store_id: storeId,
           timestamp: now,
           date_str: todayStr,
           items: verifiedItems,
           item_count: verifiedItems.reduce((sum, i) => sum + i.qty, 0),
           total_amount: totalAmount,
           total_profit: totalProfit,
-          payment_method: paymentMethod, // 'Cash' | 'MoMo' | 'Credit'
+          payment_method: paymentMethod,
           initial_deposit: paymentMethod === 'Credit' ? initialDeposit : totalAmount,
           deposit_method: paymentMethod === 'Credit' ? depositMethod : paymentMethod,
           balance_owed: paymentMethod === 'Credit' ? balanceOwed : 0,
           customer: customerInfo,
-          repayments: [] // populated if credit repayments are linked or tracked in debtor history
+          served_by: session ? session.staff_name : 'Attendant',
+          repayments: []
         };
 
-        // Update clock timestamp inside atomic transaction
-        settingsStore.put({ key: 'last_seen_timestamp', value: now });
+        // Update store timestamp
+        const storeReq = storesStore.get(storeId);
+        storeReq.onsuccess = () => {
+          if (storeReq.result) {
+            storeReq.result.last_seen_timestamp = now;
+            storeReq.result.last_active_at = now;
+            storesStore.put(storeReq.result);
+          }
+        };
 
         if (paymentMethod !== 'Credit') {
           salesStore.put(saleRecord);
@@ -469,13 +797,12 @@ class HolyStarDatabase {
           return;
         }
 
-        // For Credit sales: find existing debtor by normalized phone or create new debtor record
         const normalizedPhone = customerInfo.phone.replace(/\s+/g, '');
         const allDebtorsReq = debtorsStore.getAll();
 
         allDebtorsReq.onsuccess = () => {
           if (aborted) return;
-          const allDebtors = allDebtorsReq.result || [];
+          const allDebtors = (allDebtorsReq.result || []).filter((d) => !d.store_id || d.store_id === storeId);
           let debtor = allDebtors.find(
             (d) => String(d.phone || '').replace(/\s+/g, '') === normalizedPhone
           );
@@ -501,6 +828,7 @@ class HolyStarDatabase {
           };
 
           if (debtor) {
+            debtor.store_id = storeId;
             debtor.name = customerInfo.name || debtor.name;
             debtor.location = customerInfo.location || debtor.location;
             debtor.total_owed = Number((Number(debtor.total_owed || 0) + balanceOwed).toFixed(2));
@@ -516,6 +844,7 @@ class HolyStarDatabase {
           } else {
             debtor = {
               id: 'DBT-' + now + '-' + Math.random().toString(36).substring(2, 6).toUpperCase(),
+              store_id: storeId,
               name: customerInfo.name,
               phone: customerInfo.phone,
               location: customerInfo.location,
@@ -549,16 +878,17 @@ class HolyStarDatabase {
   }
 
   // =========================================================================
-  // DEBTORS BOOK MANAGEMENT
+  // DEBTORS BOOK MANAGEMENT (SCOPED BY STORE_ID)
   // =========================================================================
 
-  async getAllDebtors() {
+  async getAllDebtors(storeId = this.getActiveStoreId()) {
     await this.initFromExisting();
+    if (!storeId) return [];
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction(['debtors'], 'readonly');
       const req = tx.objectStore('debtors').getAll();
       req.onsuccess = () => {
-        const list = req.result || [];
+        const list = (req.result || []).filter((d) => !d.store_id || d.store_id === storeId);
         list.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
         resolve(list);
       };
@@ -566,11 +896,11 @@ class HolyStarDatabase {
     });
   }
 
-  /**
-   * Add a manual debtor record directly to the Debtors Book
-   */
   async addManualDebtor({ name, phone, location, amountOwed, itemDescription, dueDate }) {
     await this.initFromExisting();
+    const storeId = this.getActiveStoreId();
+    if (!storeId) throw new Error('No active store.');
+
     const clockCheck = await this.TouchClock();
     if (!clockCheck.valid) throw new Error(clockCheck.message);
 
@@ -591,13 +921,12 @@ class HolyStarDatabase {
     const todayStr = this.formatLocalDate(now);
 
     return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['debtors', 'settings'], 'readwrite');
+      const tx = this.db.transaction(['debtors'], 'readwrite');
       const debtorsStore = tx.objectStore('debtors');
-      const settingsStore = tx.objectStore('settings');
 
       const allReq = debtorsStore.getAll();
       allReq.onsuccess = () => {
-        const list = allReq.result || [];
+        const list = (allReq.result || []).filter((d) => !d.store_id || d.store_id === storeId);
         const normalizedPhone = cPhone.replace(/\s+/g, '');
         let debtor = list.find((d) => String(d.phone || '').replace(/\s+/g, '') === normalizedPhone);
 
@@ -615,6 +944,7 @@ class HolyStarDatabase {
         };
 
         if (debtor) {
+          debtor.store_id = storeId;
           debtor.name = cName;
           debtor.location = cLoc;
           if (dueDate) debtor.due_date = dueDate;
@@ -627,6 +957,7 @@ class HolyStarDatabase {
         } else {
           debtor = {
             id: 'DBT-' + now + '-' + Math.random().toString(36).substring(2, 6).toUpperCase(),
+            store_id: storeId,
             name: cName,
             phone: cPhone,
             location: cLoc,
@@ -642,16 +973,12 @@ class HolyStarDatabase {
         }
 
         debtorsStore.put(debtor);
-        settingsStore.put({ key: 'last_seen_timestamp', value: now });
         tx.oncomplete = () => resolve(debtor);
       };
       allReq.onerror = () => reject(allReq.error);
     });
   }
 
-  /**
-   * Record a partial or full payment from a debtor
-   */
   async recordDebtorPayment({ debtorId, amount, paymentMethod, note }) {
     await this.initFromExisting();
     const clockCheck = await this.TouchClock();
@@ -667,9 +994,8 @@ class HolyStarDatabase {
     const todayStr = this.formatLocalDate(now);
 
     return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['debtors', 'settings'], 'readwrite');
+      const tx = this.db.transaction(['debtors'], 'readwrite');
       const debtorsStore = tx.objectStore('debtors');
-      const settingsStore = tx.objectStore('settings');
 
       const req = debtorsStore.get(debtorId);
       req.onsuccess = () => {
@@ -711,8 +1037,6 @@ class HolyStarDatabase {
         debtor.history.unshift(paymentEntry);
 
         debtorsStore.put(debtor);
-        settingsStore.put({ key: 'last_seen_timestamp', value: now });
-
         tx.oncomplete = () => resolve({ debtor, paymentEntry });
       };
 
@@ -721,16 +1045,17 @@ class HolyStarDatabase {
   }
 
   // =========================================================================
-  // SALES HISTORY & DAILY FINANCIAL METRICS
+  // SALES HISTORY & DAILY FINANCIAL METRICS (SCOPED BY STORE_ID)
   // =========================================================================
 
-  async getAllSales() {
+  async getAllSales(storeId = this.getActiveStoreId()) {
     await this.initFromExisting();
+    if (!storeId) return [];
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction(['sales'], 'readonly');
       const req = tx.objectStore('sales').getAll();
       req.onsuccess = () => {
-        const list = req.result || [];
+        const list = (req.result || []).filter((s) => !s.store_id || s.store_id === storeId);
         list.sort((a, b) => b.timestamp - a.timestamp);
         resolve(list);
       };
@@ -738,9 +1063,6 @@ class HolyStarDatabase {
     });
   }
 
-  /**
-   * Calculate complete daily report for a specific YYYY-MM-DD date string
-   */
   async getDailyReport(dateStr) {
     const [allSales, allDebtors] = await Promise.all([
       this.getAllSales(),
@@ -758,7 +1080,6 @@ class HolyStarDatabase {
     for (const sale of daySales) {
       totalRevenue += Number(sale.total_amount || 0);
 
-      // Calculate accurate profit from items sold: sum((selling_price - cost_price) * qty)
       const saleProfit = Array.isArray(sale.items)
         ? sale.items.reduce((acc, item) => {
             const p = (Number(item.selling_price || 0) - Number(item.cost_price || 0)) * Number(item.qty || 0);
@@ -784,7 +1105,6 @@ class HolyStarDatabase {
       }
     }
 
-    // Also include debtor repayments made on `dateStr`
     let cashDebtRepayments = 0;
     let momoDebtRepayments = 0;
     const dayRepayments = [];
@@ -831,80 +1151,140 @@ class HolyStarDatabase {
   }
 
   // =========================================================================
-  // BACKUP, RESTORE & DEMO DATA
+  // STAGE 3 & 4 SUPER-ADMIN TELEMETRY SUMMARY PAYLOAD
+  // =========================================================================
+
+  /**
+   * Compiles a privacy-safe telemetry summary object for the active store
+   */
+  async getStoreTelemetrySummary(storeId = this.getActiveStoreId()) {
+    await this.initFromExisting();
+    const store = await this.getStoreById(storeId);
+    if (!store) return null;
+
+    const [products, sales] = await Promise.all([
+      this.getAllProducts(storeId),
+      this.getAllSales(storeId)
+    ]);
+
+    const totalStockUnits = products.reduce((sum, p) => sum + Number(p.stock_qty || 0), 0);
+    const totalRevenueGhs = Number(
+      sales.reduce((sum, s) => sum + Number(s.total_amount || 0), 0).toFixed(2)
+    );
+
+    const now = Date.now();
+    const expiry = Number(store.license_expiry || 0);
+    let licenseStatus = 'Active';
+    if (store.clock_tampered) {
+      licenseStatus = 'Clock_Tamper_Locked';
+    } else if (expiry <= now) {
+      licenseStatus = 'Expired';
+    } else if (String(store.license_plan || '').toLowerCase().includes('trial')) {
+      licenseStatus = 'Trial_Active';
+    }
+
+    return {
+      store_id: store.store_id,
+      store_name: store.store_name,
+      store_category: store.store_category || 'Provision & Mini-Mart',
+      owner_name: store.owner_name || '',
+      owner_phone: store.owner_phone || '',
+      created_at: new Date(store.created_at || now).toISOString(),
+      total_products_count: products.length,
+      total_stock_units: totalStockUnits,
+      total_sales_count: sales.length,
+      total_revenue_ghs: totalRevenueGhs,
+      license_status: licenseStatus,
+      license_expiry_date: new Date(expiry || now).toISOString(),
+      last_active_at: new Date(store.last_active_at || now).toISOString()
+    };
+  }
+
+  // =========================================================================
+  // BACKUP, RESTORE & OPTIONAL SAMPLE ITEMS LOADER
   // =========================================================================
 
   async exportFullBackup() {
     await this.initFromExisting();
-    const [settings, products, sales, debtors, license] = await Promise.all([
-      this.getSettings(),
-      this.getAllProducts(),
-      this.getAllSales(),
-      this.getAllDebtors(),
-      this.getUsedTokens()
+    const storeId = this.getActiveStoreId();
+    const [store, products, sales, debtors, license, staff, telemetry] = await Promise.all([
+      this.getActiveStore(),
+      this.getAllProducts(storeId),
+      this.getAllSales(storeId),
+      this.getAllDebtors(storeId),
+      this.getUsedTokens(),
+      this.getStoreStaff(storeId),
+      this.getStoreTelemetrySummary(storeId)
     ]);
 
     return {
       app: 'HolyStarPOS',
-      version: '1.0.0',
+      version: '2.0.0',
       exported_at: new Date().toISOString(),
-      shop_id: settings.shop_id || 'HS-001',
+      shop_id: store ? store.store_id : 'HS-001',
+      telemetry_summary: telemetry,
       data: {
-        settings,
+        settings: store || {},
+        store: store || {},
         products,
         sales,
         debtors,
-        license
+        license,
+        staff_devices: staff
       }
     };
   }
 
   async restoreFullBackup(backupJson) {
     await this.initFromExisting();
-
     if (!backupJson || typeof backupJson !== 'object' || backupJson.app !== 'HolyStarPOS' || !backupJson.data) {
       throw new Error('Invalid backup file format. Expected a valid HolyStarPOS JSON backup.');
     }
 
-    const { settings, products, sales, debtors, license } = backupJson.data;
-    if (!Array.isArray(products) || !Array.isArray(sales) || !Array.isArray(debtors) || typeof settings !== 'object') {
-      throw new Error('Corrupted backup structure: missing products, sales, debtors, or settings.');
+    const { settings, store, products, sales, debtors, license, staff_devices } = backupJson.data;
+    const targetStore = store && store.store_id ? store : settings;
+    if (!Array.isArray(products) || !Array.isArray(sales) || !Array.isArray(debtors) || !targetStore) {
+      throw new Error('Corrupted backup structure: missing products, sales, debtors, or store settings.');
     }
 
+    const storeId = targetStore.store_id || targetStore.shop_id || this.getActiveStoreId() || 'HS-RESTORED';
+    targetStore.store_id = storeId;
+    targetStore.shop_id = storeId;
+    targetStore.store_name = targetStore.store_name || targetStore.shop_name || 'Restored Store';
+    targetStore.shop_name = targetStore.store_name;
+    targetStore.last_seen_timestamp = Date.now();
+    targetStore.clock_tampered = false;
+
     return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['settings', 'products', 'sales', 'debtors', 'license'], 'readwrite');
+      const tx = this.db.transaction(['stores', 'products', 'sales', 'debtors', 'license', 'staff_devices'], 'readwrite');
+      tx.objectStore('stores').put(targetStore);
 
-      const settingsStore = tx.objectStore('settings');
-      const productsStore = tx.objectStore('products');
-      const salesStore = tx.objectStore('sales');
-      const debtorsStore = tx.objectStore('debtors');
-      const licenseStore = tx.objectStore('license');
-
-      settingsStore.clear();
-      productsStore.clear();
-      salesStore.clear();
-      debtorsStore.clear();
-      licenseStore.clear();
-
-      for (const [key, value] of Object.entries(settings)) {
-        settingsStore.put({ key, value });
-      }
-      // Update last_seen_timestamp to now so restore doesn't false-lock if backup is older
-      settingsStore.put({ key: 'last_seen_timestamp', value: Date.now() });
-      settingsStore.put({ key: 'clock_tampered', value: false });
-
+      const pStore = tx.objectStore('products');
       for (const p of products) {
-        if (p && p.id) productsStore.put(p);
+        if (p && p.id) pStore.put({ ...p, store_id: storeId });
       }
+
+      const sStore = tx.objectStore('sales');
       for (const s of sales) {
-        if (s && s.id) salesStore.put(s);
+        if (s && s.id) sStore.put({ ...s, store_id: storeId });
       }
+
+      const dStore = tx.objectStore('debtors');
       for (const d of debtors) {
-        if (d && d.id) debtorsStore.put(d);
+        if (d && d.id) dStore.put({ ...d, store_id: storeId });
       }
+
       if (Array.isArray(license)) {
+        const lStore = tx.objectStore('license');
         for (const l of license) {
-          if (l && l.token_id) licenseStore.put(l);
+          if (l && l.token_id) lStore.put({ ...l, store_id: storeId });
+        }
+      }
+
+      if (Array.isArray(staff_devices)) {
+        const stStore = tx.objectStore('staff_devices');
+        for (const st of staff_devices) {
+          if (st && st.id) stStore.put({ ...st, store_id: storeId });
         }
       }
 
@@ -914,18 +1294,27 @@ class HolyStarDatabase {
   }
 
   /**
-   * Load realistic Ghanaian Provision Shop Demo Data
+   * Optional: Load Sample Ghanaian Shop Items into the active store ONLY when clicked in Settings
    */
   async loadDemoShopData() {
     await this.initFromExisting();
+    const storeId = this.getActiveStoreId();
+    if (!storeId) throw new Error('Please log into a store first.');
+
     const now = Date.now();
-    const todayStr = this.formatLocalDate(now);
+    const thumb = (n, c) =>
+      typeof window.generateProductSvgThumbnail === 'function'
+        ? window.generateProductSvgThumbnail(n, c)
+        : '';
 
     const demoProducts = [
       {
-        id: 'PRD-DEMO-01',
-        name: 'Nestle Milo Tin 400g',
+        id: `PRD-${storeId}-01`,
+        store_id: storeId,
+        name: 'Nestle Milo Activ-Go Tin 400g',
         category: 'Beverages',
+        barcode: '6031100200017',
+        image_url: thumb('Nestle Milo Activ-Go Tin 400g', 'Beverages'),
         cost_price: 42.00,
         selling_price: 50.00,
         stock_qty: 24,
@@ -933,9 +1322,12 @@ class HolyStarDatabase {
         updated_at: now
       },
       {
-        id: 'PRD-DEMO-02',
-        name: 'Ideal Evaporated Milk 170g',
+        id: `PRD-${storeId}-02`,
+        store_id: storeId,
+        name: 'Ideal Evaporated Milk 160g Tin',
         category: 'Milk & Dairy',
+        barcode: '6031100300014',
+        image_url: thumb('Ideal Evaporated Milk 160g Tin', 'Milk & Dairy'),
         cost_price: 9.50,
         selling_price: 12.00,
         stock_qty: 48,
@@ -943,9 +1335,38 @@ class HolyStarDatabase {
         updated_at: now
       },
       {
-        id: 'PRD-DEMO-03',
-        name: 'Gino Tomato Paste Mix 70g (Sachet)',
-        category: 'Cooking & Spices',
+        id: `PRD-${storeId}-03`,
+        store_id: storeId,
+        name: "McVitie's Digestive Biscuit 105g",
+        category: 'Biscuits & Snacks',
+        barcode: '6031100100010',
+        image_url: thumb("McVitie's Digestive Biscuit 105g", 'Biscuits & Snacks'),
+        cost_price: 11.00,
+        selling_price: 15.00,
+        stock_qty: 30,
+        low_stock_threshold: 6,
+        updated_at: now
+      },
+      {
+        id: `PRD-${storeId}-04`,
+        store_id: storeId,
+        name: 'Perk Milk Shortcake Biscuit',
+        category: 'Biscuits & Snacks',
+        barcode: '6031100100034',
+        image_url: thumb('Perk Milk Shortcake Biscuit', 'Biscuits & Snacks'),
+        cost_price: 3.50,
+        selling_price: 5.00,
+        stock_qty: 50,
+        low_stock_threshold: 10,
+        updated_at: now
+      },
+      {
+        id: `PRD-${storeId}-05`,
+        store_id: storeId,
+        name: 'Gino Tomato Paste Mix 70g Sachet',
+        category: 'Tin & Canned Foods',
+        barcode: '6031100400011',
+        image_url: thumb('Gino Tomato Paste Mix 70g Sachet', 'Tin & Canned Foods'),
         cost_price: 3.80,
         selling_price: 5.00,
         stock_qty: 60,
@@ -953,9 +1374,12 @@ class HolyStarDatabase {
         updated_at: now
       },
       {
-        id: 'PRD-DEMO-04',
-        name: 'Frytol Vegetable Oil 1 Litre',
-        category: 'Cooking & Spices',
+        id: `PRD-${storeId}-06`,
+        store_id: storeId,
+        name: 'Frytol Vegetable Cooking Oil 1 Litre',
+        category: 'Grains & Oils',
+        barcode: '6031100500018',
+        image_url: thumb('Frytol Vegetable Cooking Oil 1 Litre', 'Grains & Oils'),
         cost_price: 36.00,
         selling_price: 43.00,
         stock_qty: 15,
@@ -963,9 +1387,12 @@ class HolyStarDatabase {
         updated_at: now
       },
       {
-        id: 'PRD-DEMO-05',
+        id: `PRD-${storeId}-07`,
+        store_id: storeId,
         name: 'Titus Sardines in Vegetable Oil 125g',
-        category: 'Canned Goods',
+        category: 'Tin & Canned Foods',
+        barcode: '6031100400059',
+        image_url: thumb('Titus Sardines in Vegetable Oil 125g', 'Tin & Canned Foods'),
         cost_price: 14.50,
         selling_price: 18.00,
         stock_qty: 30,
@@ -973,227 +1400,31 @@ class HolyStarDatabase {
         updated_at: now
       },
       {
-        id: 'PRD-DEMO-06',
-        name: 'White Granulated Sugar 1kg Pack',
-        category: 'Grains & Staples',
-        cost_price: 20.00,
-        selling_price: 25.00,
-        stock_qty: 20,
-        low_stock_threshold: 5,
-        updated_at: now
-      },
-      {
-        id: 'PRD-DEMO-07',
-        name: 'Indomie InstantJollof / Onion Chicken 70g',
-        category: 'Noodles & Pasta',
-        cost_price: 5.50,
-        selling_price: 7.50,
-        stock_qty: 4, // Low stock demo!
-        low_stock_threshold: 10,
-        updated_at: now
-      },
-      {
-        id: 'PRD-DEMO-08',
-        name: 'Key Soap Long Bar (Multipurpose)',
-        category: 'Household & Toiletries',
-        cost_price: 17.00,
-        selling_price: 21.00,
-        stock_qty: 18,
-        low_stock_threshold: 5,
-        updated_at: now
-      },
-      {
-        id: 'PRD-DEMO-09',
-        name: 'Lele Royal Perfume Rice 5kg',
-        category: 'Grains & Staples',
+        id: `PRD-${storeId}-08`,
+        store_id: storeId,
+        name: 'Cindy Jasmine Long Grain Rice 5kg',
+        category: 'Grains & Oils',
+        barcode: '6031100500032',
+        image_url: thumb('Cindy Jasmine Long Grain Rice 5kg', 'Grains & Oils'),
         cost_price: 105.00,
         selling_price: 125.00,
-        stock_qty: 10,
+        stock_qty: 12,
         low_stock_threshold: 4,
         updated_at: now
-      },
-      {
-        id: 'PRD-DEMO-10',
-        name: 'Peak Powdered Milk Sachet 30g',
-        category: 'Milk & Dairy',
-        cost_price: 4.50,
-        selling_price: 6.00,
-        stock_qty: 0, // Out of stock demo!
-        low_stock_threshold: 10,
-        updated_at: now
-      },
-      {
-        id: 'PRD-DEMO-11',
-        name: 'Geisha Bath Soap 125g',
-        category: 'Household & Toiletries',
-        cost_price: 8.50,
-        selling_price: 11.00,
-        stock_qty: 22,
-        low_stock_threshold: 5,
-        updated_at: now
-      },
-      {
-        id: 'PRD-DEMO-12',
-        name: 'Blue Band Margarine Tub 250g',
-        category: 'Beverages',
-        cost_price: 19.00,
-        selling_price: 24.00,
-        stock_qty: 14,
-        low_stock_threshold: 5,
-        updated_at: now
-      }
-    ];
-
-    const demoDebtor = {
-      id: 'DBT-DEMO-01',
-      name: 'Madam Akosua Mensah',
-      phone: '0244123456',
-      location: 'Near Bolga Central Market Lorry Station',
-      due_date: todayStr,
-      total_owed: 47.00,
-      total_credit_taken: 67.00,
-      total_paid: 20.00,
-      status: 'Unpaid',
-      created_at: now - 3600000,
-      updated_at: now - 3600000,
-      history: [
-        {
-          id: 'HST-DEMO-01',
-          type: 'CREDIT_SALE',
-          receipt_id: 'RCP-DEMO-01',
-          timestamp: now - 3600000,
-          date_str: todayStr,
-          items: [
-            { name: 'Nestle Milo Tin 400g', qty: 1, selling_price: 50.00, subtotal: 50.00 },
-            { name: 'Ideal Evaporated Milk 170g', qty: 1, selling_price: 12.00, subtotal: 12.00 },
-            { name: 'Gino Tomato Paste Mix 70g (Sachet)', qty: 1, selling_price: 5.00, subtotal: 5.00 }
-          ],
-          total_credit_sale: 67.00,
-          initial_deposit: 20.00,
-          deposit_method: 'Cash',
-          amount_added_to_debt: 47.00,
-          due_date: todayStr,
-          note: 'Credit purchase (3 items)'
-        }
-      ]
-    };
-
-    const demoSales = [
-      {
-        id: 'RCP-DEMO-01',
-        timestamp: now - 3600000,
-        date_str: todayStr,
-        items: [
-          {
-            id: 'PRD-DEMO-01',
-            name: 'Nestle Milo Tin 400g',
-            category: 'Beverages',
-            cost_price: 42.00,
-            selling_price: 50.00,
-            qty: 1,
-            subtotal: 50.00,
-            profit: 8.00
-          },
-          {
-            id: 'PRD-DEMO-02',
-            name: 'Ideal Evaporated Milk 170g',
-            category: 'Milk & Dairy',
-            cost_price: 9.50,
-            selling_price: 12.00,
-            qty: 1,
-            subtotal: 12.00,
-            profit: 2.50
-          },
-          {
-            id: 'PRD-DEMO-03',
-            name: 'Gino Tomato Paste Mix 70g (Sachet)',
-            category: 'Cooking & Spices',
-            cost_price: 3.80,
-            selling_price: 5.00,
-            qty: 1,
-            subtotal: 5.00,
-            profit: 1.20
-          }
-        ],
-        item_count: 3,
-        total_amount: 67.00,
-        total_profit: 11.70,
-        payment_method: 'Credit',
-        initial_deposit: 20.00,
-        deposit_method: 'Cash',
-        balance_owed: 47.00,
-        debtor_id: 'DBT-DEMO-01',
-        customer: {
-          name: 'Madam Akosua Mensah',
-          phone: '0244123456',
-          location: 'Near Bolga Central Market Lorry Station',
-          due_date: todayStr,
-          initial_deposit: 20.00,
-          deposit_method: 'Cash',
-          balance_owed: 47.00
-        }
-      },
-      {
-        id: 'RCP-DEMO-02',
-        timestamp: now - 1800000,
-        date_str: todayStr,
-        items: [
-          {
-            id: 'PRD-DEMO-04',
-            name: 'Frytol Vegetable Oil 1 Litre',
-            category: 'Cooking & Spices',
-            cost_price: 36.00,
-            selling_price: 43.00,
-            qty: 1,
-            subtotal: 43.00,
-            profit: 7.00
-          },
-          {
-            id: 'PRD-DEMO-05',
-            name: 'Titus Sardines in Vegetable Oil 125g',
-            category: 'Canned Goods',
-            cost_price: 14.50,
-            selling_price: 18.00,
-            qty: 2,
-            subtotal: 36.00,
-            profit: 7.00
-          }
-        ],
-        item_count: 3,
-        total_amount: 79.00,
-        total_profit: 14.00,
-        payment_method: 'Cash',
-        initial_deposit: 79.00,
-        deposit_method: 'Cash',
-        balance_owed: 0,
-        customer: null
       }
     ];
 
     return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['products', 'debtors', 'sales', 'settings'], 'readwrite');
+      const tx = this.db.transaction(['products'], 'readwrite');
       const productStore = tx.objectStore('products');
-      const debtorStore = tx.objectStore('debtors');
-      const salesStore = tx.objectStore('sales');
-      const settingsStore = tx.objectStore('settings');
-
       for (const p of demoProducts) {
         productStore.put(p);
       }
-      debtorStore.put(demoDebtor);
-      for (const s of demoSales) {
-        salesStore.put(s);
-      }
-      settingsStore.put({ key: 'last_seen_timestamp', value: now });
-
       tx.oncomplete = () => resolve(true);
-      tx.onerror = () => reject(tx.error || new Error('Failed to load demo shop data.'));
+      tx.onerror = () => reject(tx.error || new Error('Failed to load sample items.'));
     });
   }
 
-  /**
-   * Helper: format timestamp as local YYYY-MM-DD
-   */
   formatLocalDate(ts = Date.now()) {
     const d = new Date(ts);
     const year = d.getFullYear();
@@ -1204,4 +1435,3 @@ class HolyStarDatabase {
 }
 
 window.HolyStarDB = new HolyStarDatabase();
-
