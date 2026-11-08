@@ -1,7 +1,7 @@
 /**
- * Holy Star POS - Cloud Sync Serverless API (/api/sync.js v3.1)
- * Persists store profiles, products, sales, debtors, closed_days, license, and telemetry
- * across PC and mobile phones using a hybrid Cloud Channel + local file cache (`api/data.json` / `/tmp`).
+ * Holy Star POS - Cloud Sync Serverless API (/api/sync.js v3.2)
+ * Non-destructive multi-device merge sync across PC and mobile phones.
+ * Keeps cloud messages < 4KB so `ntfy.sh` always stores inline JSON without attachment issues.
  */
 
 const fs = require('fs');
@@ -31,6 +31,92 @@ function compactProductsForCloud(products) {
   });
 }
 
+function compactSalesForCloud(sales) {
+  if (!Array.isArray(sales)) return [];
+  return sales.map((s) => {
+    if (!s || typeof s !== 'object') return s;
+    const copy = { ...s };
+    if (Array.isArray(copy.items)) {
+      copy.items = copy.items.map((it) => ({
+        id: it.id,
+        name: it.name,
+        qty: it.qty,
+        cost_price: it.cost_price,
+        selling_price: it.selling_price,
+        subtotal: it.subtotal,
+        profit: it.profit
+      }));
+    }
+    return copy;
+  });
+}
+
+function mergeById(existingArr = [], incomingArr = [], idField = 'id', deletedIds = []) {
+  const deletedSet = new Set(Array.isArray(deletedIds) ? deletedIds : []);
+  const map = new Map();
+  for (const item of existingArr) {
+    if (item && item[idField] && !deletedSet.has(item[idField])) {
+      map.set(item[idField], item);
+    }
+  }
+  for (const item of incomingArr) {
+    if (item && item[idField] && !deletedSet.has(item[idField])) {
+      const prev = map.get(item[idField]);
+      if (!prev) {
+        map.set(item[idField], item);
+      } else {
+        const prevTs = Number(prev.updated_at || prev.timestamp || prev.closed_at || prev.applied_at || prev.created_at || 0);
+        const nextTs = Number(item.updated_at || item.timestamp || item.closed_at || item.applied_at || item.created_at || 0);
+        if (nextTs >= prevTs) {
+          map.set(item[idField], { ...prev, ...item });
+        }
+      }
+    }
+  }
+  return Array.from(map.values());
+}
+
+function mergeStoreBundles(existingBundle, incomingBundle) {
+  if (!existingBundle) return incomingBundle;
+  if (!incomingBundle) return existingBundle;
+
+  const existingTs = Number(existingBundle.updated_at || 0);
+  const incomingTs = Number(incomingBundle.updated_at || 0);
+
+  const mergedStore = incomingTs >= existingTs
+    ? { ...(existingBundle.store || {}), ...(incomingBundle.store || {}) }
+    : { ...(incomingBundle.store || {}), ...(existingBundle.store || {}) };
+
+  const deletedIds = Array.from(new Set([
+    ...(existingBundle.store?.deleted_product_ids || []),
+    ...(incomingBundle.store?.deleted_product_ids || [])
+  ]));
+  if (deletedIds.length > 0) {
+    mergedStore.deleted_product_ids = deletedIds;
+  }
+
+  const products = compactProductsForCloud(
+    mergeById(existingBundle.products, incomingBundle.products, 'id', deletedIds)
+  );
+  const sales = compactSalesForCloud(
+    mergeById(existingBundle.sales, incomingBundle.sales, 'id')
+  );
+  const debtors = mergeById(existingBundle.debtors, incomingBundle.debtors, 'id');
+  const closed_days = mergeById(existingBundle.closed_days, incomingBundle.closed_days, 'id');
+  const license = mergeById(existingBundle.license, incomingBundle.license, 'token_id');
+
+  return {
+    store_id: mergedStore.store_id || existingBundle.store_id || incomingBundle.store_id,
+    store: mergedStore,
+    products,
+    sales,
+    debtors,
+    closed_days,
+    license,
+    updated_at: Math.max(existingTs, incomingTs, Date.now())
+  };
+}
+
 function readLocalCache() {
   const merged = { stores: {}, bundles: {} };
   for (const filePath of [LOCAL_DATA_FILE, TMP_DATA_FILE]) {
@@ -39,8 +125,12 @@ function readLocalCache() {
         const raw = fs.readFileSync(filePath, 'utf8');
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') {
-          Object.assign(merged.stores, parsed.stores || {});
-          Object.assign(merged.bundles, parsed.bundles || {});
+          for (const [sid, s] of Object.entries(parsed.stores || {})) {
+            merged.stores[sid] = { ...(merged.stores[sid] || {}), ...s };
+          }
+          for (const [sid, b] of Object.entries(parsed.bundles || {})) {
+            merged.bundles[sid] = mergeStoreBundles(merged.bundles[sid], b);
+          }
         }
       }
     } catch (e) {}
@@ -66,17 +156,6 @@ function ingestSyncRecord(dbObj, msg, fallbackTimeSec) {
   if (!sid) return;
 
   const incomingTs = Number(msg.updated_at || msg.sent_at || (fallbackTimeSec ? fallbackTimeSec * 1000 : Date.now()));
-  const existingSummary = dbObj.stores[sid];
-  const existingTs = existingSummary ? Number(existingSummary.last_synced_ts || existingSummary.updated_at || 0) : 0;
-
-  if (msg.telemetry && (!existingSummary || incomingTs >= existingTs)) {
-    dbObj.stores[sid] = {
-      ...(existingSummary || {}),
-      ...msg.telemetry,
-      last_synced_ts: incomingTs || Date.now(),
-      last_synced_at: new Date(incomingTs || Date.now()).toISOString()
-    };
-  }
 
   const bundleCandidate = msg.bundle || (msg.store ? {
     store_id: sid,
@@ -85,23 +164,52 @@ function ingestSyncRecord(dbObj, msg, fallbackTimeSec) {
     sales: msg.sales || [],
     debtors: msg.debtors || [],
     closed_days: msg.closed_days || [],
-    license: msg.license || []
+    license: msg.license || [],
+    updated_at: incomingTs
   } : null);
 
   if (bundleCandidate && bundleCandidate.store) {
-    const existingBundle = dbObj.bundles[sid];
-    const existingBundleTs = existingBundle ? Number(existingBundle.updated_at || 0) : 0;
-    if (!existingBundle || incomingTs >= existingBundleTs) {
-      dbObj.bundles[sid] = {
-        ...bundleCandidate,
-        updated_at: incomingTs || Date.now()
-      };
-    }
+    dbObj.bundles[sid] = mergeStoreBundles(dbObj.bundles[sid], {
+      ...bundleCandidate,
+      updated_at: incomingTs
+    });
   }
+
+  const mergedBundle = dbObj.bundles[sid];
+  const existingSummary = dbObj.stores[sid] || {};
+  const incomingTelemetry = msg.telemetry || {};
+
+  const resolvedProductsCount = mergedBundle
+    ? mergedBundle.products.length
+    : Math.max(Number(existingSummary.total_products_count || 0), Number(incomingTelemetry.total_products_count || 0));
+
+  const resolvedStockUnits = mergedBundle
+    ? mergedBundle.products.reduce((s, p) => s + Number(p.stock_qty || 0), 0)
+    : Math.max(Number(existingSummary.total_stock_units || 0), Number(incomingTelemetry.total_stock_units || 0));
+
+  const resolvedSalesCount = mergedBundle
+    ? mergedBundle.sales.length
+    : Math.max(Number(existingSummary.total_sales_count || 0), Number(incomingTelemetry.total_sales_count || 0));
+
+  const resolvedRevenue = mergedBundle
+    ? Number(mergedBundle.sales.reduce((s, x) => s + Number(x.total_amount || 0), 0).toFixed(2))
+    : Math.max(Number(existingSummary.total_revenue_ghs || 0), Number(incomingTelemetry.total_revenue_ghs || 0));
+
+  dbObj.stores[sid] = {
+    ...existingSummary,
+    ...incomingTelemetry,
+    store_id: sid,
+    total_products_count: resolvedProductsCount,
+    total_stock_units: resolvedStockUnits,
+    total_sales_count: resolvedSalesCount,
+    total_revenue_ghs: resolvedRevenue,
+    last_synced_ts: Math.max(Number(existingSummary.last_synced_ts || 0), incomingTs),
+    last_synced_at: new Date(Math.max(Number(existingSummary.last_synced_ts || 0), incomingTs)).toISOString()
+  };
 }
 
 async function pullCloudChannelState(dbObj) {
-  // 1. Pull V1 telemetry channel for stores registered in v2.x
+  // 1. Pull V1 telemetry channel
   try {
     const resV1 = await fetch(`https://ntfy.sh/${CLOUD_TOPIC_V1}/json?poll=1&since=all`, {
       headers: { 'Cache-Control': 'no-cache' }
@@ -144,8 +252,7 @@ async function pullCloudChannelState(dbObj) {
       } catch (lineErr) {}
     }
 
-    // Fetch up to the latest 3 attachments if any store sent a >4KB payload
-    for (const att of attachmentUrls.slice(-3)) {
+    for (const att of attachmentUrls.slice(-2)) {
       try {
         const attRes = await fetch(att.url);
         if (attRes.ok) {
@@ -159,16 +266,73 @@ async function pullCloudChannelState(dbObj) {
 }
 
 async function pushToCloudChannel(record) {
-  try {
-    await fetch(`https://ntfy.sh/${CLOUD_TOPIC_SYNC}`, {
-      method: 'POST',
-      headers: {
-        'Title': `HolyStar Sync ${record.store_id}`,
-        'Priority': 'default'
-      },
-      body: JSON.stringify(record)
+  if (!record || !record.store_id) return;
+  const sid = record.store_id;
+  const now = record.updated_at || Date.now();
+  const b = record.bundle || {};
+  const store = b.store || record.store;
+  const products = Array.isArray(b.products) ? b.products : [];
+  const sales = Array.isArray(b.sales) ? b.sales : [];
+  const debtors = Array.isArray(b.debtors) ? b.debtors : [];
+  const closed_days = Array.isArray(b.closed_days) ? b.closed_days : [];
+  const license = Array.isArray(b.license) ? b.license : [];
+
+  const chunks = [];
+
+  // Chunk 1+: Products in batches of 8 (always < 3.2KB inline JSON in ntfy.sh)
+  if (products.length === 0) {
+    chunks.push({
+      _type: 'HOLYSTAR_CLOUD_SYNC_V3',
+      store_id: sid,
+      updated_at: now,
+      telemetry: record.telemetry,
+      bundle: { store_id: sid, store, products: [], debtors, closed_days, license }
     });
-  } catch (e) {}
+  } else {
+    for (let i = 0; i < products.length; i += 8) {
+      chunks.push({
+        _type: 'HOLYSTAR_CLOUD_SYNC_V3',
+        store_id: sid,
+        updated_at: now,
+        telemetry: i === 0 ? record.telemetry : undefined,
+        bundle: {
+          store_id: sid,
+          store,
+          products: products.slice(i, i + 8),
+          debtors: i === 0 ? debtors : [],
+          closed_days: i === 0 ? closed_days : [],
+          license: i === 0 ? license : []
+        }
+      });
+    }
+  }
+
+  // Sales in batches of 2 (always < 3.2KB inline JSON in ntfy.sh)
+  for (let i = 0; i < sales.length; i += 2) {
+    chunks.push({
+      _type: 'HOLYSTAR_CLOUD_SYNC_V3',
+      store_id: sid,
+      updated_at: now,
+      bundle: {
+        store_id: sid,
+        store,
+        sales: sales.slice(i, i + 2)
+      }
+    });
+  }
+
+  for (const chunk of chunks) {
+    try {
+      await fetch(`https://ntfy.sh/${CLOUD_TOPIC_SYNC}`, {
+        method: 'POST',
+        headers: {
+          'Title': `HolyStar Sync ${sid}`,
+          'Priority': 'default'
+        },
+        body: JSON.stringify(chunk)
+      });
+    } catch (e) {}
+  }
 }
 
 module.exports = async function handler(req, res) {
@@ -224,66 +388,41 @@ module.exports = async function handler(req, res) {
       }
 
       const now = Date.now();
-      const rawProducts = Array.isArray(body.products) ? body.products : (body.bundle?.products || []);
-      const compactProducts = compactProductsForCloud(rawProducts);
-
-      const telemetry = body.telemetry || {
+      ingestSyncRecord(dbObj, {
         store_id: storeId,
-        store_name: store ? store.store_name : `Store ${storeId}`,
-        store_category: store ? store.store_category : 'Retail',
-        owner_name: store ? store.owner_name : '',
-        owner_phone: store ? store.owner_phone : '',
-        location: store ? (store.shop_location || store.location || '') : '',
-        total_products_count: compactProducts.length,
-        total_stock_units: compactProducts.reduce((s, p) => s + Number(p.stock_qty || 0), 0),
-        total_sales_count: Array.isArray(body.sales) ? body.sales.length : 0,
-        total_revenue_ghs: Array.isArray(body.sales)
-          ? Number(body.sales.reduce((s, x) => s + Number(x.total_amount || 0), 0).toFixed(2))
-          : 0,
-        license_plan: store ? store.license_plan : '7-Day Trial',
-        license_expiry_ts: store ? Number(store.license_expiry || now) : now,
-        license_expiry_date: new Date(store ? Number(store.license_expiry || now) : now).toISOString(),
-        last_synced_ts: now,
-        last_synced_at: new Date(now).toISOString()
-      };
-
-      telemetry.last_synced_ts = now;
-      telemetry.last_synced_at = new Date(now).toISOString();
-      dbObj.stores[storeId] = {
-        ...(dbObj.stores[storeId] || {}),
-        ...telemetry
-      };
-
-      let bundleToSave = null;
-      if (store) {
-        bundleToSave = {
+        updated_at: now,
+        telemetry: body.telemetry,
+        bundle: {
           store_id: storeId,
-          store,
-          products: compactProducts.length > 0 ? compactProducts : (dbObj.bundles[storeId]?.products || []),
-          sales: Array.isArray(body.sales) ? body.sales : (dbObj.bundles[storeId]?.sales || []),
-          debtors: Array.isArray(body.debtors) ? body.debtors : (dbObj.bundles[storeId]?.debtors || []),
-          closed_days: Array.isArray(body.closed_days) ? body.closed_days : (dbObj.bundles[storeId]?.closed_days || []),
-          license: Array.isArray(body.license) ? body.license : (dbObj.bundles[storeId]?.license || []),
+          store: store || dbObj.bundles[storeId]?.store,
+          products: Array.isArray(body.products) ? body.products : (body.bundle?.products || []),
+          sales: Array.isArray(body.sales) ? body.sales : (body.bundle?.sales || []),
+          debtors: Array.isArray(body.debtors) ? body.debtors : (body.bundle?.debtors || []),
+          closed_days: Array.isArray(body.closed_days) ? body.closed_days : (body.bundle?.closed_days || []),
+          license: Array.isArray(body.license) ? body.license : (body.bundle?.license || []),
           updated_at: now
-        };
-        dbObj.bundles[storeId] = bundleToSave;
-      }
+        }
+      });
 
       writeLocalCache(dbObj);
+
+      const mergedBundle = dbObj.bundles[storeId];
+      const mergedTelemetry = dbObj.stores[storeId];
 
       await pushToCloudChannel({
         _type: 'HOLYSTAR_CLOUD_SYNC_V3',
         store_id: storeId,
         updated_at: now,
-        telemetry: dbObj.stores[storeId],
-        bundle: bundleToSave
+        telemetry: mergedTelemetry,
+        bundle: mergedBundle
       });
 
       return res.status(200).json({
         ok: true,
         store_id: storeId,
         synced_at: new Date(now).toISOString(),
-        telemetry: dbObj.stores[storeId]
+        telemetry: mergedTelemetry,
+        bundle: mergedBundle
       });
     } catch (err) {
       return res.status(500).json({ ok: false, error: err.message || 'Sync error' });

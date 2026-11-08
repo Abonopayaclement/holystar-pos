@@ -365,7 +365,7 @@ class HolyStarDatabase {
     let localStores = await this.getAllStores();
     let store = localStores.find(matchStoreFn);
 
-    // If online, try fetching latest cloud bundle (especially if store isn't on this device yet!)
+    // Always pull & merge latest cloud bundle when online so Phone and PC have identical items!
     if (typeof navigator !== 'undefined' && navigator.onLine) {
       try {
         const cloudResult = await this.fetchCloudStoreBundleForLogin(cleanId, cleanPass);
@@ -374,9 +374,7 @@ class HolyStarDatabase {
           localStores = await this.getAllStores();
           store = localStores.find(matchStoreFn) || cloudResult.store;
         }
-      } catch (cloudErr) {
-        // Fallback to local store if cloud unreachable
-      }
+      } catch (cloudErr) {}
     }
 
     if (!store) {
@@ -398,16 +396,80 @@ class HolyStarDatabase {
     this.setActiveSession(session);
     await this.TouchClock();
 
+    // Pull & merge any remaining cloud items, and only push if local device has items to share
     if (typeof navigator !== 'undefined' && navigator.onLine) {
-      this.syncFullStoreOnline(store.store_id).catch(() => { });
+      this.pullAndHydrateStoreFromCloud(store.store_id)
+        .then(async () => {
+          const localProds = await this.getAllProducts(store.store_id);
+          if (localProds.length > 0) {
+            await this.syncFullStoreOnline(store.store_id);
+          }
+        })
+        .catch(() => {});
     }
 
     return { store, session };
   }
 
+  mergeArraysById(existingArr = [], incomingArr = [], idField = 'id', deletedIds = []) {
+    const deletedSet = new Set(Array.isArray(deletedIds) ? deletedIds : []);
+    const map = new Map();
+    for (const item of existingArr) {
+      if (item && item[idField] && !deletedSet.has(item[idField])) {
+        map.set(item[idField], item);
+      }
+    }
+    for (const item of incomingArr) {
+      if (item && item[idField] && !deletedSet.has(item[idField])) {
+        const prev = map.get(item[idField]);
+        if (!prev) {
+          map.set(item[idField], item);
+        } else {
+          const prevTs = Number(prev.updated_at || prev.timestamp || prev.closed_at || prev.applied_at || prev.created_at || 0);
+          const nextTs = Number(item.updated_at || item.timestamp || item.closed_at || item.applied_at || item.created_at || 0);
+          if (nextTs >= prevTs) {
+            map.set(item[idField], { ...prev, ...item });
+          }
+        }
+      }
+    }
+    return Array.from(map.values());
+  }
+
+  mergeCloudBundles(baseBundle, incomingBundle) {
+    if (!baseBundle) return incomingBundle;
+    if (!incomingBundle) return baseBundle;
+
+    const baseTs = Number(baseBundle.updated_at || 0);
+    const incTs = Number(incomingBundle.updated_at || 0);
+
+    const mergedStore = incTs >= baseTs
+      ? { ...(baseBundle.store || {}), ...(incomingBundle.store || {}) }
+      : { ...(incomingBundle.store || {}), ...(baseBundle.store || {}) };
+
+    const deletedIds = Array.from(new Set([
+      ...(baseBundle.store?.deleted_product_ids || []),
+      ...(incomingBundle.store?.deleted_product_ids || [])
+    ]));
+    if (deletedIds.length > 0) {
+      mergedStore.deleted_product_ids = deletedIds;
+    }
+
+    return {
+      store_id: mergedStore.store_id || baseBundle.store_id || incomingBundle.store_id,
+      store: mergedStore,
+      products: this.mergeArraysById(baseBundle.products, incomingBundle.products, 'id', deletedIds),
+      sales: this.mergeArraysById(baseBundle.sales, incomingBundle.sales, 'id'),
+      debtors: this.mergeArraysById(baseBundle.debtors, incomingBundle.debtors, 'id'),
+      closed_days: this.mergeArraysById(baseBundle.closed_days, incomingBundle.closed_days, 'id'),
+      license: this.mergeArraysById(baseBundle.license, incomingBundle.license, 'token_id'),
+      updated_at: Math.max(baseTs, incTs, Date.now())
+    };
+  }
+
   /**
-   * Look up a store bundle from `/api/auth`, the V3 Cloud Sync Stream (`ntfy.sh` inline + attachments),
-   * and the V1 Telemetry Stream so ANY registered store can be logged into from ANY device.
+   * Look up and non-destructively merge a store bundle from `/api/auth`, `/api/sync`,
+   * and the V3 Cloud Sync Stream (`ntfy.sh`) so Phone and PC always get 100% of items.
    */
   async fetchCloudStoreBundleForLogin(identifier, password) {
     const cleanId = String(identifier || '').trim();
@@ -420,6 +482,8 @@ class HolyStarDatabase {
         String(s.store_id || '').toUpperCase() === cleanId.toUpperCase() ||
         String(s.store_name || '').toLowerCase() === cleanId.toLowerCase());
 
+    let combinedBundle = null;
+
     // 1. Try serverless `/api/auth`
     try {
       const res = await fetch('./api/auth', {
@@ -430,12 +494,12 @@ class HolyStarDatabase {
       if (res.ok) {
         const data = await res.json();
         if (data && data.ok && data.store) {
-          return { store: data.store, bundle: data.bundle };
+          combinedBundle = this.mergeCloudBundles(combinedBundle, data.bundle || { store: data.store });
         }
       }
     } catch (e) {}
 
-    // 2. Fallback: Query V3 Cloud Sync Channel directly from browser (inline JSON + attachments)
+    // 2. Also query V3 Cloud Sync Channel directly from browser and merge ALL messages for this store
     try {
       const res = await fetch(`https://ntfy.sh/${CLOUD_SYNC_TOPIC_V3}/json?poll=1&since=all`, {
         cache: 'no-store'
@@ -443,9 +507,6 @@ class HolyStarDatabase {
       if (res.ok) {
         const text = await res.text();
         const lines = text.split('\n').filter((l) => l.trim().length > 0);
-        let latestStore = null;
-        let latestBundle = null;
-        let latestTs = 0;
         const matchingAttachments = [];
 
         for (const line of lines) {
@@ -461,20 +522,18 @@ class HolyStarDatabase {
                 const msg = JSON.parse(env.message);
                 const candidateStore = msg.store || (msg.bundle && msg.bundle.store) || null;
                 if (candidateStore && isStoreMatch(candidateStore)) {
-                  const ts = Number(msg.updated_at || (env.time ? env.time * 1000 : 0));
-                  if (ts >= latestTs) {
-                    latestTs = ts;
-                    latestStore = candidateStore;
-                    if (msg.bundle) latestBundle = msg.bundle;
-                  }
+                  const candidateBundle = msg.bundle || { store: candidateStore };
+                  combinedBundle = this.mergeCloudBundles(combinedBundle, {
+                    ...candidateBundle,
+                    updated_at: Number(msg.updated_at || (env.time ? env.time * 1000 : 0))
+                  });
                 }
               }
             }
           } catch (lineErr) {}
         }
 
-        // Check attachments (newest first) for full bundle or store match
-        for (const att of matchingAttachments.slice(-4).reverse()) {
+        for (const att of matchingAttachments.slice(-3)) {
           try {
             const attRes = await fetch(att.url);
             if (attRes.ok) {
@@ -482,25 +541,23 @@ class HolyStarDatabase {
               const b = attJson.bundle || (attJson.store ? attJson : null);
               const s = (b && b.store) || attJson.store;
               if (s && isStoreMatch(s)) {
-                latestStore = s;
-                latestBundle = b;
-                break;
+                combinedBundle = this.mergeCloudBundles(combinedBundle, b);
               }
             }
           } catch (attErr) {}
         }
-
-        if (latestStore) {
-          const storedPass = String(latestStore.owner_password || '');
-          if (!storedPass || storedPass === cleanPass) {
-            return {
-              store: latestStore,
-              bundle: latestBundle || { store: latestStore }
-            };
-          }
-        }
       }
     } catch (e) {}
+
+    if (combinedBundle && combinedBundle.store) {
+      const storedPass = String(combinedBundle.store.owner_password || '');
+      if (!storedPass || storedPass === cleanPass) {
+        return {
+          store: combinedBundle.store,
+          bundle: combinedBundle
+        };
+      }
+    }
 
     // 3. Fallback: Check V1 Telemetry Channel & Local Telemetry Registry for stores created in v2.x
     try {
@@ -539,6 +596,62 @@ class HolyStarDatabase {
   }
 
   /**
+   * Pull and merge the latest Cloud Bundle for an already-logged-in store (`storeId`)
+   * so opening the app on Phone or PC automatically downloads items added on the other device!
+   */
+  async pullAndHydrateStoreFromCloud(storeId = this.getActiveStoreId()) {
+    if (!storeId || (typeof navigator !== 'undefined' && !navigator.onLine)) return false;
+    const cleanId = String(storeId).trim().toUpperCase();
+    let mergedBundle = null;
+
+    // 1. Pull from `/api/sync?store_id=...`
+    try {
+      const apiRes = await fetch(`./api/sync?store_id=${encodeURIComponent(cleanId)}`, { cache: 'no-store' });
+      if (apiRes.ok) {
+        const data = await apiRes.json();
+        if (data && data.bundle && data.bundle.store) {
+          mergedBundle = this.mergeCloudBundles(mergedBundle, data.bundle);
+        }
+      }
+    } catch (e) {}
+
+    // 2. Pull & merge from `ntfy.sh` V3 channel
+    try {
+      const res = await fetch(`https://ntfy.sh/${CLOUD_SYNC_TOPIC_V3}/json?poll=1&since=all`, {
+        cache: 'no-store'
+      });
+      if (res.ok) {
+        const text = await res.text();
+        const lines = text.split('\n').filter((l) => l.trim().length > 0);
+        for (const line of lines) {
+          try {
+            const env = JSON.parse(line);
+            if (env && env.event === 'message' && env.message && env.message.startsWith('{')) {
+              const msg = JSON.parse(env.message);
+              const sid = String(msg.store_id || msg.bundle?.store?.store_id || msg.store?.store_id || '').toUpperCase();
+              if (sid === cleanId) {
+                const b = msg.bundle || (msg.store ? { store: msg.store } : null);
+                if (b && b.store) {
+                  mergedBundle = this.mergeCloudBundles(mergedBundle, {
+                    ...b,
+                    updated_at: Number(msg.updated_at || (env.time ? env.time * 1000 : 0))
+                  });
+                }
+              }
+            }
+          } catch (e) {}
+        }
+      }
+    } catch (e) {}
+
+    if (mergedBundle && mergedBundle.store) {
+      await this.hydrateStoreBundleIntoIndexedDB(mergedBundle);
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Hydrate a store bundle (`store`, `products`, `sales`, `debtors`, `closed_days`, `license`)
    * into local IndexedDB so a newly logged-in phone or PC has all store data offline!
    */
@@ -566,8 +679,12 @@ class HolyStarDatabase {
         tx.objectStore('stores').put(targetStore);
 
         const pStore = tx.objectStore('products');
+        const deletedIds = Array.isArray(targetStore.deleted_product_ids) ? targetStore.deleted_product_ids : [];
+        for (const delId of deletedIds) {
+          if (delId) pStore.delete(delId);
+        }
         for (const p of products) {
-          if (p && p.id) pStore.put({ ...p, store_id: storeId });
+          if (p && p.id && !deletedIds.includes(p.id)) pStore.put({ ...p, store_id: storeId });
         }
 
         const sStore = tx.objectStore('sales');
@@ -824,9 +941,16 @@ class HolyStarDatabase {
 
   async deleteProduct(productId) {
     await this.initFromExisting();
+    const store = await this.getActiveStore();
     return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['products'], 'readwrite');
+      const tx = this.db.transaction(['products', 'stores'], 'readwrite');
       tx.objectStore('products').delete(productId);
+      if (store && productId) {
+        const deleted = new Set(Array.isArray(store.deleted_product_ids) ? store.deleted_product_ids : []);
+        deleted.add(productId);
+        store.deleted_product_ids = Array.from(deleted);
+        tx.objectStore('stores').put(store);
+      }
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => reject(tx.error);
     });
@@ -1546,8 +1670,14 @@ class HolyStarDatabase {
     }
 
     await this.initFromExisting();
-    const store = await this.getStoreById(storeId);
+    let store = await this.getStoreById(storeId);
     if (!store) throw new Error('No active store to sync.');
+
+    // Step 1: Pull & merge any cloud items first so this device NEVER overwrites items added on another device!
+    try {
+      await this.pullAndHydrateStoreFromCloud(storeId);
+      store = (await this.getStoreById(storeId)) || store;
+    } catch (e) {}
 
     const [products, sales, debtors, closed_days, license, telemetry] = await Promise.all([
       this.getAllProducts(storeId),
@@ -1574,70 +1704,108 @@ class HolyStarDatabase {
       return copy;
     });
 
+    const compactSales = (sales || []).map((s) => {
+      if (!s || typeof s !== 'object') return s;
+      const copy = { ...s };
+      if (Array.isArray(copy.items)) {
+        copy.items = copy.items.map((it) => ({
+          id: it.id,
+          name: it.name,
+          qty: it.qty,
+          cost_price: it.cost_price,
+          selling_price: it.selling_price,
+          subtotal: it.subtotal,
+          profit: it.profit
+        }));
+      }
+      return copy;
+    });
+
     const syncedStoreRecord = { ...store, last_synced_at: now };
     const fullBundle = {
       store_id: storeId,
       store: syncedStoreRecord,
       products: compactProducts,
-      sales,
+      sales: compactSales,
       debtors,
       closed_days,
       license,
-      telemetry,
       updated_at: now
     };
 
     let anySuccess = false;
 
-    // 1. Push to `/api/sync`
+    // Step 2: Push to `/api/sync` and hydrate any server-merged items returned
     try {
       const apiRes = await fetch('./api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(fullBundle)
+        body: JSON.stringify({ ...fullBundle, telemetry })
       });
       if (apiRes.ok) {
         anySuccess = true;
+        const apiData = await apiRes.json().catch(() => null);
+        if (apiData && apiData.bundle && apiData.bundle.store) {
+          await this.hydrateStoreBundleIntoIndexedDB(apiData.bundle);
+        }
       }
     } catch (e) {}
 
-    // 2. Push lightweight (<1.5KB) inline Auth + Telemetry message to Cloud Relay (`ntfy.sh`)
-    // so `ntfy.sh` NEVER turns store credentials into an attachment, plus push full bundle
+    // Step 3: Push inline chunks (<3.2KB each) to Cloud Relay (`ntfy.sh`) so `ntfy.sh` NEVER creates CORS-blocked attachments
     try {
-      const authRes = await fetch(`https://ntfy.sh/${CLOUD_SYNC_TOPIC_V3}`, {
-        method: 'POST',
-        headers: {
-          'Title': `HolyStar Auth ${storeId}`,
-          'Priority': 'default'
-        },
-        body: JSON.stringify({
-          _type: 'HOLYSTAR_STORE_AUTH_V3',
-          store_id: storeId,
-          updated_at: now,
-          store: syncedStoreRecord,
-          telemetry
-        })
-      });
-      if (authRes.ok) {
-        anySuccess = true;
-      }
-
-      const cloudRes = await fetch(`https://ntfy.sh/${CLOUD_SYNC_TOPIC_V3}`, {
-        method: 'POST',
-        headers: {
-          'Title': `HolyStar Cloud Sync ${storeId}`,
-          'Priority': 'default'
-        },
-        body: JSON.stringify({
+      const chunks = [];
+      if (compactProducts.length === 0) {
+        chunks.push({
           _type: 'HOLYSTAR_CLOUD_SYNC_V3',
           store_id: storeId,
           updated_at: now,
           telemetry,
-          bundle: fullBundle
-        })
-      });
-      if (cloudRes.ok) {
-        anySuccess = true;
+          bundle: { store_id: storeId, store: syncedStoreRecord, products: [], debtors, closed_days, license }
+        });
+      } else {
+        for (let i = 0; i < compactProducts.length; i += 8) {
+          chunks.push({
+            _type: 'HOLYSTAR_CLOUD_SYNC_V3',
+            store_id: storeId,
+            updated_at: now,
+            telemetry: i === 0 ? telemetry : undefined,
+            bundle: {
+              store_id: storeId,
+              store: syncedStoreRecord,
+              products: compactProducts.slice(i, i + 8),
+              debtors: i === 0 ? debtors : [],
+              closed_days: i === 0 ? closed_days : [],
+              license: i === 0 ? license : []
+            }
+          });
+        }
+      }
+
+      for (let i = 0; i < compactSales.length; i += 2) {
+        chunks.push({
+          _type: 'HOLYSTAR_CLOUD_SYNC_V3',
+          store_id: storeId,
+          updated_at: now,
+          bundle: {
+            store_id: storeId,
+            store: syncedStoreRecord,
+            sales: compactSales.slice(i, i + 2)
+          }
+        });
+      }
+
+      for (const chunk of chunks) {
+        const cloudRes = await fetch(`https://ntfy.sh/${CLOUD_SYNC_TOPIC_V3}`, {
+          method: 'POST',
+          headers: {
+            'Title': `HolyStar Cloud Sync ${storeId}`,
+            'Priority': 'default'
+          },
+          body: JSON.stringify(chunk)
+        });
+        if (cloudRes.ok) {
+          anySuccess = true;
+        }
       }
     } catch (e) {}
 
@@ -1645,7 +1813,6 @@ class HolyStarDatabase {
       throw new Error('OFFLINE_NO_INTERNET');
     }
 
-    // Update `last_synced_at` in local IndexedDB & registry
     store.last_synced_at = now;
     await this.saveActiveStoreRecord(store);
 

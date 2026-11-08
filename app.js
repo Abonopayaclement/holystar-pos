@@ -357,7 +357,7 @@ function registerServiceWorkerSafe() {
       refreshing = true;
       window.location.reload();
     });
-    navigator.serviceWorker.register('./sw.js?v=3.1').then((reg) => {
+    navigator.serviceWorker.register('./sw.js?v=3.2').then((reg) => {
       reg.update().catch(() => {});
     }).catch(() => {});
   }
@@ -380,7 +380,18 @@ async function checkAuthAndBoot() {
   AppState.settings = activeStore;
   hideAuthOverlay();
   await refreshAllData();
-  window.HolyStarDB.syncTelemetryHeartbeat(activeStore.store_id, 'session_resume');
+
+  // Pull & merge latest cloud items for this store on boot so Phone and PC always match!
+  if (typeof navigator !== 'undefined' && navigator.onLine) {
+    window.HolyStarDB.pullAndHydrateStoreFromCloud(activeStore.store_id)
+      .then(async (pulled) => {
+        if (pulled) {
+          await refreshAllData();
+        }
+        await window.HolyStarDB.syncTelemetryHeartbeat(activeStore.store_id, 'session_resume');
+      })
+      .catch(() => {});
+  }
 }
 
 function populateLoginStoreDropdown(storesList) {

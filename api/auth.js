@@ -1,7 +1,7 @@
 /**
- * Holy Star POS - Cross-Device Cloud Authentication API (/api/auth.js v3.1)
- * Allows logging into any registered store from ANY phone or PC anywhere,
- * returning the store account and full synced bundle (`products`, `sales`, `debtors`, `closed_days`, `license`).
+ * Holy Star POS - Cross-Device Cloud Authentication API (/api/auth.js v3.2)
+ * Non-destructive multi-device merge authentication returning the complete merged
+ * store bundle (`store`, `products`, `sales`, `debtors`, `closed_days`, `license`).
  */
 
 const fs = require('fs');
@@ -16,6 +16,77 @@ function normalizePhone(phone) {
   return String(phone || '').replace(/\s+/g, '').replace(/^\+233/, '0');
 }
 
+function compactProductsForCloud(products) {
+  if (!Array.isArray(products)) return [];
+  return products.map((p) => {
+    if (!p || typeof p !== 'object') return p;
+    const copy = { ...p };
+    if (copy.image_url && String(copy.image_url).startsWith('data:image/svg+xml')) {
+      delete copy.image_url;
+    }
+    if (copy.image_data && String(copy.image_data).startsWith('data:image/svg+xml')) {
+      delete copy.image_data;
+    }
+    return copy;
+  });
+}
+
+function mergeById(existingArr = [], incomingArr = [], idField = 'id', deletedIds = []) {
+  const deletedSet = new Set(Array.isArray(deletedIds) ? deletedIds : []);
+  const map = new Map();
+  for (const item of existingArr) {
+    if (item && item[idField] && !deletedSet.has(item[idField])) {
+      map.set(item[idField], item);
+    }
+  }
+  for (const item of incomingArr) {
+    if (item && item[idField] && !deletedSet.has(item[idField])) {
+      const prev = map.get(item[idField]);
+      if (!prev) {
+        map.set(item[idField], item);
+      } else {
+        const prevTs = Number(prev.updated_at || prev.timestamp || prev.closed_at || prev.applied_at || prev.created_at || 0);
+        const nextTs = Number(item.updated_at || item.timestamp || item.closed_at || item.applied_at || item.created_at || 0);
+        if (nextTs >= prevTs) {
+          map.set(item[idField], { ...prev, ...item });
+        }
+      }
+    }
+  }
+  return Array.from(map.values());
+}
+
+function mergeStoreBundles(existingBundle, incomingBundle) {
+  if (!existingBundle) return incomingBundle;
+  if (!incomingBundle) return existingBundle;
+
+  const existingTs = Number(existingBundle.updated_at || 0);
+  const incomingTs = Number(incomingBundle.updated_at || 0);
+
+  const mergedStore = incomingTs >= existingTs
+    ? { ...(existingBundle.store || {}), ...(incomingBundle.store || {}) }
+    : { ...(incomingBundle.store || {}), ...(existingBundle.store || {}) };
+
+  const deletedIds = Array.from(new Set([
+    ...(existingBundle.store?.deleted_product_ids || []),
+    ...(incomingBundle.store?.deleted_product_ids || [])
+  ]));
+  if (deletedIds.length > 0) {
+    mergedStore.deleted_product_ids = deletedIds;
+  }
+
+  return {
+    store_id: mergedStore.store_id || existingBundle.store_id || incomingBundle.store_id,
+    store: mergedStore,
+    products: compactProductsForCloud(mergeById(existingBundle.products, incomingBundle.products, 'id', deletedIds)),
+    sales: mergeById(existingBundle.sales, incomingBundle.sales, 'id'),
+    debtors: mergeById(existingBundle.debtors, incomingBundle.debtors, 'id'),
+    closed_days: mergeById(existingBundle.closed_days, incomingBundle.closed_days, 'id'),
+    license: mergeById(existingBundle.license, incomingBundle.license, 'token_id'),
+    updated_at: Math.max(existingTs, incomingTs, Date.now())
+  };
+}
+
 function readLocalCache() {
   const merged = { stores: {}, bundles: {} };
   for (const filePath of [LOCAL_DATA_FILE, TMP_DATA_FILE]) {
@@ -24,8 +95,12 @@ function readLocalCache() {
         const raw = fs.readFileSync(filePath, 'utf8');
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') {
-          Object.assign(merged.stores, parsed.stores || {});
-          Object.assign(merged.bundles, parsed.bundles || {});
+          for (const [sid, s] of Object.entries(parsed.stores || {})) {
+            merged.stores[sid] = { ...(merged.stores[sid] || {}), ...s };
+          }
+          for (const [sid, b] of Object.entries(parsed.bundles || {})) {
+            merged.bundles[sid] = mergeStoreBundles(merged.bundles[sid], b);
+          }
         }
       }
     } catch (e) {}
@@ -51,17 +126,6 @@ function ingestSyncRecord(dbObj, msg, fallbackTimeSec) {
   if (!sid) return;
 
   const incomingTs = Number(msg.updated_at || msg.sent_at || (fallbackTimeSec ? fallbackTimeSec * 1000 : Date.now()));
-  const existingSummary = dbObj.stores[sid];
-  const existingTs = existingSummary ? Number(existingSummary.last_synced_ts || existingSummary.updated_at || 0) : 0;
-
-  if (msg.telemetry && (!existingSummary || incomingTs >= existingTs)) {
-    dbObj.stores[sid] = {
-      ...(existingSummary || {}),
-      ...msg.telemetry,
-      last_synced_ts: incomingTs || Date.now(),
-      last_synced_at: new Date(incomingTs || Date.now()).toISOString()
-    };
-  }
 
   const bundleCandidate = msg.bundle || (msg.store ? {
     store_id: sid,
@@ -70,23 +134,43 @@ function ingestSyncRecord(dbObj, msg, fallbackTimeSec) {
     sales: msg.sales || [],
     debtors: msg.debtors || [],
     closed_days: msg.closed_days || [],
-    license: msg.license || []
+    license: msg.license || [],
+    updated_at: incomingTs
   } : null);
 
   if (bundleCandidate && bundleCandidate.store) {
-    const existingBundle = dbObj.bundles[sid];
-    const existingBundleTs = existingBundle ? Number(existingBundle.updated_at || 0) : 0;
-    if (!existingBundle || incomingTs >= existingBundleTs) {
-      dbObj.bundles[sid] = {
-        ...bundleCandidate,
-        updated_at: incomingTs || Date.now()
-      };
-    }
+    dbObj.bundles[sid] = mergeStoreBundles(dbObj.bundles[sid], {
+      ...bundleCandidate,
+      updated_at: incomingTs
+    });
   }
+
+  const mergedBundle = dbObj.bundles[sid];
+  const existingSummary = dbObj.stores[sid] || {};
+  const incomingTelemetry = msg.telemetry || {};
+
+  dbObj.stores[sid] = {
+    ...existingSummary,
+    ...incomingTelemetry,
+    store_id: sid,
+    total_products_count: mergedBundle
+      ? mergedBundle.products.length
+      : Math.max(Number(existingSummary.total_products_count || 0), Number(incomingTelemetry.total_products_count || 0)),
+    total_stock_units: mergedBundle
+      ? mergedBundle.products.reduce((s, p) => s + Number(p.stock_qty || 0), 0)
+      : Math.max(Number(existingSummary.total_stock_units || 0), Number(incomingTelemetry.total_stock_units || 0)),
+    total_sales_count: mergedBundle
+      ? mergedBundle.sales.length
+      : Math.max(Number(existingSummary.total_sales_count || 0), Number(incomingTelemetry.total_sales_count || 0)),
+    total_revenue_ghs: mergedBundle
+      ? Number(mergedBundle.sales.reduce((s, x) => s + Number(x.total_amount || 0), 0).toFixed(2))
+      : Math.max(Number(existingSummary.total_revenue_ghs || 0), Number(incomingTelemetry.total_revenue_ghs || 0)),
+    last_synced_ts: Math.max(Number(existingSummary.last_synced_ts || 0), incomingTs),
+    last_synced_at: new Date(Math.max(Number(existingSummary.last_synced_ts || 0), incomingTs)).toISOString()
+  };
 }
 
 async function pullCloudChannelState(dbObj) {
-  // 1. Pull V1 telemetry channel for stores registered in v2.x
   try {
     const resV1 = await fetch(`https://ntfy.sh/${CLOUD_TOPIC_V1}/json?poll=1&since=all`, {
       headers: { 'Cache-Control': 'no-cache' }
@@ -105,7 +189,6 @@ async function pullCloudChannelState(dbObj) {
     }
   } catch (e) {}
 
-  // 2. Pull V3 sync channel (inline JSON + attachment fallback)
   try {
     const res = await fetch(`https://ntfy.sh/${CLOUD_TOPIC_SYNC}/json?poll=1&since=all`, {
       headers: { 'Cache-Control': 'no-cache' }
@@ -129,7 +212,7 @@ async function pullCloudChannelState(dbObj) {
       } catch (e) {}
     }
 
-    for (const att of attachmentUrls.slice(-3)) {
+    for (const att of attachmentUrls.slice(-2)) {
       try {
         const attRes = await fetch(att.url);
         if (attRes.ok) {
@@ -178,10 +261,8 @@ module.exports = async function handler(req, res) {
           String(s.store_id || '').toUpperCase() === cleanId.toUpperCase() ||
           String(s.store_name || '').toLowerCase() === cleanId.toLowerCase());
 
-      // 1. Check full v3 bundles first
       let matchedBundle = Object.values(dbObj.bundles).find((b) => b && matchStoreRecord(b.store));
 
-      // 2. Fallback: Check stores registry (e.g. stores created in v2.x before v3 bundle existed)
       if (!matchedBundle) {
         const matchedSummary = Object.values(dbObj.stores).find((s) => matchStoreRecord(s));
         if (matchedSummary) {
