@@ -1,5 +1,5 @@
 /**
- * Holy Star POS - Cloud Sync Serverless API (/api/sync.js)
+ * Holy Star POS - Cloud Sync Serverless API (/api/sync.js v3.1)
  * Persists store profiles, products, sales, debtors, closed_days, license, and telemetry
  * across PC and mobile phones using a hybrid Cloud Channel + local file cache (`api/data.json` / `/tmp`).
  */
@@ -8,50 +8,119 @@ const fs = require('fs');
 const path = require('path');
 
 const CLOUD_TOPIC_SYNC = 'holystar_pos_cloud_v3_sync_2026';
-const LOCAL_DATA_FILE = path.join(process.cwd(), 'api', 'data.json');
+const CLOUD_TOPIC_V1 = 'holystar_pos_telemetry_sync_2026_v1';
+const LOCAL_DATA_FILE = path.join(__dirname, 'data.json');
 const TMP_DATA_FILE = '/tmp/holystar_cloud_db_v3.json';
 
 function normalizePhone(phone) {
   return String(phone || '').replace(/\s+/g, '').replace(/^\+233/, '0');
 }
 
+function compactProductsForCloud(products) {
+  if (!Array.isArray(products)) return [];
+  return products.map((p) => {
+    if (!p || typeof p !== 'object') return p;
+    const copy = { ...p };
+    if (copy.image_url && String(copy.image_url).startsWith('data:image/svg+xml')) {
+      delete copy.image_url;
+    }
+    if (copy.image_data && String(copy.image_data).startsWith('data:image/svg+xml')) {
+      delete copy.image_data;
+    }
+    return copy;
+  });
+}
+
 function readLocalCache() {
+  const merged = { stores: {}, bundles: {} };
   for (const filePath of [LOCAL_DATA_FILE, TMP_DATA_FILE]) {
     try {
       if (fs.existsSync(filePath)) {
         const raw = fs.readFileSync(filePath, 'utf8');
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') {
-          return {
-            stores: parsed.stores || {},
-            bundles: parsed.bundles || {}
-          };
+          Object.assign(merged.stores, parsed.stores || {});
+          Object.assign(merged.bundles, parsed.bundles || {});
         }
       }
-    } catch (e) {
-      // Ignore read error
-    }
+    } catch (e) {}
   }
-  return { stores: {}, bundles: {} };
+  return merged;
 }
 
 function writeLocalCache(dbObj) {
   const payload = JSON.stringify(dbObj, null, 2);
   try {
     fs.writeFileSync(TMP_DATA_FILE, payload, 'utf8');
-  } catch (e) {
-    // Ignore tmp write error on Windows if /tmp doesn't exist
-  }
+  } catch (e) {}
   try {
     const dir = path.dirname(LOCAL_DATA_FILE);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(LOCAL_DATA_FILE, payload, 'utf8');
-  } catch (e) {
-    // Ignore read-only filesystem error on Vercel production
+  } catch (e) {}
+}
+
+function ingestSyncRecord(dbObj, msg, fallbackTimeSec) {
+  if (!msg || typeof msg !== 'object') return;
+  const sid = msg.store_id || msg.telemetry?.store_id || msg.bundle?.store?.store_id || msg.store?.store_id;
+  if (!sid) return;
+
+  const incomingTs = Number(msg.updated_at || msg.sent_at || (fallbackTimeSec ? fallbackTimeSec * 1000 : Date.now()));
+  const existingSummary = dbObj.stores[sid];
+  const existingTs = existingSummary ? Number(existingSummary.last_synced_ts || existingSummary.updated_at || 0) : 0;
+
+  if (msg.telemetry && (!existingSummary || incomingTs >= existingTs)) {
+    dbObj.stores[sid] = {
+      ...(existingSummary || {}),
+      ...msg.telemetry,
+      last_synced_ts: incomingTs || Date.now(),
+      last_synced_at: new Date(incomingTs || Date.now()).toISOString()
+    };
+  }
+
+  const bundleCandidate = msg.bundle || (msg.store ? {
+    store_id: sid,
+    store: msg.store,
+    products: msg.products || [],
+    sales: msg.sales || [],
+    debtors: msg.debtors || [],
+    closed_days: msg.closed_days || [],
+    license: msg.license || []
+  } : null);
+
+  if (bundleCandidate && bundleCandidate.store) {
+    const existingBundle = dbObj.bundles[sid];
+    const existingBundleTs = existingBundle ? Number(existingBundle.updated_at || 0) : 0;
+    if (!existingBundle || incomingTs >= existingBundleTs) {
+      dbObj.bundles[sid] = {
+        ...bundleCandidate,
+        updated_at: incomingTs || Date.now()
+      };
+    }
   }
 }
 
 async function pullCloudChannelState(dbObj) {
+  // 1. Pull V1 telemetry channel for stores registered in v2.x
+  try {
+    const resV1 = await fetch(`https://ntfy.sh/${CLOUD_TOPIC_V1}/json?poll=1&since=all`, {
+      headers: { 'Cache-Control': 'no-cache' }
+    });
+    if (resV1.ok) {
+      const textV1 = await resV1.text();
+      for (const line of textV1.split('\n').filter((l) => l.trim().length > 0)) {
+        try {
+          const env = JSON.parse(line);
+          if (env && env.event === 'message' && env.message) {
+            const msg = JSON.parse(env.message);
+            ingestSyncRecord(dbObj, msg, env.time);
+          }
+        } catch (e) {}
+      }
+    }
+  } catch (e) {}
+
+  // 2. Pull V3 sync channel (inline JSON + attachment fallback)
   try {
     const res = await fetch(`https://ntfy.sh/${CLOUD_TOPIC_SYNC}/json?poll=1&since=all`, {
       headers: { 'Cache-Control': 'no-cache' }
@@ -59,46 +128,33 @@ async function pullCloudChannelState(dbObj) {
     if (!res.ok) return dbObj;
     const text = await res.text();
     const lines = text.split('\n').filter((l) => l.trim().length > 0);
+    const attachmentUrls = [];
 
     for (const line of lines) {
       try {
         const env = JSON.parse(line);
-        if (env && env.event === 'message' && env.message) {
-          const msg = JSON.parse(env.message);
-          if (msg && msg.store_id) {
-            const sid = msg.store_id;
-            const incomingTs = Number(msg.updated_at || msg.sent_at || 0);
-            const existingSummary = dbObj.stores[sid];
-            const existingTs = existingSummary ? Number(existingSummary.last_synced_ts || existingSummary.updated_at || 0) : 0;
-
-            if (msg.telemetry && (!existingSummary || incomingTs >= existingTs)) {
-              dbObj.stores[sid] = {
-                ...(existingSummary || {}),
-                ...msg.telemetry,
-                last_synced_ts: incomingTs || Date.now(),
-                last_synced_at: new Date(incomingTs || Date.now()).toISOString()
-              };
-            }
-
-            if (msg.bundle && msg.bundle.store) {
-              const existingBundle = dbObj.bundles[sid];
-              const existingBundleTs = existingBundle ? Number(existingBundle.updated_at || 0) : 0;
-              if (!existingBundle || incomingTs >= existingBundleTs) {
-                dbObj.bundles[sid] = {
-                  ...msg.bundle,
-                  updated_at: incomingTs || Date.now()
-                };
-              }
-            }
+        if (env && env.event === 'message') {
+          if (env.attachment && env.attachment.url) {
+            attachmentUrls.push({ url: env.attachment.url, time: env.time });
+          } else if (env.message && env.message.startsWith('{')) {
+            const msg = JSON.parse(env.message);
+            ingestSyncRecord(dbObj, msg, env.time);
           }
         }
-      } catch (lineErr) {
-        // Ignore malformed message
-      }
+      } catch (lineErr) {}
     }
-  } catch (err) {
-    // Ignore network error
-  }
+
+    // Fetch up to the latest 3 attachments if any store sent a >4KB payload
+    for (const att of attachmentUrls.slice(-3)) {
+      try {
+        const attRes = await fetch(att.url);
+        if (attRes.ok) {
+          const attJson = await attRes.json();
+          ingestSyncRecord(dbObj, attJson, att.time);
+        }
+      } catch (e) {}
+    }
+  } catch (err) {}
   return dbObj;
 }
 
@@ -112,9 +168,7 @@ async function pushToCloudChannel(record) {
       },
       body: JSON.stringify(record)
     });
-  } catch (e) {
-    // Ignore push error
-  }
+  } catch (e) {}
 }
 
 module.exports = async function handler(req, res) {
@@ -131,7 +185,7 @@ module.exports = async function handler(req, res) {
   await pullCloudChannelState(dbObj);
 
   if (req.method === 'GET') {
-    const { all, store_id, phone } = req.query || {};
+    const { store_id, phone } = req.query || {};
 
     if (store_id) {
       const cleanId = String(store_id).trim().toUpperCase();
@@ -151,7 +205,6 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // Default or ?all=1: Return all registered stores for Super-Admin & cross-device directory
     writeLocalCache(dbObj);
     return res.status(200).json({
       ok: true,
@@ -171,6 +224,9 @@ module.exports = async function handler(req, res) {
       }
 
       const now = Date.now();
+      const rawProducts = Array.isArray(body.products) ? body.products : (body.bundle?.products || []);
+      const compactProducts = compactProductsForCloud(rawProducts);
+
       const telemetry = body.telemetry || {
         store_id: storeId,
         store_name: store ? store.store_name : `Store ${storeId}`,
@@ -178,10 +234,8 @@ module.exports = async function handler(req, res) {
         owner_name: store ? store.owner_name : '',
         owner_phone: store ? store.owner_phone : '',
         location: store ? (store.shop_location || store.location || '') : '',
-        total_products_count: Array.isArray(body.products) ? body.products.length : 0,
-        total_stock_units: Array.isArray(body.products)
-          ? body.products.reduce((s, p) => s + Number(p.stock_qty || 0), 0)
-          : 0,
+        total_products_count: compactProducts.length,
+        total_stock_units: compactProducts.reduce((s, p) => s + Number(p.stock_qty || 0), 0),
         total_sales_count: Array.isArray(body.sales) ? body.sales.length : 0,
         total_revenue_ghs: Array.isArray(body.sales)
           ? Number(body.sales.reduce((s, x) => s + Number(x.total_amount || 0), 0).toFixed(2))
@@ -205,7 +259,7 @@ module.exports = async function handler(req, res) {
         bundleToSave = {
           store_id: storeId,
           store,
-          products: Array.isArray(body.products) ? body.products : (dbObj.bundles[storeId]?.products || []),
+          products: compactProducts.length > 0 ? compactProducts : (dbObj.bundles[storeId]?.products || []),
           sales: Array.isArray(body.sales) ? body.sales : (dbObj.bundles[storeId]?.sales || []),
           debtors: Array.isArray(body.debtors) ? body.debtors : (dbObj.bundles[storeId]?.debtors || []),
           closed_days: Array.isArray(body.closed_days) ? body.closed_days : (dbObj.bundles[storeId]?.closed_days || []),

@@ -200,7 +200,7 @@ function getMasterCredentials() {
         return parsed;
       }
     }
-  } catch (e) {}
+  } catch (e) { }
   return {
     username: 'holystar_admin',
     password: 'HolyStar@2026'
@@ -230,7 +230,7 @@ function getTokenLog() {
 function saveTokenLog(list) {
   try {
     localStorage.setItem(SA_TOKEN_LOG_KEY, JSON.stringify(list.slice(0, 100)));
-  } catch (e) {}
+  } catch (e) { }
 }
 
 function buildRenewalWhatsAppMessage({ ownerName, storeName, storeId, planDays, token }) {
@@ -322,7 +322,7 @@ async function refreshPlatformStores(pullFromCloud = true) {
 
 function startLiveCloudStream() {
   if (AdminState.sseSource) {
-    try { AdminState.sseSource.close(); } catch (e) {}
+    try { AdminState.sseSource.close(); } catch (e) { }
     AdminState.sseSource = null;
   }
 
@@ -353,9 +353,9 @@ function startLiveCloudStream() {
             refreshPlatformStores(false);
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     };
-  } catch (err) {}
+  } catch (err) { }
 }
 
 // ============================================================================
@@ -569,7 +569,7 @@ async function triggerTokenGeneration() {
     admin_expected_expiry_date: new Date(newExpectedExpiryTs).toISOString()
   };
   window.HolyStarDB.saveTelemetryRegistryMap(registry);
-  window.HolyStarDB.pushTelemetryToCloud(registry[storeId]).catch(() => {});
+  window.HolyStarDB.pushTelemetryToCloud(registry[storeId]).catch(() => { });
 
   const resolvedStoreName = registry[storeId].store_name;
   const resolvedOwnerName = registry[storeId].owner_name;
@@ -780,7 +780,7 @@ function bindSuperAdminEvents() {
     };
 
     window.HolyStarDB.saveTelemetryRegistryMap(registry);
-    window.HolyStarDB.pushTelemetryToCloud(registry[storeId]).catch(() => {});
+    window.HolyStarDB.pushTelemetryToCloud(registry[storeId]).catch(() => { });
 
     document.getElementById('modal-sa-manual-store')?.classList.add('hidden');
     e.target.reset();

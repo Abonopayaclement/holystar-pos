@@ -31,7 +31,9 @@
   --shadow-lg: 0 14px 32px rgba(15, 23, 42, 0.16);
 }
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -249,8 +251,15 @@ body {
 }
 
 @keyframes fadeSlideIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ==========================================================================
@@ -785,6 +794,7 @@ body {
   background: var(--primary);
   color: #ffffff;
 }
+
 .btn-primary:hover:not(:disabled) {
   background: var(--primary-hover);
 }
@@ -793,6 +803,7 @@ body {
   background: var(--success);
   color: #ffffff;
 }
+
 .btn-success:hover:not(:disabled) {
   background: var(--success-hover);
 }
@@ -822,6 +833,7 @@ body {
   border-color: var(--border);
   color: var(--text-primary);
 }
+
 .btn-outline:hover {
   background: var(--bg-muted);
 }
@@ -834,11 +846,31 @@ body {
   font-size: 0.7rem;
   font-weight: 800;
 }
-.badge-success { background: #dcfce7; color: #15803d; }
-.badge-warning { background: #fef3c7; color: #b45309; }
-.badge-danger { background: #fee2e2; color: #b91c1c; }
-.badge-info { background: #dbeafe; color: #1d4ed8; }
-.badge-neutral { background: #f1f5f9; color: #334155; }
+
+.badge-success {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.badge-warning {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.badge-danger {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.badge-info {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.badge-neutral {
+  background: #f1f5f9;
+  color: #334155;
+}
 
 .settings-grid {
   display: grid;
@@ -939,7 +971,8 @@ body {
   padding: 0.85rem;
 }
 
-.modal-box, .modal-card {
+.modal-box,
+.modal-card {
   background: #ffffff;
   width: 100%;
   max-width: 480px;
@@ -957,7 +990,8 @@ body {
   justify-content: space-between;
 }
 
-.modal-header h3, .modal-title {
+.modal-header h3,
+.modal-title {
   font-size: 0.96rem;
   font-weight: 800;
 }
@@ -1025,7 +1059,8 @@ body {
 }
 
 /* Receipt Paper & Close Day Box */
-.receipt-paper, .close-day-box {
+.receipt-paper,
+.close-day-box {
   font-family: 'Courier New', monospace;
   font-size: 0.8rem;
   background: #f8fafc;
@@ -1113,6 +1148,14 @@ body {
   gap: 0.45rem;
 }
 
-.toast-success { border-left: 4px solid #10b981; }
-.toast-error { border-left: 4px solid #ef4444; }
-.toast-info { border-left: 4px solid #3b82f6; }
+.toast-success {
+  border-left: 4px solid #10b981;
+}
+
+.toast-error {
+  border-left: 4px solid #ef4444;
+}
+
+.toast-info {
+  border-left: 4px solid #3b82f6;
+}

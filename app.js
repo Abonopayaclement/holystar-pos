@@ -351,7 +351,13 @@ function updateConnectionStatusDot() {
 
 function registerServiceWorkerSafe() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').then((reg) => {
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
+    navigator.serviceWorker.register('./sw.js?v=3.1').then((reg) => {
       reg.update().catch(() => {});
     }).catch(() => {});
   }
@@ -377,33 +383,51 @@ async function checkAuthAndBoot() {
   window.HolyStarDB.syncTelemetryHeartbeat(activeStore.store_id, 'session_resume');
 }
 
-async function showAuthOverlay() {
-  const overlay = document.getElementById('auth-screen-overlay');
-  if (overlay) overlay.classList.remove('hidden');
-
-  let stores = [];
-  try {
-    stores = await window.HolyStarDB.getAllStores();
-  } catch (e) {
-    stores = [];
-  }
-
+function populateLoginStoreDropdown(storesList) {
   const selectWrap = document.getElementById('login-saved-stores-wrap');
   const selectEl = document.getElementById('login-saved-store-select');
   const loginIdInput = document.getElementById('login-identifier');
 
-  if (stores.length > 0 && selectWrap && selectEl) {
+  if (storesList && storesList.length > 0 && selectWrap && selectEl) {
     selectWrap.classList.remove('hidden');
-    selectEl.innerHTML = `<option value="">-- Switch Store (${stores.length}) --</option>` +
-      stores.map((s) => `<option value="${escapeHtml(s.owner_phone || s.store_id)}">${escapeHtml(s.store_name)} (${escapeHtml(s.store_id)})</option>`).join('');
-    if (stores.length === 1 && loginIdInput && !loginIdInput.value) {
-      loginIdInput.value = stores[0].owner_phone || stores[0].store_id;
-      selectEl.value = stores[0].owner_phone || stores[0].store_id;
+    selectEl.innerHTML = `<option value="">-- Select Store (${storesList.length}) --</option>` +
+      storesList.map((s) => `<option value="${escapeHtml(s.owner_phone || s.store_id)}">${escapeHtml(s.store_name)} (${escapeHtml(s.store_id)})</option>`).join('');
+    if (storesList.length === 1 && loginIdInput && !loginIdInput.value) {
+      loginIdInput.value = storesList[0].owner_phone || storesList[0].store_id;
+      selectEl.value = storesList[0].owner_phone || storesList[0].store_id;
     }
-    switchAuthTab('login');
-  } else {
-    if (selectWrap) selectWrap.classList.add('hidden');
-    switchAuthTab('login');
+  } else if (selectWrap) {
+    selectWrap.classList.add('hidden');
+  }
+}
+
+async function showAuthOverlay() {
+  const overlay = document.getElementById('auth-screen-overlay');
+  if (overlay) overlay.classList.remove('hidden');
+  switchAuthTab('login');
+
+  let storesMap = {};
+  try {
+    const localStores = await window.HolyStarDB.getAllStores();
+    for (const s of localStores) {
+      if (s && s.store_id) storesMap[s.store_id] = s;
+    }
+  } catch (e) {}
+
+  populateLoginStoreDropdown(Object.values(storesMap));
+
+  // Also pull cloud stores in background so any store registered on another device appears in the dropdown!
+  if (typeof navigator !== 'undefined' && navigator.onLine) {
+    window.HolyStarDB.pullCloudTelemetry().then((cloudStores) => {
+      if (Array.isArray(cloudStores)) {
+        for (const cs of cloudStores) {
+          if (cs && cs.store_id && !storesMap[cs.store_id]) {
+            storesMap[cs.store_id] = cs;
+          }
+        }
+        populateLoginStoreDropdown(Object.values(storesMap));
+      }
+    }).catch(() => {});
   }
 }
 

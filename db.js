@@ -33,7 +33,7 @@ class HolyStarDatabase {
         settled = true;
         if (dbInstance) {
           dbInstance.onversionchange = () => {
-            try { dbInstance.close(); } catch (e) {}
+            try { dbInstance.close(); } catch (e) { }
             this.db = null;
           };
         }
@@ -56,7 +56,7 @@ class HolyStarDatabase {
         const tx = event.target.transaction;
 
         db.onversionchange = () => {
-          try { db.close(); } catch (e) {}
+          try { db.close(); } catch (e) { }
           this.db = null;
         };
 
@@ -177,7 +177,14 @@ class HolyStarDatabase {
 
   getActiveSession() {
     try {
-      const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+      let raw = localStorage.getItem(SESSION_STORAGE_KEY);
+      if (!raw) {
+        const legacyV2 = localStorage.getItem('holystar_active_session_v2');
+        if (legacyV2) {
+          localStorage.setItem(SESSION_STORAGE_KEY, legacyV2);
+          raw = legacyV2;
+        }
+      }
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (!parsed || !parsed.store_id) return null;
@@ -190,17 +197,22 @@ class HolyStarDatabase {
   setActiveSession(sessionObj) {
     if (!sessionObj) {
       localStorage.removeItem(SESSION_STORAGE_KEY);
+      localStorage.removeItem('holystar_active_session_v2');
       return;
     }
-    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionObj));
+    const str = JSON.stringify(sessionObj);
+    localStorage.setItem(SESSION_STORAGE_KEY, str);
+    localStorage.setItem('holystar_active_session_v2', str);
   }
 
   logoutSession() {
     localStorage.removeItem(SESSION_STORAGE_KEY);
+    localStorage.removeItem('holystar_active_session_v2');
   }
 
   clearActiveSession() {
     localStorage.removeItem(SESSION_STORAGE_KEY);
+    localStorage.removeItem('holystar_active_session_v2');
   }
 
   getActiveStoreId() {
@@ -320,9 +332,9 @@ class HolyStarDatabase {
 
     // Sync new store to Cloud in background if online so Phone & PC both see it
     if (typeof navigator !== 'undefined' && navigator.onLine) {
-      this.syncFullStoreOnline(storeId).catch(() => {});
+      this.syncFullStoreOnline(storeId).catch(() => { });
     } else {
-      this.syncTelemetryHeartbeat(storeId, 'store_registered_offline').catch(() => {});
+      this.syncTelemetryHeartbeat(storeId, 'store_registered_offline').catch(() => { });
     }
 
     return { store: newStore, session };
@@ -387,25 +399,33 @@ class HolyStarDatabase {
     await this.TouchClock();
 
     if (typeof navigator !== 'undefined' && navigator.onLine) {
-      this.syncFullStoreOnline(store.store_id).catch(() => {});
+      this.syncFullStoreOnline(store.store_id).catch(() => { });
     }
 
     return { store, session };
   }
 
   /**
-   * Look up a store bundle from `/api/auth` and the Cloud Sync Stream (`ntfy.sh`)
+   * Look up a store bundle from `/api/auth`, the V3 Cloud Sync Stream (`ntfy.sh` inline + attachments),
+   * and the V1 Telemetry Stream so ANY registered store can be logged into from ANY device.
    */
   async fetchCloudStoreBundleForLogin(identifier, password) {
     const cleanId = String(identifier || '').trim();
     const cleanPhone = this.normalizePhone(cleanId);
+    const cleanPass = String(password || '').trim();
+
+    const isStoreMatch = (s) =>
+      s &&
+      (this.normalizePhone(s.owner_phone) === cleanPhone ||
+        String(s.store_id || '').toUpperCase() === cleanId.toUpperCase() ||
+        String(s.store_name || '').toLowerCase() === cleanId.toLowerCase());
 
     // 1. Try serverless `/api/auth`
     try {
       const res = await fetch('./api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'login', identifier: cleanId, password })
+        body: JSON.stringify({ action: 'login', identifier: cleanId, password: cleanPass })
       });
       if (res.ok) {
         const data = await res.json();
@@ -413,11 +433,9 @@ class HolyStarDatabase {
           return { store: data.store, bundle: data.bundle };
         }
       }
-    } catch (e) {
-      // Ignore if running without /api/auth
-    }
+    } catch (e) {}
 
-    // 2. Fallback: Query Cloud Sync Channel directly from browser
+    // 2. Fallback: Query V3 Cloud Sync Channel directly from browser (inline JSON + attachments)
     try {
       const res = await fetch(`https://ntfy.sh/${CLOUD_SYNC_TOPIC_V3}/json?poll=1&since=all`, {
         cache: 'no-store'
@@ -425,37 +443,95 @@ class HolyStarDatabase {
       if (res.ok) {
         const text = await res.text();
         const lines = text.split('\n').filter((l) => l.trim().length > 0);
+        let latestStore = null;
         let latestBundle = null;
         let latestTs = 0;
+        const matchingAttachments = [];
 
         for (const line of lines) {
           try {
             const env = JSON.parse(line);
-            if (env && env.event === 'message' && env.message) {
-              const msg = JSON.parse(env.message);
-              const b = msg && msg.bundle;
-              if (b && b.store) {
-                const s = b.store;
-                const isMatch =
-                  this.normalizePhone(s.owner_phone) === cleanPhone ||
-                  String(s.store_id || '').toUpperCase() === cleanId.toUpperCase() ||
-                  String(s.store_name || '').toLowerCase() === cleanId.toLowerCase();
-
-                const ts = Number(msg.updated_at || b.updated_at || 0);
-                if (isMatch && ts >= latestTs) {
-                  latestTs = ts;
-                  latestBundle = b;
+            if (env && env.event === 'message') {
+              if (env.attachment && env.attachment.url) {
+                const titleStr = String(env.title || '');
+                if (!titleStr || titleStr.toUpperCase().includes(cleanId.toUpperCase()) || matchingAttachments.length < 6) {
+                  matchingAttachments.push({ url: env.attachment.url, time: env.time });
+                }
+              } else if (env.message && env.message.startsWith('{')) {
+                const msg = JSON.parse(env.message);
+                const candidateStore = msg.store || (msg.bundle && msg.bundle.store) || null;
+                if (candidateStore && isStoreMatch(candidateStore)) {
+                  const ts = Number(msg.updated_at || (env.time ? env.time * 1000 : 0));
+                  if (ts >= latestTs) {
+                    latestTs = ts;
+                    latestStore = candidateStore;
+                    if (msg.bundle) latestBundle = msg.bundle;
+                  }
                 }
               }
             }
           } catch (lineErr) {}
         }
 
-        if (latestBundle && latestBundle.store) {
-          if (String(latestBundle.store.owner_password || '') === String(password || '').trim()) {
-            return { store: latestBundle.store, bundle: latestBundle };
+        // Check attachments (newest first) for full bundle or store match
+        for (const att of matchingAttachments.slice(-4).reverse()) {
+          try {
+            const attRes = await fetch(att.url);
+            if (attRes.ok) {
+              const attJson = await attRes.json();
+              const b = attJson.bundle || (attJson.store ? attJson : null);
+              const s = (b && b.store) || attJson.store;
+              if (s && isStoreMatch(s)) {
+                latestStore = s;
+                latestBundle = b;
+                break;
+              }
+            }
+          } catch (attErr) {}
+        }
+
+        if (latestStore) {
+          const storedPass = String(latestStore.owner_password || '');
+          if (!storedPass || storedPass === cleanPass) {
+            return {
+              store: latestStore,
+              bundle: latestBundle || { store: latestStore }
+            };
           }
         }
+      }
+    } catch (e) {}
+
+    // 3. Fallback: Check V1 Telemetry Channel & Local Telemetry Registry for stores created in v2.x
+    try {
+      await this.pullCloudTelemetry();
+      const registry = this.getTelemetryRegistryMap();
+      const matchedSummary = Object.values(registry).find((s) => isStoreMatch(s));
+      if (matchedSummary && matchedSummary.store_id) {
+        const now = Date.now();
+        const reconstructedStore = {
+          store_id: matchedSummary.store_id,
+          shop_id: matchedSummary.store_id,
+          store_name: matchedSummary.store_name || `Store ${matchedSummary.store_id}`,
+          shop_name: matchedSummary.store_name || `Store ${matchedSummary.store_id}`,
+          store_category: matchedSummary.store_category || 'Provision & Mini-Mart',
+          owner_name: matchedSummary.owner_name || 'Store Owner',
+          owner_phone: matchedSummary.owner_phone || cleanPhone,
+          owner_password: matchedSummary.owner_password || cleanPass,
+          shop_location: matchedSummary.location || 'Ghana',
+          location: matchedSummary.location || 'Ghana',
+          license_expiry: Number(matchedSummary.license_expiry_ts || (now + 7 * 24 * 60 * 60 * 1000)),
+          license_plan: matchedSummary.license_plan || '7-Day Initial Trial',
+          last_seen_timestamp: now,
+          last_active_at: now,
+          last_synced_at: now,
+          clock_tampered: false,
+          created_at: Number(matchedSummary.created_at_ts || now)
+        };
+        return {
+          store: reconstructedStore,
+          bundle: { store: reconstructedStore, products: [], sales: [], debtors: [], closed_days: [], license: [] }
+        };
       }
     } catch (e) {}
 
@@ -791,7 +867,7 @@ class HolyStarDatabase {
       const failTransaction = (msg) => {
         if (!aborted) {
           aborted = true;
-          try { tx.abort(); } catch (e) {}
+          try { tx.abort(); } catch (e) { }
           reject(new Error(msg));
         }
       };
@@ -1243,9 +1319,9 @@ class HolyStarDatabase {
 
       const saleProfit = Array.isArray(sale.items)
         ? sale.items.reduce((acc, item) => {
-            const p = (Number(item.selling_price || 0) - Number(item.cost_price || 0)) * Number(item.qty || 0);
-            return acc + p;
-          }, 0)
+          const p = (Number(item.selling_price || 0) - Number(item.cost_price || 0)) * Number(item.qty || 0);
+          return acc + p;
+        }, 0)
         : Number(sale.total_profit || 0);
 
       grossProfit += saleProfit;
@@ -1372,19 +1448,26 @@ class HolyStarDatabase {
   // =========================================================================
 
   getTelemetryRegistryMap() {
-    try {
-      const raw = localStorage.getItem('holystar_telemetry_registry_v1');
-      if (!raw) return {};
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch (e) {
-      return {};
+    const merged = {};
+    for (const key of ['holystar_superadmin_registry_v1', 'holystar_telemetry_registry_v1']) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            Object.assign(merged, parsed);
+          }
+        }
+      } catch (e) {}
     }
+    return merged;
   }
 
   saveTelemetryRegistryMap(mapObj) {
     try {
-      localStorage.setItem('holystar_telemetry_registry_v1', JSON.stringify(mapObj || {}));
+      const str = JSON.stringify(mapObj || {});
+      localStorage.setItem('holystar_telemetry_registry_v1', str);
+      localStorage.setItem('holystar_superadmin_registry_v1', str);
     } catch (e) {}
   }
 
@@ -1479,10 +1562,23 @@ class HolyStarDatabase {
     telemetry.last_synced_ts = now;
     telemetry.last_synced_at = new Date(now).toISOString();
 
+    const compactProducts = (products || []).map((p) => {
+      if (!p || typeof p !== 'object') return p;
+      const copy = { ...p };
+      if (copy.image_url && String(copy.image_url).startsWith('data:image/svg+xml')) {
+        delete copy.image_url;
+      }
+      if (copy.image_data && String(copy.image_data).startsWith('data:image/svg+xml')) {
+        delete copy.image_data;
+      }
+      return copy;
+    });
+
+    const syncedStoreRecord = { ...store, last_synced_at: now };
     const fullBundle = {
       store_id: storeId,
-      store: { ...store, last_synced_at: now },
-      products,
+      store: syncedStoreRecord,
+      products: compactProducts,
       sales,
       debtors,
       closed_days,
@@ -1505,8 +1601,27 @@ class HolyStarDatabase {
       }
     } catch (e) {}
 
-    // 2. Push to Cloud Relay (`ntfy.sh`) for cross-instance persistence
+    // 2. Push lightweight (<1.5KB) inline Auth + Telemetry message to Cloud Relay (`ntfy.sh`)
+    // so `ntfy.sh` NEVER turns store credentials into an attachment, plus push full bundle
     try {
+      const authRes = await fetch(`https://ntfy.sh/${CLOUD_SYNC_TOPIC_V3}`, {
+        method: 'POST',
+        headers: {
+          'Title': `HolyStar Auth ${storeId}`,
+          'Priority': 'default'
+        },
+        body: JSON.stringify({
+          _type: 'HOLYSTAR_STORE_AUTH_V3',
+          store_id: storeId,
+          updated_at: now,
+          store: syncedStoreRecord,
+          telemetry
+        })
+      });
+      if (authRes.ok) {
+        anySuccess = true;
+      }
+
       const cloudRes = await fetch(`https://ntfy.sh/${CLOUD_SYNC_TOPIC_V3}`, {
         method: 'POST',
         headers: {
@@ -1567,7 +1682,7 @@ class HolyStarDatabase {
       this.saveTelemetryRegistryMap(registry);
 
       if (typeof navigator !== 'undefined' && navigator.onLine) {
-        this.syncFullStoreOnline(storeId).catch(() => {});
+        this.syncFullStoreOnline(storeId).catch(() => { });
       }
 
       return registry[storeId];
@@ -1653,7 +1768,7 @@ class HolyStarDatabase {
           }
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // 2. Fetch from Cloud Relay (`ntfy.sh` v3 + legacy v1 topic)
     for (const topic of [CLOUD_SYNC_TOPIC_V3, 'holystar_pos_telemetry_sync_2026_v1']) {
@@ -1685,17 +1800,17 @@ class HolyStarDatabase {
                   }
                 }
               }
-            } catch (lineErr) {}
+            } catch (lineErr) { }
           }
         }
-      } catch (err) {}
+      } catch (err) { }
     }
 
     // 3. Re-announce any local IndexedDB stores not yet in Cloud so Phone & PC stay 100% identical
     const localDbStores = await this.getAllStores();
     for (const s of localDbStores) {
       if (s && s.store_id && !seenInCloud.has(s.store_id)) {
-        this.syncFullStoreOnline(s.store_id).catch(() => {});
+        this.syncFullStoreOnline(s.store_id).catch(() => { });
       }
     }
 

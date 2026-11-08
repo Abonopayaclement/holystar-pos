@@ -9,7 +9,30 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
   <link rel="apple-touch-icon" href="icon-192.png" />
-  <link rel="stylesheet" href="style.css?v=3.0" />
+  <link rel="stylesheet" href="style.css?v=3.1" />
+  <script>
+    (function () {
+      try {
+        if (localStorage.getItem('holystar_sw_migrated_v11') !== '1' && navigator.onLine) {
+          localStorage.setItem('holystar_sw_migrated_v11', '1');
+          Promise.all([
+            'serviceWorker' in navigator
+              ? navigator.serviceWorker.getRegistrations().then(function (regs) {
+                  return Promise.all(regs.map(function (r) { return r.unregister(); }));
+                })
+              : Promise.resolve(),
+            'caches' in window
+              ? caches.keys().then(function (keys) {
+                  return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+                })
+              : Promise.resolve()
+          ]).then(function () {
+            window.location.replace(window.location.pathname + '?v=3.1');
+          });
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
 
@@ -1030,8 +1053,8 @@
   </script>
 
   <!-- Scripts -->
-  <script src="catalog.js?v=3.0"></script>
-  <script src="db.js?v=3.0"></script>
-  <script src="app.js?v=3.0"></script>
+  <script src="catalog.js?v=3.1"></script>
+  <script src="db.js?v=3.1"></script>
+  <script src="app.js?v=3.1"></script>
 </body>
 </html>
