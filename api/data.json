@@ -10,7 +10,7 @@
       "created_at": "2026-11-07T22:49:02.874Z",
       "created_at_ts": 1794091742874,
       "total_products_count": 12,
-      "total_stock_units": 343,
+      "total_stock_units": 394,
       "total_sales_count": 2,
       "total_revenue_ghs": 467,
       "license_plan": "7-Day Initial Trial",
@@ -20,8 +20,12 @@
       "license_expiry_date": "2026-11-14T22:49:02.874Z",
       "last_active_at": "2026-11-08T17:02:47.336Z",
       "last_active_ts": 1794157367336,
-      "last_synced_at": "2026-11-08T17:03:00.877Z",
-      "last_synced_ts": 1794157380877
+      "last_synced_at": "2026-11-08T18:49:02.022Z",
+      "last_synced_ts": 1794163742022,
+      "online_now": true,
+      "last_event": "checkout_sale",
+      "pending_cloud_sync": false,
+      "updated_local_ts": 1794155258414
     },
     "HS-SEY3": {
       "store_id": "HS-SEY3",
@@ -41,8 +45,14 @@
       "days_remaining": 7,
       "license_expiry_ts": 1794750379209,
       "license_expiry_date": "2026-11-15T13:46:19.209Z",
-      "last_synced_ts": 1794147189204,
-      "last_synced_at": "2026-11-08T14:13:09.204Z"
+      "last_synced_ts": 1794161923530,
+      "last_synced_at": "2026-11-08T18:18:43.530Z",
+      "last_active_at": "2026-11-08T18:18:43.180Z",
+      "last_active_ts": 1794161923180,
+      "online_now": true,
+      "last_event": "checkout_sale",
+      "pending_cloud_sync": false,
+      "updated_local_ts": 1794147189204
     }
   },
   "bundles": {
@@ -57,15 +67,16 @@
         "owner_name": "Mama Gladys",
         "owner_phone": "0550941056",
         "owner_password": "1234",
-        "boss_pin": "1234",
         "shop_location": "Bolga soe",
+        "location": "Bolga soe",
         "license_expiry": 1794696542874,
         "license_plan": "7-Day Initial Trial",
         "last_seen_timestamp": 1794157367336,
         "last_active_at": 1794157367336,
+        "last_synced_at": 1794157377574,
         "clock_tampered": false,
         "created_at": 1794091742874,
-        "last_synced_at": 1794157377574
+        "boss_pin": "1234"
       },
       "products": [
         {
@@ -76,9 +87,9 @@
           "barcode": "6031100200123",
           "cost_price": 8,
           "selling_price": 10,
-          "stock_qty": 24,
+          "stock_qty": 23,
           "low_stock_threshold": 5,
-          "updated_at": 1794154486510
+          "updated_at": 1794161746408
         },
         {
           "id": "PRD-1794153817020-B765",
@@ -88,9 +99,9 @@
           "barcode": "6031100200079",
           "cost_price": 7,
           "selling_price": 10,
-          "stock_qty": 9,
+          "stock_qty": 8,
           "low_stock_threshold": 5,
-          "updated_at": 1794155258318
+          "updated_at": 1794161746408
         },
         {
           "id": "PRD-1794154297316-A6I2",
@@ -100,9 +111,9 @@
           "barcode": "6031100300076",
           "cost_price": 6,
           "selling_price": 11,
-          "stock_qty": 14,
+          "stock_qty": 13,
           "low_stock_threshold": 5,
-          "updated_at": 1794155258318
+          "updated_at": 1794161746408
         },
         {
           "id": "PRD-1794153713746-EXWT",
@@ -112,9 +123,9 @@
           "barcode": "6031100400080",
           "cost_price": 10,
           "selling_price": 15,
-          "stock_qty": 73,
+          "stock_qty": 71,
           "low_stock_threshold": 5,
-          "updated_at": 1794153713746
+          "updated_at": 1794161746408
         },
         {
           "id": "PRD-1794154171540-QMW7",
@@ -124,9 +135,9 @@
           "barcode": "6031100600022",
           "cost_price": 15,
           "selling_price": 18,
-          "stock_qty": 8,
+          "stock_qty": 6,
           "low_stock_threshold": 5,
-          "updated_at": 1794154486510
+          "updated_at": 1794161746408
         },
         {
           "id": "PRD-1794154252433-BI5V",
@@ -136,9 +147,9 @@
           "barcode": "6031100200086",
           "cost_price": 3,
           "selling_price": 4.5,
-          "stock_qty": 33,
+          "stock_qty": 32,
           "low_stock_threshold": 5,
-          "updated_at": 1794155258318
+          "updated_at": 1794161746408
         },
         {
           "id": "PRD-1794153953854-PO4A",
@@ -172,9 +183,9 @@
           "barcode": "6031100600039",
           "cost_price": 17,
           "selling_price": 22,
-          "stock_qty": 17,
+          "stock_qty": 59,
           "low_stock_threshold": 5,
-          "updated_at": 1794155258318
+          "updated_at": 1794162430719
         },
         {
           "id": "PRD-1794153609366-84VW",
@@ -184,9 +195,9 @@
           "barcode": "6031100100034",
           "cost_price": 3,
           "selling_price": 7,
-          "stock_qty": 47,
+          "stock_qty": 45,
           "low_stock_threshold": 5,
-          "updated_at": 1794154486510
+          "updated_at": 1794161746408
         },
         {
           "id": "PRD-1794153655951-7OTD",
@@ -208,9 +219,9 @@
           "barcode": "6031100400035",
           "cost_price": 4,
           "selling_price": 6.5,
-          "stock_qty": 6,
+          "stock_qty": 25,
           "low_stock_threshold": 5,
-          "updated_at": 1794154486510
+          "updated_at": 1794162440588
         }
       ],
       "sales": [
@@ -404,7 +415,7 @@
         }
       ],
       "license": [],
-      "updated_at": 1794158300462
+      "updated_at": 1794163742022
     },
     "HS-SEY3": {
       "store_id": "HS-SEY3",
@@ -416,23 +427,76 @@
         "store_category": "Provision & Mini-Mart",
         "owner_name": "Ophelia",
         "owner_phone": "0550941055",
-        "owner_password": "1234",
+        "owner_password": "12345",
         "shop_location": "Bolga market, Ghana",
         "location": "Bolga market, Ghana",
         "license_expiry": 1794750379209,
         "license_plan": "7-Day Initial Trial",
-        "last_seen_timestamp": 1794160940258,
-        "last_active_at": 1794160940258,
-        "last_synced_at": 1794160940258,
+        "last_seen_timestamp": 1794161923180,
+        "last_active_at": 1794161923180,
+        "last_synced_at": 1794161923215,
         "clock_tampered": false,
         "created_at": 1794145579209
       },
-      "products": [],
-      "sales": [],
+      "products": [
+        {
+          "id": "PRD-1794146989195-JQKY",
+          "store_id": "HS-SEY3",
+          "name": "Geisha Mackerel in Tomato Sauce 155g",
+          "category": "Tin & Canned Foods",
+          "barcode": "6959275594223",
+          "cost_price": 5,
+          "selling_price": 7,
+          "stock_qty": 13,
+          "low_stock_threshold": 5,
+          "updated_at": 1794147189095
+        },
+        {
+          "id": "PRD-1794146349459-11EY",
+          "store_id": "HS-SEY3",
+          "name": "Liquid soap",
+          "category": "Toiletries & Household",
+          "barcode": "",
+          "cost_price": 40,
+          "selling_price": 45,
+          "stock_qty": 10,
+          "low_stock_threshold": 5,
+          "updated_at": 1794146349461
+        }
+      ],
+      "sales": [
+        {
+          "id": "RCP-261108-KNUX",
+          "store_id": "HS-SEY3",
+          "timestamp": 1794147189095,
+          "date_str": "2026-11-08",
+          "items": [
+            {
+              "id": "PRD-1794146989195-JQKY",
+              "name": "Geisha Mackerel in Tomato Sauce 155g",
+              "qty": 7,
+              "cost_price": 5,
+              "selling_price": 7,
+              "subtotal": 49,
+              "profit": 14
+            }
+          ],
+          "item_count": 7,
+          "total_amount": 49,
+          "total_profit": 14,
+          "payment_method": "Cash",
+          "initial_deposit": 49,
+          "deposit_method": "Cash",
+          "balance_owed": 0,
+          "customer": null,
+          "served_by": "Ophelia",
+          "repayments": []
+        }
+      ],
       "debtors": [],
       "closed_days": [],
       "license": [],
-      "updated_at": 1794160940258
+      "updated_at": 1794163738844
     }
   }
 }
