@@ -1,16 +1,18 @@
 /**
- * Holy Star POS v2.3 - Unified Multi-Store SaaS Application Logic (app.js)
+ * Holy Star POS v3.0 - Application Logic (app.js)
  * Features:
- * - Immediate non-blocking UI Event Binding (0ms button responsiveness)
- * - Clean Unified Store Login & Create New Store (0 Products, 0 Debtors, 0 Sales on New Store)
- * - Strict Store Data Isolation by `store_id`
- * - Smart Ghanaian Master Product Catalog Autocomplete + Custom Camera Photos
- * - Live Camera Barcode & QR Scanner (Checkout & Stock Entry)
- * - Hardened Atomic Checkout, Debtors Credit Book, Close-Day Seal & Cloud/Local Sync Heartbeat
+ * - Clean 1-Word Navigation & Decluttered Header
+ * - Compact 5-Per-Row Product Grid
+ * - Smart Cash Shortfall -> Automatic Debtor Prompt & Optional Non-Blocking Receipt Banner
+ * - Sales Period Filters (Today, Pick Date, This Week, This Month, All-Time) + Close Day Archive & Sync Prompt
+ * - Manual `Sync Database Online` with Offline Connection Alert
+ * - Cross-Device Cloud Login & Hydration across Phone and PC
  */
 
 const HOLY_STAR_SECRET = 'HOLY_STAR_SECRET_2026';
 const ALPHANUM_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const OFFLINE_SYNC_ALERT_MSG =
+  'You do not have an active internet connection. Please connect to the internet before updating your database online.';
 
 // ============================================================================
 // PURE-JS FIPS 180-4 SHA-256 & DETERMINISTIC TOKEN ENGINE
@@ -150,6 +152,7 @@ const AppState = {
   settings: null,
   products: [],
   debtors: [],
+  closedDays: [],
   cart: [],
   selectedPaymentMethod: 'Cash',
   selectedPosCategory: 'All',
@@ -159,8 +162,10 @@ const AppState = {
   debtorFilter: 'ALL',
   debtorSearchQuery: '',
   activeSaleReceipt: null,
+  selectedSalesPeriod: 'TODAY', // 'TODAY' | 'DATE' | 'WEEK' | 'MONTH' | 'ALL'
   selectedReportDate: '',
   dailyReport: null,
+  shortfallCashGiven: 0,
   licenseStatus: {
     active: true,
     expired: false,
@@ -171,7 +176,7 @@ const AppState = {
   currentProductThumbnail: '',
   barcodeScanner: {
     active: false,
-    targetMode: 'POS', // 'POS' or 'STOCK_INPUT'
+    targetMode: 'POS',
     stream: null,
     scanInterval: null
   }
@@ -229,7 +234,7 @@ function showToast(message, type = 'info') {
     toast.style.opacity = '0';
     toast.style.transition = 'opacity 0.25s ease';
     setTimeout(() => toast.remove(), 260);
-  }, 3600);
+  }, 3400);
 }
 
 function cleanPhoneForWhatsApp(phone) {
@@ -243,7 +248,7 @@ function cleanPhoneForWhatsApp(phone) {
   return digits;
 }
 
-function compressImageToDataUrl(file, maxSize = 160) {
+function compressImageToDataUrl(file, maxSize = 140) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -292,15 +297,14 @@ function getProductThumb(p) {
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // 1. Bind all UI event listeners IMMEDIATELY so buttons are never dead
   try {
     bindUIEvents();
     registerServiceWorkerSafe();
+    updateConnectionStatusDot();
   } catch (bindErr) {
     console.error('UI binding error:', bindErr);
   }
 
-  // 2. Initialize IndexedDB and boot store session
   try {
     await window.HolyStarDB.init();
     AppState.selectedReportDate = window.HolyStarDB.formatLocalDate();
@@ -312,15 +316,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await checkAuthAndBoot();
 
-    // Auto-sync heartbeat when device comes back online
     window.addEventListener('online', () => {
+      updateConnectionStatusDot();
       const storeId = window.HolyStarDB.getActiveStoreId();
       if (storeId) {
         window.HolyStarDB.syncTelemetryHeartbeat(storeId, 'network_reconnected');
       }
     });
 
-    // Periodic clock & license check every 30 seconds
+    window.addEventListener('offline', () => {
+      updateConnectionStatusDot();
+    });
+
     setInterval(async () => {
       if (AppState.store) {
         await verifyClockAndLicenseState();
@@ -332,6 +339,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     await showAuthOverlay();
   }
 });
+
+function updateConnectionStatusDot() {
+  const dot = document.getElementById('header-conn-dot');
+  if (!dot) return;
+  const isOnline = typeof navigator !== 'undefined' ? Boolean(navigator.onLine) : true;
+  dot.classList.toggle('online', isOnline);
+  dot.classList.toggle('offline', !isOnline);
+  dot.title = isOnline ? 'Online' : 'Offline Mode';
+}
 
 function registerServiceWorkerSafe() {
   if ('serviceWorker' in navigator) {
@@ -378,8 +394,8 @@ async function showAuthOverlay() {
 
   if (stores.length > 0 && selectWrap && selectEl) {
     selectWrap.classList.remove('hidden');
-    selectEl.innerHTML = `<option value="">-- Choose a registered store (${stores.length}) --</option>` +
-      stores.map((s) => `<option value="${escapeHtml(s.owner_phone || s.store_id)}">${escapeHtml(s.store_name)} (${escapeHtml(s.store_id)} • ${escapeHtml(s.owner_phone)})</option>`).join('');
+    selectEl.innerHTML = `<option value="">-- Switch Store (${stores.length}) --</option>` +
+      stores.map((s) => `<option value="${escapeHtml(s.owner_phone || s.store_id)}">${escapeHtml(s.store_name)} (${escapeHtml(s.store_id)})</option>`).join('');
     if (stores.length === 1 && loginIdInput && !loginIdInput.value) {
       loginIdInput.value = stores[0].owner_phone || stores[0].store_id;
       selectEl.value = stores[0].owner_phone || stores[0].store_id;
@@ -387,7 +403,7 @@ async function showAuthOverlay() {
     switchAuthTab('login');
   } else {
     if (selectWrap) selectWrap.classList.add('hidden');
-    switchAuthTab('register');
+    switchAuthTab('login');
   }
 }
 
@@ -417,15 +433,20 @@ async function refreshAllData() {
   AppState.settings = store;
 
   const storeId = store.store_id;
-  const [products, debtors, dailyReport] = await Promise.all([
+  const [products, debtors, closedDays, periodReport] = await Promise.all([
     window.HolyStarDB.getAllProducts(storeId),
     window.HolyStarDB.getAllDebtors(storeId),
-    window.HolyStarDB.getDailyReport(AppState.selectedReportDate || window.HolyStarDB.formatLocalDate())
+    window.HolyStarDB.getAllClosedDays(storeId),
+    window.HolyStarDB.getSalesReportByPeriod(
+      AppState.selectedSalesPeriod || 'TODAY',
+      AppState.selectedReportDate || window.HolyStarDB.formatLocalDate()
+    )
   ]);
 
   AppState.products = products;
   AppState.debtors = debtors;
-  AppState.dailyReport = dailyReport;
+  AppState.closedDays = closedDays;
+  AppState.dailyReport = periodReport;
 
   await verifyClockAndLicenseState();
   renderHeaderInfo();
@@ -483,19 +504,19 @@ function renderLicenseBannerAndPill() {
   const { active, expired, tampered, daysLeft } = AppState.licenseStatus;
 
   if (pill && pillText) {
-    pill.classList.remove('license-active', 'license-warning', 'license-locked');
+    pill.className = 'badge';
     if (tampered) {
-      pill.classList.add('license-locked');
-      pillText.textContent = '🔒 Clock Tamper Locked';
+      pill.classList.add('badge-danger');
+      pillText.textContent = 'Clock Locked';
     } else if (expired) {
-      pill.classList.add('license-locked');
-      pillText.textContent = '🔒 Subscription Expired';
+      pill.classList.add('badge-danger');
+      pillText.textContent = 'Expired';
     } else if (daysLeft <= 2) {
-      pill.classList.add('license-warning');
-      pillText.textContent = `⚠️ ${daysLeft} Day${daysLeft === 1 ? '' : 's'} Left`;
+      pill.classList.add('badge-warning');
+      pillText.textContent = `${daysLeft}d left`;
     } else {
-      pill.classList.add('license-active');
-      pillText.textContent = `✔ Active (${daysLeft}d left)`;
+      pill.classList.add('badge-success');
+      pillText.textContent = `Active (${daysLeft}d)`;
     }
   }
 
@@ -514,10 +535,10 @@ function renderLicenseBannerAndPill() {
     const { totalAmount } = getCartTotals();
     if (!active) {
       checkoutBtn.disabled = true;
-      checkoutBtn.textContent = tampered ? '🔒 Locked (Fix Device Clock)' : '🔒 Locked (Renew License in Settings)';
+      checkoutBtn.textContent = tampered ? '🔒 Fix Clock' : '🔒 Renew License';
     } else {
       checkoutBtn.disabled = AppState.cart.length === 0;
-      checkoutBtn.textContent = `✅ Complete Sale (${formatGHS(totalAmount)})`;
+      checkoutBtn.textContent = `Complete Sale (${formatGHS(totalAmount)})`;
     }
   }
 }
@@ -525,14 +546,8 @@ function renderLicenseBannerAndPill() {
 function renderHeaderInfo() {
   const s = AppState.store || {};
   const nameEl = document.getElementById('header-shop-name');
-  const idEl = document.getElementById('header-shop-id');
-  const catEl = document.getElementById('header-shop-category');
-  const locEl = document.getElementById('header-shop-location');
-
   if (nameEl) nameEl.textContent = s.store_name || s.shop_name || 'Holy Star POS';
-  if (idEl) idEl.textContent = s.store_id || s.shop_id || 'HS-0000';
-  if (catEl) catEl.textContent = s.store_category || 'Retail';
-  if (locEl) locEl.textContent = s.shop_location || s.location || 'Ghana';
+  updateConnectionStatusDot();
 }
 
 // ============================================================================
@@ -578,15 +593,14 @@ function renderCatalogSuggestions(query) {
   dropdown.classList.remove('hidden');
   dropdown.innerHTML = matches.map((m, idx) => {
     const thumb = getProductThumb(m);
-    const barcode = m.suggested_barcode || m.barcode || '';
     return `
       <div class="autocomplete-item" data-catalog-idx="${idx}" data-catalog-name="${escapeHtml(m.name)}">
         <img src="${thumb}" alt="" />
         <div style="flex:1; min-width:0;">
           <div class="autocomplete-item-title">${escapeHtml(m.name)}</div>
-          <div class="autocomplete-item-meta">${escapeHtml(m.category)} ${barcode ? '• Barcode: ' + escapeHtml(barcode) : ''}</div>
+          <div class="autocomplete-item-meta">${escapeHtml(m.category)}</div>
         </div>
-        <span class="badge badge-info" style="font-size:0.68rem;">Tap to Fill</span>
+        <span class="badge badge-info">Fill</span>
       </div>
     `;
   }).join('');
@@ -629,7 +643,7 @@ function applyCatalogItemToForm(item) {
 }
 
 // ============================================================================
-// CAMERA BARCODE & QR SCANNER (BarcodeDetector + Quick-Tap Simulator)
+// CAMERA BARCODE & QR SCANNER
 // ============================================================================
 
 async function openBarcodeScanner(targetMode = 'POS') {
@@ -645,18 +659,17 @@ async function openBarcodeScanner(targetMode = 'POS') {
 
   if (manualInput) {
     manualInput.value = '';
-    setTimeout(() => manualInput.focus(), 120);
+    setTimeout(() => manualInput.focus(), 100);
   }
 
-  // Populate quick-tap barcode simulator chips from store products or master catalog
   if (quickList) {
     const sampleSource = AppState.products.length > 0
-      ? AppState.products.filter((p) => p.barcode).slice(0, 8)
-      : (window.MASTER_CATALOG || []).slice(0, 8);
+      ? AppState.products.filter((p) => p.barcode).slice(0, 6)
+      : (window.MASTER_CATALOG || []).slice(0, 6);
 
     quickList.innerHTML = sampleSource.map((item) => {
       const code = item.barcode || item.suggested_barcode || '6031100100010';
-      return `<button type="button" class="btn btn-outline btn-sm btn-quick-barcode" data-code="${escapeHtml(code)}" style="font-size:0.72rem;">📊 ${escapeHtml(item.name.slice(0, 18))} (${escapeHtml(code)})</button>`;
+      return `<button type="button" class="btn btn-outline btn-sm btn-quick-barcode" data-code="${escapeHtml(code)}">${escapeHtml(item.name.slice(0, 14))}</button>`;
     }).join('');
 
     quickList.querySelectorAll('.btn-quick-barcode').forEach((btn) => {
@@ -668,13 +681,13 @@ async function openBarcodeScanner(targetMode = 'POS') {
 
   if (!video || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     if (statusEl) {
-      statusEl.textContent = 'Camera unavailable or requires HTTPS. Type barcode below or tap a quick-test barcode.';
+      statusEl.textContent = 'Type barcode below or tap a quick item.';
     }
     return;
   }
 
   try {
-    if (statusEl) statusEl.textContent = 'Starting rear camera...';
+    if (statusEl) statusEl.textContent = 'Starting camera...';
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: false
@@ -686,7 +699,7 @@ async function openBarcodeScanner(targetMode = 'POS') {
     await video.play();
 
     if ('BarcodeDetector' in window) {
-      if (statusEl) statusEl.textContent = 'Point camera steadily at product barcode or QR code...';
+      if (statusEl) statusEl.textContent = 'Point camera at barcode...';
       const detector = new window.BarcodeDetector({
         formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code']
       });
@@ -697,20 +710,16 @@ async function openBarcodeScanner(targetMode = 'POS') {
           const barcodes = await detector.detect(video);
           if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
             const rawCode = String(barcodes[0].rawValue).trim();
-            if (rawCode) {
-              handleDetectedBarcode(rawCode);
-            }
+            if (rawCode) handleDetectedBarcode(rawCode);
           }
-        } catch (scanErr) {
-          // Ignore frame detection error
-        }
+        } catch (scanErr) {}
       }, 280);
     } else if (statusEl) {
-      statusEl.textContent = 'Camera active! Enter barcode digits below or tap a quick-test item.';
+      statusEl.textContent = 'Camera active. Enter digits below if needed.';
     }
   } catch (err) {
     if (statusEl) {
-      statusEl.textContent = 'Camera permission not granted. Type barcode manually or tap a quick-test barcode below.';
+      statusEl.textContent = 'Enter barcode manually below.';
     }
   }
 }
@@ -747,7 +756,7 @@ function handleDetectedBarcode(code) {
       );
       if (catMatch) {
         applyCatalogItemToForm(catMatch);
-        showToast(`Matched "${catMatch.name}" from Master Catalog!`, 'success');
+        showToast(`Matched "${catMatch.name}"!`, 'success');
         return;
       }
     }
@@ -755,14 +764,13 @@ function handleDetectedBarcode(code) {
     return;
   }
 
-  // POS Checkout Mode: Find product in store inventory by barcode
   const matchedProduct = AppState.products.find(
     (p) => String(p.barcode || '').trim().toLowerCase() === cleanCode.toLowerCase()
   );
 
   if (matchedProduct) {
     addToCart(matchedProduct.id);
-    showToast(`Scanned & added: ${matchedProduct.name}`, 'success');
+    showToast(`Added ${matchedProduct.name}`, 'success');
   } else {
     const searchInput = document.getElementById('pos-search-input');
     if (searchInput) {
@@ -770,12 +778,12 @@ function handleDetectedBarcode(code) {
       AppState.posSearchQuery = cleanCode;
       renderPosProductGrid();
     }
-    showToast(`No item in your store with barcode "${cleanCode}". Click "+ Add Product" to add it!`, 'error');
+    showToast(`Barcode "${cleanCode}" not in stock yet.`, 'error');
   }
 }
 
 // ============================================================================
-// TAB 1: POS CHECKOUT & CART LOGIC
+// TAB 1: COMPACT 5-PER-ROW POS PRODUCT GRID & SMART CASH SHORTFALL CHECKOUT
 // ============================================================================
 
 function renderPosCategories() {
@@ -817,15 +825,13 @@ function renderPosProductGrid() {
   if (filtered.length === 0) {
     grid.innerHTML = `
       <div class="empty-state" style="grid-column: 1 / -1;">
-        <div style="font-size:2rem; margin-bottom:0.35rem;">📦</div>
-        <p style="font-weight:800; color:var(--text-primary); margin-bottom:0.25rem;">
-          ${AppState.products.length === 0 ? 'Your Store Inventory is Empty (0 Products)' : 'No matching products found'}
-        </p>
-        <p style="font-size:0.82rem; margin-bottom:0.75rem;">
-          ${AppState.products.length === 0
-            ? 'Click "➕ Add Product" above to add your first item (with smart Ghanaian product autocomplete!).'
-            : 'Try clearing your search filter or switching category.'}
-        </p>
+        <div style="font-size:1.75rem; margin-bottom:0.25rem;">📦</div>
+        <div style="font-weight:800; color:var(--text-primary);">
+          ${AppState.products.length === 0 ? '0 Products in Store' : 'No matching items'}
+        </div>
+        <div style="font-size:0.76rem; margin-top:0.2rem;">
+          ${AppState.products.length === 0 ? 'Tap "➕ Add Product" to add items' : 'Try another search'}
+        </div>
       </div>
     `;
     return;
@@ -838,36 +844,29 @@ function renderPosProductGrid() {
       const isOut = stock <= 0;
       const isLow = !isOut && stock <= alertLevel;
 
-      let stockBadgeClass = 'badge-success';
-      let stockLabel = `${stock} in stock`;
+      let stockColor = 'color:var(--text-secondary);';
+      let stockLabel = `${stock} left`;
       if (isOut) {
-        stockBadgeClass = 'badge-danger';
-        stockLabel = 'Out of Stock';
+        stockColor = 'color:var(--danger); font-weight:800;';
+        stockLabel = 'Out';
       } else if (isLow) {
-        stockBadgeClass = 'badge-warning';
-        stockLabel = `Low: ${stock} left`;
+        stockColor = 'color:var(--warning); font-weight:800;';
+        stockLabel = `${stock} low`;
       }
 
       const inCartItem = AppState.cart.find((c) => c.id === p.id);
-      const inCartBadge = inCartItem ? `<span class="badge badge-info" style="font-size:0.7rem;">In Cart: ${inCartItem.qty}</span>` : '';
+      const inCartBadge = inCartItem
+        ? `<span class="product-cart-count">${inCartItem.qty}</span>`
+        : '';
       const thumbSrc = getProductThumb(p);
 
       return `
         <div class="product-card ${isOut ? 'out-of-stock' : ''}" data-product-id="${escapeHtml(p.id)}">
-          <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.45rem;">
-            <img src="${thumbSrc}" class="product-thumb-sm" alt="" />
-            <div style="flex:1; min-width:0;">
-              <div class="product-category-tag">${escapeHtml(p.category || 'General')}</div>
-              <div class="product-name">${escapeHtml(p.name)}</div>
-            </div>
-          </div>
-          <div class="product-meta-row">
-            <span class="product-price">${formatGHS(p.selling_price)}</span>
-            <div style="display:flex; align-items:center; gap:0.25rem; flex-wrap:wrap;">
-              ${inCartBadge}
-              <span class="badge ${stockBadgeClass}">${stockLabel}</span>
-            </div>
-          </div>
+          ${inCartBadge}
+          <img src="${thumbSrc}" class="product-thumb-sm" alt="" />
+          <div class="product-name">${escapeHtml(p.name)}</div>
+          <div class="product-price">${formatGHS(p.selling_price)}</div>
+          <div class="product-stock-pill" style="${stockColor}">${stockLabel}</div>
         </div>
       `;
     })
@@ -886,14 +885,14 @@ function addToCart(productId) {
 
   const available = Number(product.stock_qty || 0);
   if (available <= 0) {
-    showToast(`"${product.name}" is out of stock! Please restock first.`, 'error');
+    showToast(`"${product.name}" is out of stock!`, 'error');
     return;
   }
 
   const existing = AppState.cart.find((item) => item.id === productId);
   if (existing) {
     if (existing.qty + 1 > available) {
-      showToast(`Cannot exceed available stock (${available}) for "${product.name}".`, 'error');
+      showToast(`Max stock (${available}) reached for "${product.name}".`, 'error');
       return;
     }
     existing.qty += 1;
@@ -925,7 +924,7 @@ function updateCartItemQty(productId, newQty) {
     AppState.cart.splice(idx, 1);
   } else if (parsed > maxStock) {
     AppState.cart[idx].qty = maxStock;
-    showToast(`Maximum available stock for "${product.name}" is ${maxStock}.`, 'error');
+    showToast(`Max available stock is ${maxStock}.`, 'error');
   } else {
     AppState.cart[idx].qty = parsed;
   }
@@ -968,9 +967,7 @@ function renderCart() {
   if (totalEl) totalEl.textContent = formatGHS(totalAmount);
 
   if (AppState.cart.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">Cart is empty. Tap any product or scan a barcode to add it.</div>
-    `;
+    container.innerHTML = `<div class="empty-state">Tap any item to sell</div>`;
   } else {
     container.innerHTML = AppState.cart
       .map((item) => {
@@ -985,7 +982,7 @@ function renderCart() {
               <button type="button" class="qty-btn btn-qty-dec" data-id="${escapeHtml(item.id)}">−</button>
               <input type="number" class="qty-input" value="${item.qty}" min="1" max="${item.max_stock}" data-id="${escapeHtml(item.id)}" />
               <button type="button" class="qty-btn btn-qty-inc" data-id="${escapeHtml(item.id)}">+</button>
-              <button type="button" class="btn-remove-item" title="Remove item" data-id="${escapeHtml(item.id)}">✕</button>
+              <button type="button" class="btn-remove-item" data-id="${escapeHtml(item.id)}">✕</button>
             </div>
           </div>
         `;
@@ -1029,8 +1026,8 @@ function populateExistingDebtorsDropdown() {
   const select = document.getElementById('credit-existing-select');
   if (!select) return;
 
-  select.innerHTML = `<option value="">-- New Customer or Select Existing (${AppState.debtors.length}) --</option>` +
-    AppState.debtors.map((d) => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)} (${escapeHtml(d.phone)} • Owed: ${formatGHS(d.total_owed)})</option>`).join('');
+  select.innerHTML = `<option value="">-- Existing Customer (${AppState.debtors.length}) or New --</option>` +
+    AppState.debtors.map((d) => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)} (${escapeHtml(d.phone)})</option>`).join('');
 }
 
 function updatePaymentCalculations() {
@@ -1038,17 +1035,30 @@ function updatePaymentCalculations() {
   const { totalAmount } = getCartTotals();
 
   const cashBox = document.getElementById('cash-calculator-box');
+  const momoBox = document.getElementById('momo-payment-fields');
   const creditBox = document.getElementById('credit-customer-fields');
 
   if (cashBox) cashBox.classList.toggle('hidden', method !== 'Cash');
+  if (momoBox) momoBox.classList.toggle('hidden', method !== 'MoMo');
   if (creditBox) creditBox.classList.toggle('hidden', method !== 'Credit');
 
   const tenderedInput = document.getElementById('cash-tendered-input');
+  const changeLabel = document.getElementById('cash-change-label');
   const changeDisplay = document.getElementById('cash-change-output');
   if (tenderedInput && changeDisplay) {
-    const tenderedVal = tenderedInput.value === '' ? totalAmount : Number(tenderedInput.value);
-    const change = Math.max(0, tenderedVal - totalAmount);
-    changeDisplay.textContent = formatGHS(change);
+    const rawVal = tenderedInput.value;
+    if (rawVal === '' || Number(rawVal) >= totalAmount) {
+      const tenderedVal = rawVal === '' ? totalAmount : Number(rawVal);
+      const change = Math.max(0, tenderedVal - totalAmount);
+      if (changeLabel) changeLabel.textContent = 'CHANGE DUE';
+      changeDisplay.textContent = formatGHS(change);
+      changeDisplay.style.color = '#15803d';
+    } else {
+      const shortfall = Math.max(0, totalAmount - Number(rawVal));
+      if (changeLabel) changeLabel.textContent = 'REMAINDER';
+      changeDisplay.textContent = formatGHS(shortfall);
+      changeDisplay.style.color = '#dc2626';
+    }
   }
 
   const depositInput = document.getElementById('credit-initial-deposit');
@@ -1063,12 +1073,12 @@ function updatePaymentCalculations() {
 async function handleCompleteSale() {
   await verifyClockAndLicenseState();
   if (!AppState.licenseStatus.active) {
-    showToast('Checkout is locked. Please renew your subscription or fix your device clock in Settings.', 'error');
+    showToast('Checkout is locked. Renew license in Settings.', 'error');
     return;
   }
 
   if (AppState.cart.length === 0) {
-    showToast('Your cart is empty. Add at least one item.', 'error');
+    showToast('Cart is empty.', 'error');
     return;
   }
 
@@ -1076,12 +1086,16 @@ async function handleCompleteSale() {
   const { totalAmount } = getCartTotals();
 
   const tenderedInput = document.getElementById('cash-tendered-input');
-  const cashTendered = tenderedInput && tenderedInput.value !== '' ? Number(tenderedInput.value) : totalAmount;
+  const hasExplicitCashInput = tenderedInput && tenderedInput.value.trim() !== '';
+  const cashTendered = hasExplicitCashInput ? Number(tenderedInput.value) : totalAmount;
 
-  if (paymentMethod === 'Cash' && cashTendered < totalAmount) {
-    showToast(`Cash given (${formatGHS(cashTendered)}) is less than total due (${formatGHS(totalAmount)}). Select Credit if customer is paying partially.`, 'error');
+  // SMART CASH SHORTFALL FLOW: If paying by Cash and Amount Given < Total -> Pop Choice Modal!
+  if (paymentMethod === 'Cash' && hasExplicitCashInput && cashTendered < totalAmount) {
+    openCashShortfallModal(cashTendered, totalAmount);
     return;
   }
+
+  const momoPhone = document.getElementById('momo-phone-input')?.value || '';
 
   const creditDetails = {
     customerName: document.getElementById('credit-customer-name')?.value || '',
@@ -1096,26 +1110,103 @@ async function handleCompleteSale() {
     const result = await window.HolyStarDB.processAtomicCheckout({
       cartItems: AppState.cart,
       paymentMethod,
+      cashTendered,
+      momoPhone,
       creditDetails
     });
 
-    AppState.cart = [];
-    if (tenderedInput) tenderedInput.value = '';
-    if (document.getElementById('credit-existing-select')) document.getElementById('credit-existing-select').value = '';
-    if (document.getElementById('credit-customer-name')) document.getElementById('credit-customer-name').value = '';
-    if (document.getElementById('credit-customer-phone')) document.getElementById('credit-customer-phone').value = '';
-    if (document.getElementById('credit-customer-location')) document.getElementById('credit-customer-location').value = '';
-    if (document.getElementById('credit-initial-deposit')) document.getElementById('credit-initial-deposit').value = '0';
-
-    selectPaymentMethod('Cash');
-
-    await refreshAllData();
-    window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'checkout_sale');
-    showSaleReceiptModal(result.sale);
-    showToast(`Sale ${result.sale.id} completed (${formatGHS(result.sale.total_amount)})!`, 'success');
+    await finalizeCompletedSaleUI(result.sale);
   } catch (err) {
     showToast(err.message || 'Failed to complete sale.', 'error');
   }
+}
+
+function openCashShortfallModal(cashGiven, totalAmount) {
+  const remainder = Number((totalAmount - cashGiven).toFixed(2));
+  AppState.shortfallCashGiven = Number(cashGiven.toFixed(2));
+
+  const modal = document.getElementById('modal-cash-shortfall');
+  const promptText = document.getElementById('shortfall-prompt-text');
+  const remBtnSpan = document.getElementById('shortfall-btn-rem-amount');
+  const choiceBtns = document.getElementById('shortfall-choice-buttons');
+  const debtorForm = document.getElementById('form-shortfall-debtor');
+
+  if (!modal) return;
+  if (promptText) {
+    promptText.textContent = `Customer paid ${formatGHS(cashGiven)}, leaving a balance of ${formatGHS(remainder)}. Would you like to:`;
+  }
+  if (remBtnSpan) {
+    remBtnSpan.textContent = formatGHS(remainder);
+  }
+  if (choiceBtns) choiceBtns.classList.remove('hidden');
+  if (debtorForm) debtorForm.classList.add('hidden');
+
+  modal.classList.remove('hidden');
+}
+
+async function handleShortfallDebtorSubmit(e) {
+  e.preventDefault();
+  const customerName = String(document.getElementById('shortfall-cust-name')?.value || '').trim();
+  const customerPhone = String(document.getElementById('shortfall-cust-phone')?.value || '').trim();
+  const customerLocation = String(document.getElementById('shortfall-cust-location')?.value || '').trim();
+
+  if (!customerName || !customerPhone || !customerLocation) {
+    showToast('Enter Customer Name, Phone, and Location.', 'error');
+    return;
+  }
+
+  try {
+    const result = await window.HolyStarDB.processAtomicCheckout({
+      cartItems: AppState.cart,
+      paymentMethod: 'Credit',
+      cashTendered: AppState.shortfallCashGiven,
+      creditDetails: {
+        customerName,
+        customerPhone,
+        customerLocation,
+        initialDeposit: AppState.shortfallCashGiven,
+        depositMethod: 'Cash',
+        dueDate: ''
+      }
+    });
+
+    document.getElementById('modal-cash-shortfall')?.classList.add('hidden');
+    e.target.reset();
+    await finalizeCompletedSaleUI(result.sale);
+  } catch (err) {
+    showToast(err.message || 'Could not save credit sale.', 'error');
+  }
+}
+
+async function finalizeCompletedSaleUI(sale) {
+  AppState.cart = [];
+  AppState.activeSaleReceipt = sale;
+
+  const tenderedInput = document.getElementById('cash-tendered-input');
+  if (tenderedInput) tenderedInput.value = '';
+  if (document.getElementById('momo-phone-input')) document.getElementById('momo-phone-input').value = '';
+  if (document.getElementById('credit-existing-select')) document.getElementById('credit-existing-select').value = '';
+  if (document.getElementById('credit-customer-name')) document.getElementById('credit-customer-name').value = '';
+  if (document.getElementById('credit-customer-phone')) document.getElementById('credit-customer-phone').value = '';
+  if (document.getElementById('credit-customer-location')) document.getElementById('credit-customer-location').value = '';
+  if (document.getElementById('credit-initial-deposit')) document.getElementById('credit-initial-deposit').value = '0';
+
+  selectPaymentMethod('Cash');
+
+  await refreshAllData();
+  window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'checkout_sale');
+
+  // Show non-blocking Sale Completed Banner with optional Receipt button (do NOT force-open modal)
+  const banner = document.getElementById('sale-completed-banner');
+  const sub = document.getElementById('sale-completed-sub');
+  if (banner) {
+    if (sub) {
+      sub.textContent = `${formatGHS(sale.total_amount)} (${sale.payment_method})${sale.change_given > 0 ? ` • Change: ${formatGHS(sale.change_given)}` : ''}`;
+    }
+    banner.classList.remove('hidden');
+  }
+
+  showToast(`Sale Completed (${formatGHS(sale.total_amount)})!`, 'success');
 }
 
 function selectPaymentMethod(method) {
@@ -1143,44 +1234,47 @@ function showSaleReceiptModal(sale) {
     `)
     .join('');
 
-  let creditHtml = '';
-  if (sale.payment_method === 'Credit' && sale.customer) {
-    creditHtml = `
+  let extraHtml = '';
+  if (sale.payment_method === 'Cash' && Number(sale.change_given || 0) > 0) {
+    extraHtml = `
+      <div class="receipt-line"><span>Amount Given:</span><span>${formatGHS(sale.cash_tendered)}</span></div>
+      <div class="receipt-line"><span>Change Due:</span><strong>${formatGHS(sale.change_given)}</strong></div>
+    `;
+  } else if (sale.payment_method === 'Credit' && sale.customer) {
+    extraHtml = `
       <div class="receipt-divider"></div>
       <div class="receipt-line"><span>Customer:</span><strong>${escapeHtml(sale.customer.name)}</strong></div>
-      <div class="receipt-line"><span>Phone:</span><span>${escapeHtml(sale.customer.phone)}</span></div>
-      <div class="receipt-line"><span>Initial Deposit:</span><span>${formatGHS(sale.initial_deposit)}</span></div>
-      <div class="receipt-line"><span>Balance Owed:</span><strong>${formatGHS(sale.balance_owed)}</strong></div>
+      <div class="receipt-line"><span>Paid Now:</span><span>${formatGHS(sale.initial_deposit)}</span></div>
+      <div class="receipt-line"><span>Remainder Owed:</span><strong>${formatGHS(sale.balance_owed)}</strong></div>
     `;
   }
 
   content.innerHTML = `
     <div class="receipt-header">
       <h4>★ ${escapeHtml(s.store_name || 'HOLY STAR POS')} ★</h4>
-      <div>${escapeHtml(s.shop_location || s.location || 'Ghana')}</div>
-      <div>Tel: ${escapeHtml(s.owner_phone || '-')} • ID: ${escapeHtml(s.store_id || 'HS-0000')}</div>
+      <div>${escapeHtml(s.shop_location || s.location || 'Ghana')} • ${escapeHtml(s.owner_phone || '')}</div>
     </div>
     <div class="receipt-divider"></div>
     <div class="receipt-line"><span>Receipt:</span><strong>${escapeHtml(sale.id)}</strong></div>
     <div class="receipt-line"><span>Date:</span><span>${escapeHtml(formatDateTime(sale.timestamp))}</span></div>
-    <div class="receipt-line"><span>Payment:</span><strong>${escapeHtml(sale.payment_method)}</strong></div>
+    <div class="receipt-line"><span>Method:</span><strong>${escapeHtml(sale.payment_method)}</strong></div>
     <div class="receipt-divider"></div>
     ${itemsHtml}
     <div class="receipt-divider"></div>
     <div class="receipt-line receipt-total">
-      <span>TOTAL PAID/DUE:</span>
+      <span>TOTAL:</span>
       <span>${formatGHS(sale.total_amount)}</span>
     </div>
-    ${creditHtml}
+    ${extraHtml}
     <div class="receipt-divider"></div>
-    <div class="receipt-footer">Thank you for shopping with us!</div>
+    <div class="receipt-footer">Thank you!</div>
   `;
 
   modal.classList.remove('hidden');
 }
 
 // ============================================================================
-// TAB 2: INVENTORY & STOCK MANAGEMENT
+// TAB 2: INVENTORY
 // ============================================================================
 
 function renderInventoryView() {
@@ -1214,7 +1308,7 @@ function renderInventoryView() {
   if (totalCountEl) totalCountEl.textContent = String(AppState.products.length);
   if (stockCostEl) stockCostEl.textContent = formatGHS(totalCostVal);
   if (retailValEl) retailValEl.textContent = formatGHS(totalRetailVal);
-  if (estMarginEl) estMarginEl.textContent = `Est. Profit: ${formatGHS(totalProjProfit)}`;
+  if (estMarginEl) estMarginEl.textContent = `Profit: ${formatGHS(totalProjProfit)}`;
   if (alertsCountEl) alertsCountEl.textContent = String(lowOrOutCount);
 
   if (navBadgeStock) {
@@ -1242,10 +1336,8 @@ function renderInventoryView() {
   if (filtered.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="9" style="text-align:center; padding:2rem; color:var(--text-secondary);">
-          ${AppState.products.length === 0
-            ? 'Your store has 0 products. Click <strong>"➕ Add New Product"</strong> to add items (with smart Ghanaian product autocomplete!).'
-            : 'No products match your current filter.'}
+        <td colspan="6" style="text-align:center; padding:1.75rem; color:var(--text-secondary);">
+          ${AppState.products.length === 0 ? '0 Products. Tap "➕ Add Product" to start.' : 'No matching items.'}
         </td>
       </tr>
     `;
@@ -1257,41 +1349,33 @@ function renderInventoryView() {
       const cost = Number(p.cost_price || 0);
       const sell = Number(p.selling_price || 0);
       const unitProfit = Number((sell - cost).toFixed(2));
-      const marginPct = sell > 0 ? Math.round(((sell - cost) / sell) * 100) : 0;
       const qty = Number(p.stock_qty || 0);
       const alertLvl = Number(p.low_stock_threshold ?? p.low_stock_alert ?? 5);
 
-      let statusBadge = `<span class="badge badge-success">In Stock</span>`;
-      if (qty <= 0) {
-        statusBadge = `<span class="badge badge-danger">Out of Stock</span>`;
-      } else if (qty <= alertLvl) {
-        statusBadge = `<span class="badge badge-warning">Low Stock</span>`;
-      }
+      let qtyBadgeClass = 'badge-success';
+      if (qty <= 0) qtyBadgeClass = 'badge-danger';
+      else if (qty <= alertLvl) qtyBadgeClass = 'badge-warning';
 
       const thumbSrc = getProductThumb(p);
 
       return `
         <tr>
           <td>
-            <img src="${thumbSrc}" class="product-thumb-sm" alt="" />
+            <div style="display:flex; align-items:center; gap:0.55rem;">
+              <img src="${thumbSrc}" style="width:36px; height:36px; border-radius:8px; object-fit:cover; border:1px solid var(--border);" alt="" />
+              <div>
+                <div style="font-weight:800; color:var(--text-primary);">${escapeHtml(p.name)}</div>
+                <div style="font-size:0.72rem; color:var(--text-secondary);">${escapeHtml(p.category || 'General')}</div>
+              </div>
+            </div>
           </td>
-          <td>
-            <div style="font-weight:800; color:var(--text-primary);">${escapeHtml(p.name)}</div>
-            ${p.barcode ? `<div style="font-size:0.74rem; color:var(--text-secondary); font-family:monospace;">📊 ${escapeHtml(p.barcode)}</div>` : ''}
-          </td>
-          <td><span class="badge badge-neutral">${escapeHtml(p.category || 'General')}</span></td>
-          <td style="font-weight:600;">${formatGHS(cost)}</td>
+          <td>${formatGHS(cost)}</td>
           <td style="font-weight:800; color:var(--primary);">${formatGHS(sell)}</td>
+          <td style="font-weight:700; color:var(--success);">${formatGHS(unitProfit)}</td>
+          <td><span class="badge ${qtyBadgeClass}">${qty}</span></td>
           <td>
-            <span style="font-weight:700; color:${unitProfit >= 0 ? 'var(--success)' : 'var(--danger)'};">
-              ${formatGHS(unitProfit)} (${marginPct}%)
-            </span>
-          </td>
-          <td style="font-weight:900; font-size:0.95rem;">${qty}</td>
-          <td>${statusBadge}</td>
-          <td>
-            <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
-              <button type="button" class="btn btn-success btn-sm btn-restock-item" data-id="${escapeHtml(p.id)}">+ Restock</button>
+            <div style="display:flex; gap:0.3rem;">
+              <button type="button" class="btn btn-success btn-sm btn-restock-item" data-id="${escapeHtml(p.id)}">+Qty</button>
               <button type="button" class="btn btn-outline btn-sm btn-edit-item" data-id="${escapeHtml(p.id)}">Edit</button>
               <button type="button" class="btn btn-danger btn-sm btn-delete-item" data-id="${escapeHtml(p.id)}">✕</button>
             </div>
@@ -1335,7 +1419,7 @@ function openProductModal(productId = null) {
   if (productId) {
     const p = AppState.products.find((item) => item.id === productId);
     if (!p) return;
-    if (titleEl) titleEl.textContent = '✏️ Edit Product & Pricing';
+    if (titleEl) titleEl.textContent = '✏️ Edit Product';
     if (idInput) idInput.value = p.id;
     if (nameInput) nameInput.value = p.name;
     if (catInput) catInput.value = p.category || 'General';
@@ -1348,7 +1432,7 @@ function openProductModal(productId = null) {
     if (imgDataInput) imgDataInput.value = AppState.currentProductThumbnail;
     if (thumbPreview) thumbPreview.src = AppState.currentProductThumbnail;
   } else {
-    if (titleEl) titleEl.textContent = '➕ Add New Product';
+    if (titleEl) titleEl.textContent = '➕ Add Product';
     if (idInput) idInput.value = '';
     if (nameInput) nameInput.value = '';
     if (catInput) catInput.value = '';
@@ -1358,7 +1442,7 @@ function openProductModal(productId = null) {
     if (qtyInput) qtyInput.value = '10';
     if (alertInput) alertInput.value = '5';
     AppState.currentProductThumbnail = typeof window.generateProductSvgThumbnail === 'function'
-      ? window.generateProductSvgThumbnail('New Item', 'General')
+      ? window.generateProductSvgThumbnail('Item', 'General')
       : 'icon-192.png';
     if (imgDataInput) imgDataInput.value = AppState.currentProductThumbnail;
     if (thumbPreview) thumbPreview.src = AppState.currentProductThumbnail;
@@ -1378,7 +1462,7 @@ function updateLiveUnitProfitPreview() {
   const profit = Number((sell - cost).toFixed(2));
   const pct = sell > 0 ? Math.round(((sell - cost) / sell) * 100) : 0;
   previewEl.textContent = `Unit Profit: ${formatGHS(profit)} (${pct}%)`;
-  previewEl.style.color = profit >= 0 ? '#166534' : '#991b1b';
+  previewEl.style.color = profit >= 0 ? '#065f46' : '#991b1b';
 }
 
 async function handleSaveProductForm(e) {
@@ -1408,7 +1492,7 @@ async function handleSaveProductForm(e) {
     document.getElementById('modal-product')?.classList.add('hidden');
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'inventory_saved');
-    showToast(`Saved "${saved.name}" (${saved.stock_qty} in stock).`, 'success');
+    showToast(`Saved "${saved.name}"!`, 'success');
   } catch (err) {
     showToast(err.message || 'Could not save product.', 'error');
   }
@@ -1442,9 +1526,9 @@ async function handleRestockSubmit(e) {
     document.getElementById('modal-restock')?.classList.add('hidden');
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'inventory_restocked');
-    showToast(`Restocked "${updated.name}". New Stock: ${updated.stock_qty} units.`, 'success');
+    showToast(`Restocked "${updated.name}" (${updated.stock_qty} in stock).`, 'success');
   } catch (err) {
-    showToast(err.message || 'Failed to restock item.', 'error');
+    showToast(err.message || 'Failed to restock.', 'error');
   }
 }
 
@@ -1452,7 +1536,7 @@ async function handleDeleteProduct(productId) {
   const product = AppState.products.find((p) => p.id === productId);
   if (!product) return;
 
-  if (!confirm(`Delete "${product.name}" from your store inventory?`)) return;
+  if (!confirm(`Delete "${product.name}"?`)) return;
 
   try {
     await window.HolyStarDB.deleteProduct(productId);
@@ -1461,12 +1545,12 @@ async function handleDeleteProduct(productId) {
     window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'inventory_deleted');
     showToast(`Deleted "${product.name}".`, 'info');
   } catch (err) {
-    showToast('Failed to delete product: ' + err.message, 'error');
+    showToast('Failed to delete: ' + err.message, 'error');
   }
 }
 
 // ============================================================================
-// TAB 3: DEBTORS BOOK (CREDIT LEDGER) & 1-TAP WHATSAPP REMINDERS
+// TAB 3: DEBTORS
 // ============================================================================
 
 function renderDebtorsView() {
@@ -1519,8 +1603,8 @@ function renderDebtorsView() {
   if (filtered.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="7" style="text-align:center; padding:2rem; color:var(--text-secondary);">
-          No debtor records in this store. Credit sales from POS Checkout or manual entries will appear here.
+        <td colspan="6" style="text-align:center; padding:1.75rem; color:var(--text-secondary);">
+          0 Debtors found.
         </td>
       </tr>
     `;
@@ -1536,32 +1620,27 @@ function renderDebtorsView() {
         <tr>
           <td>
             <div style="font-weight:800; color:var(--text-primary);">${escapeHtml(d.name)}</div>
-            <div style="font-size:0.75rem; color:var(--text-secondary);">${escapeHtml(getDebtorItemsSummaryText(d))}</div>
+            <div style="font-size:0.72rem; color:var(--text-secondary);">${escapeHtml(getDebtorItemsSummaryText(d))}</div>
           </td>
-          <td style="font-weight:700;">📞 ${escapeHtml(d.phone)}</td>
+          <td style="font-weight:700;">${escapeHtml(d.phone)}</td>
+          <td>${escapeHtml(d.location)}</td>
           <td>
-            <span>📍 ${escapeHtml(d.location)}</span>
-            ${d.due_date ? `<div style="font-size:0.73rem; color:var(--warning);">Due: ${escapeHtml(d.due_date)}</div>` : ''}
-          </td>
-          <td>
-            <span style="font-weight:900; font-size:0.98rem; color:${isCleared ? 'var(--success)' : 'var(--danger)'};">
+            <span style="font-weight:900; color:${isCleared ? 'var(--success)' : 'var(--danger)'};">
               ${formatGHS(owed)}
             </span>
           </td>
-          <td style="font-size:0.78rem; color:var(--text-secondary);">${formatDateTime(d.updated_at)}</td>
           <td>
             ${isCleared
-              ? `<span class="badge badge-success">✔ Cleared</span>`
+              ? `<span class="badge badge-success">Cleared</span>`
               : `<span class="badge badge-danger">Unpaid</span>`}
           </td>
           <td>
-            <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
+            <div style="display:flex; gap:0.3rem; flex-wrap:wrap;">
               ${!isCleared
                 ? `<button type="button" class="btn btn-primary btn-sm btn-pay-debt" data-id="${escapeHtml(d.id)}">💵 Pay</button>
-                   <button type="button" class="btn btn-whatsapp btn-sm btn-remind-whatsapp" data-id="${escapeHtml(d.id)}">💬 WhatsApp</button>
-                   <button type="button" class="btn btn-outline btn-sm btn-remind-sms" data-id="${escapeHtml(d.id)}">📩 SMS</button>`
+                   <button type="button" class="btn btn-whatsapp btn-sm btn-remind-whatsapp" data-id="${escapeHtml(d.id)}">💬</button>`
                 : ''}
-              <button type="button" class="btn btn-outline btn-sm btn-debtor-history" data-id="${escapeHtml(d.id)}">📜 History</button>
+              <button type="button" class="btn btn-outline btn-sm btn-debtor-history" data-id="${escapeHtml(d.id)}">📜</button>
             </div>
           </td>
         </tr>
@@ -1575,10 +1654,6 @@ function renderDebtorsView() {
 
   tbody.querySelectorAll('.btn-remind-whatsapp').forEach((btn) => {
     btn.addEventListener('click', () => sendDebtorReminder(btn.dataset.id, 'WHATSAPP'));
-  });
-
-  tbody.querySelectorAll('.btn-remind-sms').forEach((btn) => {
-    btn.addEventListener('click', () => sendDebtorReminder(btn.dataset.id, 'SMS'));
   });
 
   tbody.querySelectorAll('.btn-debtor-history').forEach((btn) => {
@@ -1602,13 +1677,10 @@ function buildDebtorReminderMessage(debtor) {
   const shopName = AppState.store?.store_name || 'Holy Star POS Shop';
   const shopPhone = AppState.store?.owner_phone || '';
   const itemsText = getDebtorItemsSummaryText(debtor);
-  const lastDate = debtor.updated_at ? new Date(debtor.updated_at).toLocaleDateString('en-GB') : 'recently';
-  const duePart = debtor.due_date ? ` (Due Date: ${debtor.due_date})` : '';
-
   return (
-    `Hello ${debtor.name}, friendly reminder from *${shopName}*: ` +
-    `Your outstanding credit balance for items taken on ${lastDate} (${itemsText}) is *${formatGHS(debtor.total_owed)}*${duePart}. ` +
-    `Kindly pass by the shop or send Mobile Money${shopPhone ? ' to ' + shopPhone : ''} to clear your balance. Thank you!`
+    `Hello ${debtor.name}, reminder from *${shopName}*: ` +
+    `Your balance for (${itemsText}) is *${formatGHS(debtor.total_owed)}*. ` +
+    `Kindly pass by or send MoMo${shopPhone ? ' to ' + shopPhone : ''}. Thank you!`
   );
 }
 
@@ -1636,7 +1708,6 @@ function openRecordPaymentModal(debtorId) {
   const phoneEl = document.getElementById('pay-debtor-phone');
   const owedEl = document.getElementById('pay-debtor-current-owed');
   const amountInput = document.getElementById('pay-amount-input');
-  const noteInput = document.getElementById('pay-note-input');
 
   if (idInput) idInput.value = debtor.id;
   if (nameEl) nameEl.textContent = debtor.name;
@@ -1646,7 +1717,6 @@ function openRecordPaymentModal(debtorId) {
     amountInput.value = debtor.total_owed;
     amountInput.max = debtor.total_owed;
   }
-  if (noteInput) noteInput.value = '';
 
   document.getElementById('modal-debtor-payment')?.classList.remove('hidden');
   if (amountInput) setTimeout(() => amountInput.focus(), 80);
@@ -1669,10 +1739,8 @@ async function handleRecordDebtorPayment(e) {
 
     document.getElementById('modal-debtor-payment')?.classList.add('hidden');
     await refreshAllData();
-    showToast(
-      `Recorded ${formatGHS(paymentEntry.amount_paid)} (${paymentMethod}) from ${debtor.name}. Remaining balance: ${formatGHS(debtor.total_owed)}`,
-      'success'
-    );
+    window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'debtor_payment');
+    showToast(`Recorded ${formatGHS(paymentEntry.amount_paid)} from ${debtor.name}!`, 'success');
   } catch (err) {
     showToast(err.message || 'Failed to record payment.', 'error');
   }
@@ -1700,7 +1768,8 @@ async function handleAddManualDebtor(e) {
     document.getElementById('modal-manual-debtor')?.classList.add('hidden');
     e.target.reset();
     await refreshAllData();
-    showToast(`Added credit record for ${debtor.name} (${formatGHS(debtor.total_owed)}).`, 'success');
+    window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'manual_debtor_added');
+    showToast(`Added ${debtor.name} (${formatGHS(debtor.total_owed)}).`, 'success');
   } catch (err) {
     showToast(err.message || 'Could not add debtor.', 'error');
   }
@@ -1717,11 +1786,11 @@ function openDebtorHistoryModal(debtorId) {
 
   if (!modal || !listEl) return;
 
-  if (titleEl) titleEl.textContent = `📜 Credit Ledger — ${debtor.name}`;
+  if (titleEl) titleEl.textContent = `📜 ${debtor.name}`;
   if (summaryEl) {
     summaryEl.innerHTML = `
       <div><strong>Phone:</strong> ${escapeHtml(debtor.phone)} • <strong>Location:</strong> ${escapeHtml(debtor.location)}</div>
-      <div style="margin-top:0.25rem;"><strong>Total Paid:</strong> ${formatGHS(debtor.total_paid || 0)} • <strong>Balance Owed:</strong> <span style="color:var(--danger); font-weight:800;">${formatGHS(debtor.total_owed)}</span></div>
+      <div style="margin-top:0.2rem;"><strong>Paid:</strong> ${formatGHS(debtor.total_paid || 0)} • <strong>Owed:</strong> <span style="color:var(--danger); font-weight:800;">${formatGHS(debtor.total_owed)}</span></div>
     `;
   }
 
@@ -1733,31 +1802,30 @@ function openDebtorHistoryModal(debtorId) {
       .map((h) => {
         if (h.type === 'PAYMENT') {
           return `
-            <div style="border-left:4px solid var(--success); background:var(--success-bg); padding:0.7rem; border-radius:6px;">
+            <div style="border-left:3px solid var(--success); background:var(--success-bg); padding:0.55rem; border-radius:6px; font-size:0.8rem;">
               <div style="display:flex; justify-content:space-between; font-weight:800; color:var(--success);">
-                <span>💵 Debt Repayment (${escapeHtml(h.payment_method)})</span>
+                <span>💵 Paid (${escapeHtml(h.payment_method)})</span>
                 <span>− ${formatGHS(h.amount_paid)}</span>
               </div>
-              <div style="font-size:0.78rem; color:var(--text-secondary); margin-top:0.2rem;">
-                ${formatDateTime(h.timestamp)} • Balance: ${formatGHS(h.balance_before)} → <strong>${formatGHS(h.balance_after)}</strong>
+              <div style="font-size:0.74rem; color:var(--text-secondary); margin-top:0.15rem;">
+                ${formatDateTime(h.timestamp)} • Remaining: <strong>${formatGHS(h.balance_after)}</strong>
               </div>
-              <div style="font-size:0.8rem; margin-top:0.2rem;">${escapeHtml(h.note || '')}</div>
             </div>
           `;
         } else {
           const itemsStr = Array.isArray(h.items)
-            ? h.items.map((i) => `${i.qty}x ${i.name} (${formatGHS(i.subtotal)})`).join(', ')
-            : h.note || 'Credit purchase';
+            ? h.items.map((i) => `${i.qty}x ${i.name}`).join(', ')
+            : h.note || 'Credit';
           return `
-            <div style="border-left:4px solid var(--danger); background:var(--danger-bg); padding:0.7rem; border-radius:6px;">
+            <div style="border-left:3px solid var(--danger); background:var(--danger-bg); padding:0.55rem; border-radius:6px; font-size:0.8rem;">
               <div style="display:flex; justify-content:space-between; font-weight:800; color:var(--danger);">
-                <span>📝 Credit Taken ${h.sale_id ? `(#${escapeHtml(h.sale_id)})` : ''}</span>
+                <span>📝 Credit</span>
                 <span>+ ${formatGHS(h.amount_added_to_debt)}</span>
               </div>
-              <div style="font-size:0.78rem; color:var(--text-secondary); margin-top:0.2rem;">
-                ${formatDateTime(h.timestamp)} • Total Items: ${formatGHS(h.total_credit_sale)} (Initial Deposit: ${formatGHS(h.initial_deposit || 0)})
+              <div style="font-size:0.74rem; color:var(--text-secondary); margin-top:0.15rem;">
+                ${formatDateTime(h.timestamp)} • Paid Now: ${formatGHS(h.initial_deposit || 0)}
               </div>
-              <div style="font-size:0.8rem; margin-top:0.25rem; font-weight:600;">Items: ${escapeHtml(itemsStr)}</div>
+              <div style="font-size:0.76rem; margin-top:0.15rem; font-weight:600;">${escapeHtml(itemsStr)}</div>
             </div>
           `;
         }
@@ -1769,7 +1837,7 @@ function openDebtorHistoryModal(debtorId) {
 }
 
 // ============================================================================
-// TAB 4: SALES HISTORY, GROSS PROFIT & CLOSE-DAY WHATSAPP REPORT
+// TAB 4: SALES (PERIOD FILTERS, 4 CARDS & CLOSE DAY ARCHIVE + SYNC PROMPT)
 // ============================================================================
 
 function renderReportsView() {
@@ -1784,24 +1852,48 @@ function renderReportsView() {
   const cashSubEl = document.getElementById('metric-cash-sub');
   const momoEl = document.getElementById('metric-momo');
   const momoSubEl = document.getElementById('metric-momo-sub');
-  const creditEl = document.getElementById('metric-credit');
 
   if (revEl) revEl.textContent = formatGHS(m.totalRevenue);
-  if (salesCountEl) salesCountEl.textContent = `${m.salesCount} sale${m.salesCount === 1 ? '' : 's'} completed`;
+  if (salesCountEl) salesCountEl.textContent = `${m.salesCount} sale${m.salesCount === 1 ? '' : 's'}`;
   if (profitEl) profitEl.textContent = formatGHS(m.grossProfit);
   if (cashEl) cashEl.textContent = formatGHS(m.cashCollected);
-  if (cashSubEl) cashSubEl.textContent = `Sales: ${formatGHS(m.cashFromSales)} + Debt Paid: ${formatGHS(m.cashFromDebtors)}`;
+  if (cashSubEl) cashSubEl.textContent = `Sales: ${formatGHS(m.cashFromSales)} + Debt: ${formatGHS(m.cashFromDebtors)}`;
   if (momoEl) momoEl.textContent = formatGHS(m.momoRecorded);
-  if (momoSubEl) momoSubEl.textContent = `Sales: ${formatGHS(m.momoFromSales)} + Debt Paid: ${formatGHS(m.momoFromDebtors)}`;
-  if (creditEl) creditEl.textContent = formatGHS(m.newCreditGiven);
+  if (momoSubEl) momoSubEl.textContent = `Sales: ${formatGHS(m.momoFromSales)} + Debt: ${formatGHS(m.momoFromDebtors)}`;
+
+  // Render Archived Closed Days Chips
+  const archiveCard = document.getElementById('closed-days-archive-card');
+  const archiveChips = document.getElementById('closed-days-chips-list');
+  if (archiveCard && archiveChips) {
+    if (AppState.closedDays && AppState.closedDays.length > 0) {
+      archiveCard.classList.remove('hidden');
+      archiveChips.innerHTML = AppState.closedDays
+        .slice(0, 14)
+        .map((c) => `
+          <button type="button" class="btn btn-outline btn-sm btn-view-closed-day" data-date="${escapeHtml(c.date_str)}">
+            🧾 ${escapeHtml(c.date_str)} (${formatGHS(c.revenue)})
+          </button>
+        `)
+        .join('');
+
+      archiveChips.querySelectorAll('.btn-view-closed-day').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const rec = AppState.closedDays.find((x) => x.date_str === btn.dataset.date);
+          if (rec) showArchivedCloseDayModal(rec, false);
+        });
+      });
+    } else {
+      archiveCard.classList.add('hidden');
+    }
+  }
 
   const salesTbody = document.getElementById('sales-table-body');
   if (salesTbody) {
     if (report.sales.length === 0) {
       salesTbody.innerHTML = `
         <tr>
-          <td colspan="7" style="text-align:center; padding:1.75rem; color:var(--text-secondary);">
-            No sales recorded for ${escapeHtml(report.dateStr)}.
+          <td colspan="6" style="text-align:center; padding:1.5rem; color:var(--text-secondary);">
+            0 sales for selected period.
           </td>
         </tr>
       `;
@@ -1809,24 +1901,23 @@ function renderReportsView() {
       salesTbody.innerHTML = report.sales
         .map((s) => {
           const itemSummary = (s.items || []).map((i) => `${i.qty}x ${i.name}`).join(', ');
-          const custName = s.customer ? s.customer.name : (s.customer_name || '');
-          let methodBadge = `<span class="badge badge-success">💵 Cash</span>`;
+          const custName = s.customer ? s.customer.name : '';
+          let methodBadge = `<span class="badge badge-success">Cash</span>`;
           if (s.payment_method === 'MoMo') {
-            methodBadge = `<span class="badge badge-info">📱 MoMo</span>`;
+            methodBadge = `<span class="badge badge-info">MoMo</span>`;
           } else if (s.payment_method === 'Credit') {
-            methodBadge = `<span class="badge badge-danger">📒 Credit ${custName ? `(${escapeHtml(custName)})` : ''}</span>`;
+            methodBadge = `<span class="badge badge-danger">Credit ${custName ? `(${escapeHtml(custName)})` : ''}</span>`;
           }
 
           return `
             <tr>
-              <td style="font-weight:800; font-family:monospace;">${escapeHtml(s.id)}</td>
-              <td>${formatShortTime(s.timestamp)}</td>
-              <td style="max-width:250px;">${escapeHtml(itemSummary)}</td>
+              <td style="font-size:0.76rem; color:var(--text-secondary);">${formatShortTime(s.timestamp)}</td>
+              <td style="max-width:220px;">${escapeHtml(itemSummary)}</td>
               <td>${methodBadge}</td>
               <td style="font-weight:800;">${formatGHS(s.total_amount)}</td>
               <td style="font-weight:700; color:var(--success);">${formatGHS(s.total_profit)}</td>
               <td>
-                <button type="button" class="btn btn-outline btn-sm btn-view-receipt" data-id="${escapeHtml(s.id)}">🧾 View</button>
+                <button type="button" class="btn btn-outline btn-sm btn-view-receipt" data-id="${escapeHtml(s.id)}">🧾</button>
               </td>
             </tr>
           `;
@@ -1847,8 +1938,8 @@ function renderReportsView() {
     if (report.repayments.length === 0) {
       repayTbody.innerHTML = `
         <tr>
-          <td colspan="6" style="text-align:center; padding:1.25rem; color:var(--text-secondary);">
-            No debtor repayments recorded on ${escapeHtml(report.dateStr)}.
+          <td colspan="5" style="text-align:center; padding:1.25rem; color:var(--text-secondary);">
+            0 debt repayments for selected period.
           </td>
         </tr>
       `;
@@ -1856,12 +1947,11 @@ function renderReportsView() {
       repayTbody.innerHTML = report.repayments
         .map((r) => `
           <tr>
-            <td>${formatShortTime(r.timestamp)}</td>
-            <td style="font-weight:700;">${escapeHtml(r.debtor_name)} (${escapeHtml(r.debtor_phone)})</td>
+            <td style="font-size:0.76rem;">${formatShortTime(r.timestamp)}</td>
+            <td style="font-weight:700;">${escapeHtml(r.debtor_name)}</td>
             <td><span class="badge ${r.payment_method === 'MoMo' ? 'badge-info' : 'badge-success'}">${escapeHtml(r.payment_method)}</span></td>
             <td style="font-weight:800; color:var(--success);">${formatGHS(r.amount_paid)}</td>
             <td>${formatGHS(r.balance_after)}</td>
-            <td>${escapeHtml(r.note || '')}</td>
           </tr>
         `)
         .join('');
@@ -1869,66 +1959,74 @@ function renderReportsView() {
   }
 }
 
-function buildCloseDaySummaryText() {
-  const report = AppState.dailyReport;
+function formatCloseDayReceiptText(closedRecord) {
   const s = AppState.store || {};
-  if (!report) return '';
-
-  const m = report.metrics;
-  const shopId = s.store_id || s.shop_id || 'HS-0000';
-  const seal = generateDailyAuditSeal(
-    shopId,
-    report.dateStr,
-    m.totalRevenue,
-    m.grossProfit,
-    m.cashCollected,
-    m.momoRecorded,
-    m.newCreditGiven
-  );
-
-  const lowStockItems = AppState.products.filter(
-    (p) => Number(p.stock_qty || 0) <= Number(p.low_stock_threshold ?? p.low_stock_alert ?? 5)
-  );
-  const lowStockLine = lowStockItems.length > 0
-    ? lowStockItems.slice(0, 6).map((p) => `${p.name} (${p.stock_qty})`).join(', ')
-    : 'All items well stocked';
-
   return [
-    `📊 *HOLY STAR POS — CLOSE OF DAY REPORT*`,
-    `🏪 *Shop:* ${s.store_name || 'Holy Star Shop'} (${shopId})`,
-    `📅 *Date:* ${report.dateStr}`,
+    `★ DAILY CLOSE RECEIPT ★`,
+    `Store: ${closedRecord.store_name || s.store_name || 'Holy Star POS'} (${closedRecord.store_id || s.store_id || 'HS-0000'})`,
+    `Date: ${closedRecord.date_str}`,
     `--------------------------------`,
-    `💰 *Total Sales Revenue:* ${formatGHS(m.totalRevenue)} (${m.salesCount} sales)`,
-    `📈 *Actual Gross Profit:* ${formatGHS(m.grossProfit)}`,
+    `Sales Count: ${closedRecord.sales_count}`,
+    `Revenue: ${formatGHS(closedRecord.revenue)}`,
+    `Profit: ${formatGHS(closedRecord.profit)}`,
     `--------------------------------`,
-    `💵 *CASH IN DRAWER:* ${formatGHS(m.cashCollected)}`,
-    `   • Cash Sales: ${formatGHS(m.cashFromSales)}`,
-    `   • Cash Debt Repayments: ${formatGHS(m.cashFromDebtors)}`,
-    `📱 *MOMO RECORDED:* ${formatGHS(m.momoRecorded)}`,
-    `   • MoMo Sales: ${formatGHS(m.momoFromSales)}`,
-    `   • MoMo Debt Repayments: ${formatGHS(m.momoFromDebtors)}`,
-    `📒 *New Credit Given Today:* ${formatGHS(m.newCreditGiven)}`,
+    `Cash Collected: ${formatGHS(closedRecord.cash_collected)}`,
+    `MoMo: ${formatGHS(closedRecord.momo)}`,
+    `Credit Given: ${formatGHS(closedRecord.credit_given)}`,
     `--------------------------------`,
-    `⚠️ *Low Stock Alert (${lowStockItems.length}):* ${lowStockLine}`,
-    `🔐 *Audit Seal:* *${seal}*`
+    `Seal: ${closedRecord.audit_seal}`
   ].join('\n');
 }
 
-function openCloseDayModal() {
+async function handleCloseDayClick() {
+  const targetDate = AppState.selectedSalesPeriod === 'DATE' && AppState.selectedReportDate
+    ? AppState.selectedReportDate
+    : window.HolyStarDB.formatLocalDate();
+
+  try {
+    const dayReport = await window.HolyStarDB.getDailyReport(targetDate);
+    const m = dayReport.metrics;
+    const shopId = AppState.store?.store_id || 'HS-0000';
+    const seal = generateDailyAuditSeal(
+      shopId,
+      targetDate,
+      m.totalRevenue,
+      m.grossProfit,
+      m.cashCollected,
+      m.momoRecorded,
+      m.newCreditGiven
+    );
+
+    const closedRecord = await window.HolyStarDB.archiveClosedDay({
+      dateStr: targetDate,
+      metrics: m,
+      auditSeal: seal
+    });
+
+    await refreshAllData();
+    showArchivedCloseDayModal(closedRecord, true);
+  } catch (err) {
+    showToast('Could not close day: ' + err.message, 'error');
+  }
+}
+
+function showArchivedCloseDayModal(closedRecord, showSyncPrompt = true) {
   const modal = document.getElementById('modal-close-day');
   const preview = document.getElementById('close-day-report-text');
-  const phoneDisplay = document.getElementById('close-day-owner-phone-display');
+  const syncPrompt = document.getElementById('close-day-sync-prompt');
   const waBtn = document.getElementById('btn-close-day-whatsapp');
   const smsBtn = document.getElementById('btn-close-day-sms');
 
   if (!modal || !preview) return;
 
-  const text = buildCloseDaySummaryText();
+  const text = formatCloseDayReceiptText(closedRecord);
   preview.textContent = text;
 
-  const ownerPhone = AppState.store?.owner_phone || '';
-  if (phoneDisplay) phoneDisplay.textContent = ownerPhone || 'Not set';
+  if (syncPrompt) {
+    syncPrompt.classList.toggle('hidden', !showSyncPrompt);
+  }
 
+  const ownerPhone = AppState.store?.owner_phone || '';
   const cleanPhone = cleanPhoneForWhatsApp(ownerPhone);
   if (waBtn) {
     waBtn.href = cleanPhone
@@ -1943,7 +2041,7 @@ function openCloseDayModal() {
 }
 
 // ============================================================================
-// TAB 5: SETTINGS, PREPAID TOKEN ACTIVATION & BACKUP / RESTORE
+// TAB 5: SETTINGS, MANUAL ONLINE SYNC & LICENSE ACTIVATION
 // ============================================================================
 
 async function renderSettingsView() {
@@ -1953,54 +2051,68 @@ async function renderSettingsView() {
   const statusDisplay = document.getElementById('settings-license-status-text');
   const expiryDisplay = document.getElementById('settings-license-expiry-date');
   const planDisplay = document.getElementById('settings-license-plan');
-  const clockStatusDisplay = document.getElementById('settings-clock-status');
+  const lastSyncedEl = document.getElementById('settings-last-synced-text');
 
   if (shopIdDisplay) shopIdDisplay.textContent = s.store_id || s.shop_id || 'HS-0000';
-  if (planDisplay) planDisplay.textContent = s.license_plan || '7-Day Initial Trial';
+  if (planDisplay) planDisplay.textContent = s.license_plan || '7-Day Trial';
   if (expiryDisplay) expiryDisplay.textContent = formatDateTime(s.license_expiry);
+
+  if (lastSyncedEl) {
+    lastSyncedEl.textContent = s.last_synced_at
+      ? `Last synced: ${formatDateTime(s.last_synced_at)}`
+      : 'Not synced online yet';
+  }
 
   if (statusDisplay) {
     if (AppState.licenseStatus.tampered) {
-      statusDisplay.innerHTML = `<span class="badge badge-danger">🔒 Clock Tamper Locked</span>`;
+      statusDisplay.innerHTML = `<span class="badge badge-danger">Clock Locked</span>`;
     } else if (AppState.licenseStatus.expired) {
-      statusDisplay.innerHTML = `<span class="badge badge-danger">🔒 Expired</span>`;
+      statusDisplay.innerHTML = `<span class="badge badge-danger">Expired</span>`;
     } else {
-      statusDisplay.innerHTML = `<span class="badge badge-success">✔ Active (${AppState.licenseStatus.daysLeft} days left)</span>`;
+      statusDisplay.innerHTML = `<span class="badge badge-success">Active (${AppState.licenseStatus.daysLeft}d)</span>`;
     }
   }
 
-  if (clockStatusDisplay) {
-    clockStatusDisplay.innerHTML = AppState.licenseStatus.tampered
-      ? `<span style="color:var(--danger); font-weight:700;">⚠️ Clock Rollback Detected</span>`
-      : `<span style="color:var(--success); font-weight:700;">✔ Verified</span>`;
-  }
-
   const setShopId = document.getElementById('setting-shop-id');
+  const setShopCat = document.getElementById('setting-shop-category');
   const setShopName = document.getElementById('setting-shop-name');
   const setOwnerPhone = document.getElementById('setting-owner-phone');
   const setShopLoc = document.getElementById('setting-shop-location');
 
   if (setShopId) setShopId.value = s.store_id || s.shop_id || 'HS-0000';
+  if (setShopCat) setShopCat.value = s.store_category || 'Provision & Mini-Mart';
   if (setShopName) setShopName.value = s.store_name || s.shop_name || '';
   if (setOwnerPhone) setOwnerPhone.value = s.owner_phone || '';
   if (setShopLoc) setShopLoc.value = s.shop_location || s.location || '';
+}
 
-  const usedTokens = await window.HolyStarDB.getUsedTokens();
-  const usedList = document.getElementById('used-tokens-list');
-  if (usedList) {
-    if (usedTokens.length === 0) {
-      usedList.textContent = 'No tokens used yet.';
-    } else {
-      usedList.innerHTML = usedTokens
-        .map((t) => `<div style="padding:0.2rem 0; border-bottom:1px solid #e2e8f0;"><strong>${escapeHtml(t.token_code || t.token)}</strong> (+${escapeHtml(t.plan_days)}d • #${escapeHtml(t.issue_code)}) — ${escapeHtml(formatDateTime(t.applied_at || t.activated_at))}</div>`)
-        .join('');
-    }
+async function handleSyncDatabaseOnline() {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    alert(OFFLINE_SYNC_ALERT_MSG);
+    showToast(OFFLINE_SYNC_ALERT_MSG, 'error');
+    return false;
   }
 
-  const telemetryPre = document.getElementById('telemetry-json-preview');
-  if (telemetryPre) {
-    const summary = await window.HolyStarDB.getStoreTelemetrySummary(s.store_id);
-    telemetryPre.textContent = JSON.stringify(summary || {}, null, 2);
+  const syncBtn = document.getElementById('btn-sync-online-settings');
+  if (syncBtn) {
+    syncBtn.disabled = true;
+    syncBtn.textContent = '⏳ Syncing Online...';
+  }
+
+  try {
+    await window.HolyStarDB.syncFullStoreOnline(AppState.store?.store_id);
+    await refreshAllData();
+    showToast('Database Updated Online!', 'success');
+    return true;
+  } catch (err) {
+    alert(OFFLINE_SYNC_ALERT_MSG);
+    showToast(OFFLINE_SYNC_ALERT_MSG, 'error');
+    return false;
+  } finally {
+    if (syncBtn) {
+      syncBtn.disabled = false;
+      syncBtn.textContent = '🔄 Sync Database Online';
+    }
   }
 }
 
@@ -2059,7 +2171,7 @@ async function handleActivateToken(e) {
   const selectedPlan = planSelect?.value || 'AUTO';
 
   if (!enteredToken || enteredToken.length !== 8) {
-    showToast('Please enter a valid 8-character alphanumeric Unlock Token.', 'error');
+    showToast('Enter a valid 8-character Unlock Token.', 'error');
     return;
   }
 
@@ -2071,10 +2183,7 @@ async function handleActivateToken(e) {
   }
 
   if (!matchResult) {
-    showToast(
-      `Invalid Unlock Token "${enteredToken}" for Store ID ${shopId}. Verify that your Store ID matches the token generated in Super-Admin.`,
-      'error'
-    );
+    showToast(`Invalid Unlock Token "${enteredToken}" for Store ID ${shopId}.`, 'error');
     return;
   }
 
@@ -2090,12 +2199,11 @@ async function handleActivateToken(e) {
       shopId
     });
 
-    if (issueCodeInput) issueCodeInput.value = '';
     if (tokenInput) tokenInput.value = '';
 
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(shopId, 'license_renewed');
-    showToast(`🎉 Token Verified! Subscription extended by +${matchedDays} days!`, 'success');
+    showToast(`🎉 Subscription extended by +${matchedDays} days!`, 'success');
   } catch (err) {
     showToast('Failed to activate token: ' + err.message, 'error');
   }
@@ -2104,6 +2212,7 @@ async function handleActivateToken(e) {
 async function handleSaveShopSettings(e) {
   e.preventDefault();
   const shopName = String(document.getElementById('setting-shop-name')?.value || '').trim();
+  const shopCategory = String(document.getElementById('setting-shop-category')?.value || 'Retail').trim();
   const ownerPhone = String(document.getElementById('setting-owner-phone')?.value || '').trim();
   const location = String(document.getElementById('setting-shop-location')?.value || '').trim();
 
@@ -2116,6 +2225,7 @@ async function handleSaveShopSettings(e) {
     await window.HolyStarDB.saveSettings({
       store_name: shopName,
       shop_name: shopName,
+      store_category: shopCategory,
       owner_phone: ownerPhone,
       shop_location: location,
       location
@@ -2123,23 +2233,9 @@ async function handleSaveShopSettings(e) {
 
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'settings_updated');
-    showToast('Store profile updated and synced!', 'success');
+    showToast('Store profile saved!', 'success');
   } catch (err) {
     showToast('Failed to save settings: ' + err.message, 'error');
-  }
-}
-
-async function handleSimulateExpiredLicense() {
-  try {
-    await window.HolyStarDB.saveSettings({
-      license_expiry: Date.now() - 60 * 1000,
-      license_plan: 'Expired (Simulated for Testing)'
-    });
-    await refreshAllData();
-    window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'license_expired_sim');
-    showToast('License set to Expired! Generate an Unlock Token in Super-Admin to unlock.', 'info');
-  } catch (err) {
-    showToast('Failed to simulate expiry: ' + err.message, 'error');
   }
 }
 
@@ -2156,61 +2252,63 @@ async function handleExportBackup() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    showToast('Full store JSON backup downloaded!', 'success');
+    showToast('Backup file downloaded!', 'success');
   } catch (err) {
     showToast('Backup export failed: ' + err.message, 'error');
   }
 }
 
-async function handleRestoreBackupClick() {
-  const fileInput = document.getElementById('restore-file-input');
-  const file = fileInput?.files?.[0];
-  if (!file) {
-    showToast('Please select a HolyStarPOS .json backup file first.', 'error');
-    return;
-  }
+async function handleRestoreFileChange(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
 
   try {
     const text = await file.text();
     const json = JSON.parse(text);
     if (!confirm(`Restore backup from ${json.exported_at || 'file'}?`)) {
+      e.target.value = '';
       return;
     }
 
     await window.HolyStarDB.restoreFullBackup(json);
-    fileInput.value = '';
+    e.target.value = '';
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'backup_restored');
-    showToast('Database backup restored successfully!', 'success');
+    showToast('Backup restored!', 'success');
   } catch (err) {
+    e.target.value = '';
     showToast('Restore failed: ' + err.message, 'error');
   }
 }
 
 // ============================================================================
-// UI EVENT BINDINGS (100% NULL-SAFE & MATCHED TO INDEX.HTML)
+// UI EVENT BINDINGS
 // ============================================================================
 
 function bindUIEvents() {
-  // 1. Auth Tabs
+  // 1. Auth Tabs & Cross-Device Login / Register
   document.querySelectorAll('.auth-tab-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       switchAuthTab(btn.dataset.authTab);
     });
   });
 
-  // Saved stores dropdown on login
   document.getElementById('login-saved-store-select')?.addEventListener('change', (e) => {
     const val = e.target.value;
     const idInput = document.getElementById('login-identifier');
     if (val && idInput) idInput.value = val;
   });
 
-  // Login Form Submit
   document.getElementById('form-auth-login')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const identifier = document.getElementById('login-identifier')?.value;
     const password = document.getElementById('login-password')?.value;
+    const submitBtn = document.getElementById('btn-login-submit');
+
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Signing in...';
+    }
 
     try {
       AppState.cart = [];
@@ -2223,14 +2321,17 @@ function bindUIEvents() {
       if (passEl) passEl.value = '';
       hideAuthOverlay();
       await refreshAllData();
-      window.HolyStarDB.syncTelemetryHeartbeat(store.store_id, 'store_login');
-      showToast(`Welcome back to ${store.store_name}!`, 'success');
+      showToast(`Logged into ${store.store_name}!`, 'success');
     } catch (err) {
       showToast(err.message || 'Login failed.', 'error');
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Login';
+      }
     }
   });
 
-  // Register New Store Form Submit (100% Empty Store Guaranteed)
   document.getElementById('form-auth-register')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const store_name = document.getElementById('reg-store-name')?.value;
@@ -2260,14 +2361,13 @@ function bindUIEvents() {
       e.target.reset();
       hideAuthOverlay();
       await refreshAllData();
-      window.HolyStarDB.syncTelemetryHeartbeat(store.store_id, 'store_registered');
-      showToast(`🎉 Store "${store.store_name}" (${store.store_id}) created with 0 items! 7-Day Free Trial active.`, 'success');
+      showToast(`🎉 Store "${store.store_name}" (${store.store_id}) created!`, 'success');
     } catch (err) {
       showToast(err.message || 'Could not create store.', 'error');
     }
   });
 
-  // 2. Log Out / Switch Store Button (Immediate Response)
+  // 2. Log Out / Switch Store Button
   document.getElementById('btn-logout-store')?.addEventListener('click', async () => {
     window.HolyStarDB.logoutSession();
     AppState.session = null;
@@ -2276,18 +2376,14 @@ function bindUIEvents() {
     AppState.products = [];
     AppState.debtors = [];
     await showAuthOverlay();
-    showToast('Logged out of store.', 'info');
+    showToast('Switched / Logged out.', 'info');
   });
 
-  // 3. Main Navigation Tabs
+  // 3. Main 1-Word Navigation Tabs
   document.querySelectorAll('.nav-tab').forEach((tabBtn) => {
     tabBtn.addEventListener('click', () => {
       switchTab(tabBtn.dataset.tab);
     });
-  });
-
-  document.getElementById('license-status-pill')?.addEventListener('click', () => {
-    switchTab('tab-settings');
   });
 
   document.getElementById('btn-banner-unlock')?.addEventListener('click', () => {
@@ -2296,10 +2392,10 @@ function bindUIEvents() {
 
   document.getElementById('btn-recheck-clock')?.addEventListener('click', async () => {
     await verifyClockAndLicenseState();
-    showToast('Device clock re-checked.', 'info');
+    showToast('Clock verified.', 'info');
   });
 
-  // 4. Add Product Modal Triggers (Both POS Tab & Inventory Tab)
+  // 4. Add Product Modal Triggers
   document.getElementById('btn-pos-add-stock')?.addEventListener('click', () => {
     openProductModal(null);
   });
@@ -2334,11 +2430,21 @@ function bindUIEvents() {
   document.getElementById('btn-close-scanner')?.addEventListener('click', stopBarcodeScanner);
   document.getElementById('btn-cancel-scanner')?.addEventListener('click', stopBarcodeScanner);
 
-  // 6. Cart & Payment Method Controls
+  // 6. Cart, Non-Blocking Sale Banner & Smart Cash Shortfall Modal
   document.getElementById('btn-clear-cart')?.addEventListener('click', () => {
     AppState.cart = [];
     renderCart();
     renderPosProductGrid();
+  });
+
+  document.getElementById('btn-banner-view-receipt')?.addEventListener('click', () => {
+    if (AppState.activeSaleReceipt) {
+      showSaleReceiptModal(AppState.activeSaleReceipt);
+    }
+  });
+
+  document.getElementById('btn-banner-dismiss-sale')?.addEventListener('click', () => {
+    document.getElementById('sale-completed-banner')?.classList.add('hidden');
   });
 
   document.querySelectorAll('.pay-method-option').forEach((btn) => {
@@ -2362,6 +2468,22 @@ function bindUIEvents() {
 
   document.getElementById('btn-complete-sale')?.addEventListener('click', handleCompleteSale);
 
+  // Smart Cash Shortfall Modal Actions
+  document.getElementById('btn-shortfall-choose-debtor')?.addEventListener('click', () => {
+    document.getElementById('shortfall-choice-buttons')?.classList.add('hidden');
+    const form = document.getElementById('form-shortfall-debtor');
+    if (form) {
+      form.classList.remove('hidden');
+      document.getElementById('shortfall-cust-name')?.focus();
+    }
+  });
+
+  document.getElementById('btn-shortfall-adjust-items')?.addEventListener('click', () => {
+    document.getElementById('modal-cash-shortfall')?.classList.add('hidden');
+  });
+
+  document.getElementById('form-shortfall-debtor')?.addEventListener('submit', handleShortfallDebtorSubmit);
+
   // 7. Inventory Search, Filter & Product Form
   const invSearch = document.getElementById('inv-search-input');
   if (invSearch) {
@@ -2384,7 +2506,6 @@ function bindUIEvents() {
   document.getElementById('form-product')?.addEventListener('submit', handleSaveProductForm);
   document.getElementById('form-restock')?.addEventListener('submit', handleRestockSubmit);
 
-  // Smart Catalog Autocomplete on `#prod-name`
   const prodNameInput = document.getElementById('prod-name');
   if (prodNameInput) {
     prodNameInput.addEventListener('input', () => {
@@ -2404,18 +2525,17 @@ function bindUIEvents() {
     }
   });
 
-  // Product Photo Upload / Camera Capture
   document.getElementById('prod-image-file')?.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const dataUrl = await compressImageToDataUrl(file, 160);
+      const dataUrl = await compressImageToDataUrl(file, 140);
       AppState.currentProductThumbnail = dataUrl;
       const preview = document.getElementById('prod-image-preview');
       const imgData = document.getElementById('prod-image-data');
       if (preview) preview.src = dataUrl;
       if (imgData) imgData.value = dataUrl;
-      showToast('Product photo attached!', 'success');
+      showToast('Photo attached!', 'success');
     } catch (err) {
       showToast('Failed to process photo.', 'error');
     }
@@ -2454,32 +2574,59 @@ function bindUIEvents() {
     }
   });
 
-  // 9. Sales Reports & Close-Day Modal
+  // 9. Sales Period Filters (`Today` | `Pick Date` | `This Week` | `This Month` | `All-Time`) & `Close Day`
   const reportDateInput = document.getElementById('sales-date-picker');
+
+  document.querySelectorAll('.period-pill-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      document.querySelectorAll('.period-pill-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const period = btn.dataset.period || 'TODAY';
+      AppState.selectedSalesPeriod = period;
+
+      if (reportDateInput) {
+        reportDateInput.classList.toggle('hidden', period !== 'DATE');
+        if (period === 'DATE' && !reportDateInput.value) {
+          reportDateInput.value = window.HolyStarDB.formatLocalDate();
+        }
+      }
+
+      AppState.dailyReport = await window.HolyStarDB.getSalesReportByPeriod(
+        period,
+        reportDateInput?.value || window.HolyStarDB.formatLocalDate()
+      );
+      renderReportsView();
+    });
+  });
+
   if (reportDateInput) {
     reportDateInput.addEventListener('change', async () => {
       AppState.selectedReportDate = reportDateInput.value || window.HolyStarDB.formatLocalDate();
-      AppState.dailyReport = await window.HolyStarDB.getDailyReport(AppState.selectedReportDate);
+      AppState.dailyReport = await window.HolyStarDB.getSalesReportByPeriod('DATE', AppState.selectedReportDate);
       renderReportsView();
     });
   }
 
-  document.getElementById('btn-sales-today')?.addEventListener('click', async () => {
-    AppState.selectedReportDate = window.HolyStarDB.formatLocalDate();
-    if (reportDateInput) reportDateInput.value = AppState.selectedReportDate;
-    AppState.dailyReport = await window.HolyStarDB.getDailyReport(AppState.selectedReportDate);
-    renderReportsView();
+  document.getElementById('btn-open-close-day-modal')?.addEventListener('click', handleCloseDayClick);
+
+  document.getElementById('btn-close-day-sync-now')?.addEventListener('click', async () => {
+    const ok = await handleSyncDatabaseOnline();
+    if (ok) {
+      document.getElementById('close-day-sync-prompt')?.classList.add('hidden');
+    }
   });
 
-  document.getElementById('btn-open-close-day-modal')?.addEventListener('click', openCloseDayModal);
+  document.getElementById('btn-close-day-skip-sync')?.addEventListener('click', () => {
+    document.getElementById('close-day-sync-prompt')?.classList.add('hidden');
+  });
 
   document.getElementById('btn-close-day-copy')?.addEventListener('click', async () => {
-    const text = buildCloseDaySummaryText();
+    const text = document.getElementById('close-day-report-text')?.textContent || '';
     try {
       await navigator.clipboard.writeText(text);
-      showToast('Close-Day report copied to clipboard!', 'success');
+      showToast('Copied!', 'success');
     } catch {
-      showToast('Select and copy the report text above.', 'info');
+      showToast('Select and copy the text above.', 'info');
     }
   });
 
@@ -2487,24 +2634,14 @@ function bindUIEvents() {
     window.print();
   });
 
-  // 10. Settings & License Activation
+  // 10. Settings & Manual Cloud Sync
+  document.getElementById('btn-sync-online-settings')?.addEventListener('click', handleSyncDatabaseOnline);
   document.getElementById('form-activate-token')?.addEventListener('submit', handleActivateToken);
   document.getElementById('form-shop-settings')?.addEventListener('submit', handleSaveShopSettings);
-  document.getElementById('btn-simulate-expiry')?.addEventListener('click', handleSimulateExpiredLicense);
   document.getElementById('btn-export-backup')?.addEventListener('click', handleExportBackup);
-  document.getElementById('btn-restore-backup')?.addEventListener('click', handleRestoreBackupClick);
+  document.getElementById('restore-file-input')?.addEventListener('change', handleRestoreFileChange);
 
-  document.getElementById('btn-copy-telemetry')?.addEventListener('click', async () => {
-    const text = document.getElementById('telemetry-json-preview')?.textContent || '';
-    try {
-      await navigator.clipboard.writeText(text);
-      showToast('Telemetry JSON copied to clipboard!', 'success');
-    } catch {
-      showToast('Could not copy automatically.', 'info');
-    }
-  });
-
-  // 11. Universal Modal Close Buttons (`[data-close]` and `[data-close-modal]`)
+  // 11. Universal Modal Close Buttons
   document.querySelectorAll('[data-close], [data-close-modal]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const target = btn.getAttribute('data-close') || btn.getAttribute('data-close-modal');

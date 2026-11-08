@@ -1,11 +1,11 @@
 /**
- * Holy Star POS - Super-Admin Command Center & Store Sync Heartbeat Engine (super-admin.js)
+ * Holy Star POS - Minimal Visual Super-Admin (super-admin.js v3.0)
  * Features:
- * - Protected Master Login (Default: holystar_admin / HolyStar@2026, customizable)
- * - Top-Level Platform KPI Cards (Stores, Subscriptions, Online vs Offline Sync, Platform Sales/Products)
- * - Privacy-Respecting Store Directory Table with Search & Status Filters
- * - Built-in SHA-256 Token Generator (7, 14, 30, or Custom Days) + 1-Tap WhatsApp Delivery
- * - Real-Time Cloud + Local Cross-Store Telemetry Sync Heartbeat
+ * - Protected Master Login (Default: holystar_admin / HolyStar@2026)
+ * - 4 Top Stat Cards: Stores, Active, Expired, Offline
+ * - Compact Store Rows: Store Name & Phone | Items | Sales (GHS) | Status Pills | 1-Click "+ Token"
+ * - Built-in SHA-256 Token Generator (7, 30, 14 Days) + 1-Tap WhatsApp Delivery
+ * - Cross-Device Cloud Sync (/api/sync + Cloud Relay + Local IndexedDB)
  */
 
 const SA_SECRET = 'HOLY_STAR_SECRET_2026';
@@ -16,7 +16,7 @@ const SA_TOKEN_LOG_KEY = 'holystar_superadmin_token_log_v1';
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
 // ============================================================================
-// PURE-JS FIPS 180-4 SHA-256 & TOKEN GENERATOR (MATCHES POS & ADMIN-KEYGEN)
+// PURE-JS FIPS 180-4 SHA-256 & TOKEN GENERATOR
 // ============================================================================
 
 function saSha256Bytes(asciiStr) {
@@ -148,41 +148,15 @@ function saFormatGHS(amount) {
   return 'GHS ' + num.toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function saFormatDate(tsOrIso) {
+function saFormatShortDate(tsOrIso) {
   if (!tsOrIso) return '-';
   const d = new Date(tsOrIso);
   if (isNaN(d.getTime())) return '-';
-  return d.toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-}
-
-function saFormatShortDate(tsOrIso) {
-  if (!tsOrIso) return 'Never';
-  const d = new Date(tsOrIso);
-  if (isNaN(d.getTime())) return 'Never';
   return d.toLocaleDateString('en-GB', {
     day: '2-digit',
     month: 'short',
     year: 'numeric'
   });
-}
-
-function saTimeAgo(ts) {
-  const num = Number(ts || 0);
-  if (!num) return 'Never';
-  const diffSec = Math.max(0, Math.floor((Date.now() - num) / 1000));
-  if (diffSec < 45) return 'Just now';
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDays = Math.floor(diffHr / 24);
-  return `${diffDays}d ago`;
 }
 
 function saCleanWhatsAppPhone(phone) {
@@ -210,11 +184,11 @@ function saShowToast(message, type = 'info') {
     toast.style.opacity = '0';
     toast.style.transition = 'opacity 0.25s ease';
     setTimeout(() => toast.remove(), 260);
-  }, 3600);
+  }, 3200);
 }
 
 // ============================================================================
-// MASTER CREDENTIALS & SESSION MANAGEMENT
+// MASTER CREDENTIALS & LOGS
 // ============================================================================
 
 function getMasterCredentials() {
@@ -226,9 +200,7 @@ function getMasterCredentials() {
         return parsed;
       }
     }
-  } catch (e) {
-    // Fallback to default
-  }
+  } catch (e) {}
   return {
     username: 'holystar_admin',
     password: 'HolyStar@2026'
@@ -258,25 +230,29 @@ function getTokenLog() {
 function saveTokenLog(list) {
   try {
     localStorage.setItem(SA_TOKEN_LOG_KEY, JSON.stringify(list.slice(0, 100)));
-  } catch (e) {
-    // Ignore storage error
-  }
+  } catch (e) {}
 }
 
 function buildRenewalWhatsAppMessage({ ownerName, storeName, storeId, planDays, token }) {
-  const cleanOwner = String(ownerName || 'Valued Partner').trim() || 'Valued Partner';
+  const cleanOwner = String(ownerName || 'Partner').trim() || 'Partner';
   const cleanStore = String(storeName || 'Your Store').trim() || 'Your Store';
   const cleanId = String(storeId || 'HS-0000').trim().toUpperCase();
   return `Hello ${cleanOwner}, your Holy Star POS subscription for ${cleanStore} (${cleanId}) has been renewed for ${planDays} days. Enter Unlock Token: *${token}* in your POS Settings.`;
 }
 
 // ============================================================================
-// INITIALIZATION & REAL-TIME HEARTBEAT SYNC
+// INITIALIZATION
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', async () => {
-  await window.HolyStarDB.init();
+  // Bind events synchronously first so buttons never freeze
   bindSuperAdminEvents();
+
+  try {
+    await window.HolyStarDB.init();
+  } catch (err) {
+    console.warn('HolyStarDB init warning in Super-Admin:', err);
+  }
 
   const isUnlocked = sessionStorage.getItem(SA_SESSION_KEY) === '1';
   if (isUnlocked) {
@@ -290,15 +266,13 @@ async function unlockDashboard() {
   document.getElementById('sa-login-overlay')?.classList.add('hidden');
 
   await refreshPlatformStores(true);
-  renderTokenLogTable();
   startLiveCloudStream();
 
-  // Auto-refresh relative timestamps and local store changes every 20 seconds
   setInterval(() => {
     if (AdminState.unlocked) {
-      refreshPlatformStores(false);
+      refreshPlatformStores(true);
     }
-  }, 20000);
+  }, 25000);
 }
 
 async function refreshPlatformStores(pullFromCloud = true) {
@@ -310,30 +284,14 @@ async function refreshPlatformStores(pullFromCloud = true) {
       list = await window.HolyStarDB.getAllStoresTelemetry();
     }
 
-    // Normalize & enrich each store's computed status
     const now = Date.now();
     AdminState.stores = (list || []).map((s) => {
       const effectiveExpiryTs = Number(s.admin_expected_expiry_ts || s.license_expiry_ts || Date.parse(s.license_expiry_date) || now);
       const msLeft = effectiveExpiryTs - now;
       const daysRemaining = msLeft > 0 ? Math.ceil(msLeft / (24 * 60 * 60 * 1000)) : 0;
 
-      let computedSubStatus = 'ACTIVE';
-      let badgeLabel = 'Active';
-      const planStr = String(s.license_plan || '').toLowerCase();
-
-      if (s.license_status === 'Clock_Tamper_Locked') {
-        computedSubStatus = 'EXPIRED';
-        badgeLabel = 'Tamper Locked';
-      } else if (msLeft <= 0) {
-        computedSubStatus = 'EXPIRED';
-        badgeLabel = 'Expired';
-      } else if (daysRemaining <= 2) {
-        computedSubStatus = 'EXPIRING_SOON';
-        badgeLabel = 'Expiring Soon';
-      } else if (planStr.includes('trial') || s.license_status === 'Trial_Active') {
-        computedSubStatus = 'ACTIVE';
-        badgeLabel = 'Trial';
-      }
+      const isExpired = s.license_status === 'Clock_Tamper_Locked' || msLeft <= 0;
+      const computedSubStatus = isExpired ? 'EXPIRED' : 'ACTIVE';
 
       const lastSyncedTs = Number(s.last_synced_ts || Date.parse(s.last_synced_at) || 0);
       const isSyncedRecently = lastSyncedTs > 0 && (now - lastSyncedTs) <= TWENTY_FOUR_HOURS_MS && !s.offline_manual_only;
@@ -343,21 +301,19 @@ async function refreshPlatformStores(pullFromCloud = true) {
         effective_expiry_ts: effectiveExpiryTs,
         days_remaining: daysRemaining,
         computed_sub_status: computedSubStatus,
-        sub_badge_label: badgeLabel,
         last_synced_ts: lastSyncedTs,
         is_synced_24h: isSyncedRecently
       };
     });
 
-    // Sort newest activity first
     AdminState.stores.sort((a, b) => (b.last_synced_ts || b.created_at_ts || 0) - (a.last_synced_ts || a.created_at_ts || 0));
 
     renderKpiCards();
-    renderStoresDirectoryTable();
+    renderStoresList();
 
     const refreshEl = document.getElementById('sa-last-refresh-text');
     if (refreshEl) {
-      refreshEl.textContent = `Updated ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+      refreshEl.textContent = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     }
   } catch (err) {
     console.error('Failed to refresh platform stores:', err);
@@ -384,9 +340,9 @@ function startLiveCloudStream() {
         const data = JSON.parse(event.data);
         if (data && data.message) {
           const parsed = JSON.parse(data.message);
-          if (parsed && parsed._type === 'HOLYSTAR_STORE_HEARTBEAT_V1' && parsed.telemetry && parsed.telemetry.store_id) {
+          const t = parsed?.bundle?.telemetry || parsed?.telemetry;
+          if (t && t.store_id) {
             const registry = window.HolyStarDB.getTelemetryRegistryMap();
-            const t = parsed.telemetry;
             registry[t.store_id] = {
               ...(registry[t.store_id] || {}),
               ...t,
@@ -395,91 +351,52 @@ function startLiveCloudStream() {
             };
             window.HolyStarDB.saveTelemetryRegistryMap(registry);
             refreshPlatformStores(false);
-            saShowToast(`📡 Live Sync Heartbeat from ${t.store_name} (${t.store_id})`, 'info');
           }
         }
-      } catch (e) {
-        // Ignore non-JSON ping
-      }
+      } catch (e) {}
     };
-  } catch (err) {
-    // Ignore SSE connection error
-  }
+  } catch (err) {}
 }
 
 // ============================================================================
-// RENDER TOP-LEVEL KPI CARDS & STORE DIRECTORY TABLE
+// RENDER 4 TOP STAT CARDS & COMPACT STORE CARDS
 // ============================================================================
 
 function renderKpiCards() {
   const stores = AdminState.stores;
-  const now = Date.now();
-  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-
   let activeCount = 0;
-  let expiringSoonCount = 0;
   let expiredCount = 0;
-  let synced24hCount = 0;
   let offlineCount = 0;
-  let totalProducts = 0;
-  let totalSalesCount = 0;
-  let totalSalesVolume = 0;
-  let newThisWeek = 0;
-  const categoriesSet = new Set();
 
   for (const s of stores) {
-    if (s.store_category) categoriesSet.add(s.store_category);
-    const createdTs = Number(s.created_at_ts || Date.parse(s.created_at) || 0);
-    if (createdTs && (now - createdTs) <= sevenDaysMs) {
-      newThisWeek++;
-    }
-
     if (s.computed_sub_status === 'EXPIRED') {
       expiredCount++;
-    } else if (s.computed_sub_status === 'EXPIRING_SOON') {
-      expiringSoonCount++;
-      activeCount++;
     } else {
       activeCount++;
     }
-
-    if (s.is_synced_24h) {
-      synced24hCount++;
-    } else {
+    if (!s.is_synced_24h) {
       offlineCount++;
     }
-
-    totalProducts += Number(s.total_products_count || 0);
-    totalSalesCount += Number(s.total_sales_count || 0);
-    totalSalesVolume += Number(s.total_revenue_ghs || 0);
   }
 
-  document.getElementById('kpi-total-stores').textContent = String(stores.length);
-  document.getElementById('kpi-new-stores-week').textContent = `${newThisWeek} registered this week`;
-  document.getElementById('kpi-categories-count').textContent = `${categoriesSet.size} categor${categoriesSet.size === 1 ? 'y' : 'ies'}`;
+  const elStores = document.getElementById('kpi-total-stores');
+  const elActive = document.getElementById('kpi-active-subs');
+  const elExpired = document.getElementById('kpi-expired-subs');
+  const elOffline = document.getElementById('kpi-offline-pill');
 
-  document.getElementById('kpi-active-subs').textContent = `${activeCount} Active`;
-  document.getElementById('kpi-expiring-soon').textContent = `⚠️ ${expiringSoonCount} Expiring Soon (≤2d)`;
-  document.getElementById('kpi-expired-subs').textContent = `🔒 ${expiredCount} Expired / Renewal`;
-
-  document.getElementById('kpi-synced-online').textContent = `${synced24hCount} Synced Online`;
-  document.getElementById('kpi-synced-pill').textContent = `🟢 ${synced24hCount} Synced (<24h)`;
-  document.getElementById('kpi-offline-pill').textContent = `🟠 ${offlineCount} Offline / Unsynced (>24h)`;
-
-  document.getElementById('kpi-platform-sales-vol').textContent = saFormatGHS(totalSalesVolume);
-  document.getElementById('kpi-platform-sales-count').textContent = `🧾 ${totalSalesCount} Total Sales`;
-  document.getElementById('kpi-platform-products-count').textContent = `📦 ${totalProducts} Products Listed`;
+  if (elStores) elStores.textContent = String(stores.length);
+  if (elActive) elActive.textContent = String(activeCount);
+  if (elExpired) elExpired.textContent = String(expiredCount);
+  if (elOffline) elOffline.textContent = String(offlineCount);
 }
 
-function renderStoresDirectoryTable() {
-  const tbody = document.getElementById('sa-stores-table-body');
-  const countBadge = document.getElementById('sa-showing-count-badge');
-  if (!tbody) return;
+function renderStoresList() {
+  const container = document.getElementById('sa-stores-list');
+  if (!container) return;
 
   const query = AdminState.searchQuery.trim().toLowerCase();
   const filtered = AdminState.stores.filter((s) => {
     if (AdminState.filter === 'ACTIVE' && s.computed_sub_status === 'EXPIRED') return false;
-    if (AdminState.filter === 'EXPIRING_SOON' && s.computed_sub_status !== 'EXPIRING_SOON') return false;
     if (AdminState.filter === 'EXPIRED' && s.computed_sub_status !== 'EXPIRED') return false;
     if (AdminState.filter === 'OFFLINE' && s.is_synced_24h) return false;
 
@@ -487,151 +404,83 @@ function renderStoresDirectoryTable() {
     return (
       String(s.store_id || '').toLowerCase().includes(query) ||
       String(s.store_name || '').toLowerCase().includes(query) ||
-      String(s.store_category || '').toLowerCase().includes(query) ||
       String(s.owner_name || '').toLowerCase().includes(query) ||
-      String(s.owner_phone || '').toLowerCase().includes(query) ||
-      String(s.location || '').toLowerCase().includes(query)
+      String(s.owner_phone || '').toLowerCase().includes(query)
     );
   });
 
-  if (countBadge) {
-    countBadge.textContent = `${filtered.length} Store${filtered.length === 1 ? '' : 's'}`;
-  }
-
   if (filtered.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="6" style="text-align:center; padding:2.5rem 1rem; color:var(--text-secondary);">
-          <div style="font-size:1.75rem; margin-bottom:0.4rem;">🏪</div>
-          <div style="font-weight:800; color:var(--text-primary); margin-bottom:0.25rem;">
-            ${AdminState.stores.length === 0 ? 'No Registered Stores Synced Yet' : 'No Stores Match Current Filter'}
-          </div>
-          <div style="font-size:0.8rem;">
-            ${AdminState.stores.length === 0
-              ? 'When a shop registers in Holy Star POS or you click "➕ Add Offline Store", it will appear here immediately.'
-              : 'Try switching filter pills or clearing the search box.'}
-          </div>
-        </td>
-      </tr>
+    container.innerHTML = `
+      <div class="empty-state" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px;">
+        <div class="empty-state-icon">🏪</div>
+        <div class="empty-state-title">${AdminState.stores.length === 0 ? 'No Stores Yet' : 'No Match'}</div>
+      </div>
     `;
     return;
   }
 
-  tbody.innerHTML = filtered
+  container.innerHTML = filtered
     .map((s) => {
-      // Subscription status badge
-      let subBadgeHtml = `<span class="sa-pill sa-pill-green">✔ Active</span>`;
-      if (s.sub_badge_label === 'Trial') {
-        subBadgeHtml = `<span class="sa-pill sa-pill-blue">🎁 Trial</span>`;
-      } else if (s.sub_badge_label === 'Expiring Soon') {
-        subBadgeHtml = `<span class="sa-pill sa-pill-amber">⚠️ Expiring Soon</span>`;
-      } else if (s.computed_sub_status === 'EXPIRED') {
-        subBadgeHtml = `<span class="sa-pill sa-pill-red">🔒 ${saEscapeHtml(s.sub_badge_label)}</span>`;
-      }
+      const subPill = s.computed_sub_status === 'EXPIRED'
+        ? `<span class="sa-badge sa-badge-red">Expired</span>`
+        : `<span class="sa-badge sa-badge-green">Active (${s.days_remaining}d)</span>`;
 
-      // Sync / Connection Status
-      let syncHtml = '';
-      if (s.is_synced_24h) {
-        syncHtml = `
-          <div>
-            <span class="sa-pill sa-pill-green">
-              <span class="sync-dot online"></span> Synced ${saEscapeHtml(saTimeAgo(s.last_synced_ts))}
-            </span>
-            <div style="font-size:0.72rem; color:var(--text-secondary); margin-top:0.22rem;">
-              ${saEscapeHtml(saFormatDate(s.last_synced_ts))}
-            </div>
-          </div>
-        `;
-      } else {
-        const sinceDate = s.last_synced_ts ? saFormatShortDate(s.last_synced_ts) : saFormatShortDate(s.created_at);
-        syncHtml = `
-          <div>
-            <span class="sa-pill sa-pill-amber">
-              <span class="sync-dot offline"></span> Offline / Unsynced since ${saEscapeHtml(sinceDate)}
-            </span>
-            <div style="font-size:0.72rem; color:#b45309; margin-top:0.22rem;">
-              Running offline on shop device
-            </div>
-          </div>
-        `;
-      }
+      const syncPill = s.is_synced_24h
+        ? `<span class="sa-badge sa-badge-green">🟢 Synced</span>`
+        : `<span class="sa-badge sa-badge-amber">🟠 Offline</span>`;
 
       const waDigits = saCleanWhatsAppPhone(s.owner_phone);
-      const waGreet = encodeURIComponent(`Hello ${s.owner_name || ''}, checking in from Holy Star POS Support regarding ${s.store_name} (${s.store_id}).`);
-      const waLink = waDigits ? `https://wa.me/${waDigits}?text=${waGreet}` : '#';
+      const waHref = waDigits
+        ? `https://wa.me/${waDigits}?text=${encodeURIComponent(`Hello ${s.owner_name || ''}, checking in from Holy Star POS regarding ${s.store_name} (${s.store_id}).`)}`
+        : '#';
 
       return `
-        <tr>
-          <td>
-            <div style="display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap;">
-              <span style="font-family:monospace; font-weight:900; font-size:0.86rem; background:#0f172a; color:#fbbf24; padding:0.15rem 0.45rem; border-radius:6px;">
-                ${saEscapeHtml(s.store_id)}
-              </span>
-              <span style="font-weight:800; color:var(--text-primary); font-size:0.92rem;">
-                ${saEscapeHtml(s.store_name)}
-              </span>
-            </div>
-            <div style="font-size:0.75rem; color:var(--text-secondary); margin-top:0.2rem;">
-              🏷️ ${saEscapeHtml(s.store_category || 'Retail')} ${s.location ? `• 📍 ${saEscapeHtml(s.location)}` : ''}
-            </div>
-          </td>
-
-          <td>
-            <div style="font-weight:700; color:var(--text-primary);">${saEscapeHtml(s.owner_name || '-')}</div>
-            <div style="display:flex; align-items:center; gap:0.4rem; margin-top:0.2rem; flex-wrap:wrap;">
-              <span style="font-size:0.78rem; color:var(--text-secondary);">📞 ${saEscapeHtml(s.owner_phone || '-')}</span>
-              ${
-                waDigits
-                  ? `<a href="${waLink}" target="_blank" rel="noopener noreferrer" class="sa-pill sa-pill-green" style="text-decoration:none; font-size:0.68rem;">💬 WhatsApp</a>`
-                  : ''
-              }
-            </div>
-          </td>
-
-          <td>
-            <div style="font-size:0.8rem; font-weight:700; color:var(--text-primary);">
-              📦 <strong>${Number(s.total_products_count || 0)} items</strong>
-              <span style="color:var(--text-secondary); font-weight:600;">(${Number(s.total_stock_units || 0)} units)</span>
-            </div>
-            <div style="font-size:0.8rem; font-weight:800; color:#1e3a8a; margin-top:0.2rem;">
-              🧾 ${Number(s.total_sales_count || 0)} sales | ${saFormatGHS(s.total_revenue_ghs || 0)}
-            </div>
-          </td>
-
-          <td>
+        <div class="sa-store-row">
+          <!-- 1. Store Name & Phone -->
+          <div>
             <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">
-              ${subBadgeHtml}
-              <strong style="font-size:0.78rem; color:${s.days_remaining <= 2 ? '#b91c1c' : '#0f172a'};">
-                ${s.days_remaining}d left
-              </strong>
+              <span class="sa-store-id-tag">${saEscapeHtml(s.store_id)}</span>
+              <strong style="font-size:0.9rem; color:#0f172a;">${saEscapeHtml(s.store_name)}</strong>
             </div>
-            <div style="font-size:0.73rem; color:var(--text-secondary); margin-top:0.22rem;">
-              Expires: <strong>${saEscapeHtml(saFormatDate(s.effective_expiry_ts))}</strong>
+            <div style="font-size:0.75rem; color:#64748b; margin-top:0.2rem; display:flex; align-items:center; gap:0.45rem;">
+              <span>📞 ${saEscapeHtml(s.owner_phone || '-')}</span>
+              ${waDigits ? `<a href="${waHref}" target="_blank" rel="noopener" style="color:#15803d; font-weight:800; text-decoration:none;">💬 Chat</a>` : ''}
             </div>
-          </td>
+          </div>
 
-          <td>${syncHtml}</td>
+          <!-- 2. Items | Sales (GHS) -->
+          <div class="sa-store-metrics" style="font-size:0.8rem; font-weight:700; color:#334155;">
+            <span>📦 ${Number(s.total_products_count || 0)} items</span>
+            <span style="color:#cbd5e1; margin:0 0.3rem;">|</span>
+            <strong style="color:#0f172a;">${saFormatGHS(s.total_revenue_ghs || 0)}</strong>
+          </div>
 
-          <td>
-            <button type="button" class="btn btn-primary btn-sm btn-sa-row-token" data-store-id="${saEscapeHtml(s.store_id)}" style="background:#d97706; border-color:#d97706; font-weight:800;">
-              🔑 Generate Token
+          <!-- 3. Status Pill: Active (X days) or Expired | Synced or Offline -->
+          <div class="sa-store-badges" style="display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">
+            ${subPill}
+            ${syncPill}
+          </div>
+
+          <!-- 4. 1-Click + Token Button -->
+          <div style="text-align:right;">
+            <button type="button" class="btn btn-primary btn-sm btn-sa-row-token" data-store-id="${saEscapeHtml(s.store_id)}" style="background:#f59e0b; border-color:#f59e0b; color:#0f172a; font-weight:800;">
+              + Token
             </button>
-          </td>
-        </tr>
+          </div>
+        </div>
       `;
     })
     .join('');
 
-  tbody.querySelectorAll('.btn-sa-row-token').forEach((btn) => {
+  container.querySelectorAll('.btn-sa-row-token').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const storeId = btn.dataset.storeId;
-      selectStoreForTokenGeneration(storeId);
+      openTokenModalForStore(btn.dataset.storeId);
     });
   });
 }
 
 // ============================================================================
-// TOKEN GENERATOR & 1-TAP WHATSAPP DELIVERY
+// 1-CLICK "+ TOKEN" MODAL & WHATSAPP DELIVERY
 // ============================================================================
 
 function getNextIssueSerialForStore(storeId) {
@@ -641,9 +490,8 @@ function getNextIssueSerialForStore(storeId) {
   return String(nextNum).padStart(3, '0');
 }
 
-function selectStoreForTokenGeneration(storeId) {
+function openTokenModalForStore(storeId) {
   const store = AdminState.stores.find((s) => s.store_id === storeId);
-  if (!store) return;
 
   const idInput = document.getElementById('sa-gen-store-id');
   const issueInput = document.getElementById('sa-gen-issue-code');
@@ -651,19 +499,29 @@ function selectStoreForTokenGeneration(storeId) {
   const ownerInput = document.getElementById('sa-gen-owner-name');
   const phoneInput = document.getElementById('sa-gen-owner-phone');
 
-  if (idInput) idInput.value = store.store_id;
-  if (issueInput) issueInput.value = getNextIssueSerialForStore(store.store_id);
-  if (nameInput) nameInput.value = store.store_name || '';
-  if (ownerInput) ownerInput.value = store.owner_name || '';
-  if (phoneInput) phoneInput.value = store.owner_phone || '';
-
-  const card = document.getElementById('sa-keygen-card');
-  if (card) {
-    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  if (store) {
+    if (idInput) idInput.value = store.store_id;
+    if (issueInput) issueInput.value = getNextIssueSerialForStore(store.store_id);
+    if (nameInput) nameInput.value = store.store_name || '';
+    if (ownerInput) ownerInput.value = store.owner_name || '';
+    if (phoneInput) phoneInput.value = store.owner_phone || '';
+  } else {
+    if (idInput) idInput.value = '';
+    if (issueInput) issueInput.value = '001';
+    if (nameInput) nameInput.value = '';
+    if (ownerInput) ownerInput.value = '';
+    if (phoneInput) phoneInput.value = '';
   }
 
-  // Immediately generate token with current plan selection for 1-click speed
-  triggerTokenGeneration();
+  document.getElementById('modal-sa-token')?.classList.remove('hidden');
+
+  if (store) {
+    triggerTokenGeneration();
+  } else {
+    document.getElementById('sa-out-store-label').textContent = 'Enter Store ID';
+    document.getElementById('sa-out-token-code').textContent = '--------';
+    document.getElementById('sa-out-expiry-preview').textContent = '';
+  }
 }
 
 async function triggerTokenGeneration() {
@@ -672,22 +530,16 @@ async function triggerTokenGeneration() {
   const storeName = String(document.getElementById('sa-gen-store-name')?.value || '').trim();
   const ownerName = String(document.getElementById('sa-gen-owner-name')?.value || '').trim();
   const ownerPhone = String(document.getElementById('sa-gen-owner-phone')?.value || '').trim();
-  const planSelect = document.getElementById('sa-gen-plan-select')?.value || '30';
-  const customDaysVal = Number(document.getElementById('sa-gen-custom-days')?.value || 30);
+  const planDays = Number(document.getElementById('sa-gen-plan-select')?.value || 30);
 
   if (!storeId) {
-    saShowToast('Please enter a Target Store ID (e.g. HS-4821).', 'error');
+    saShowToast('Enter Store ID (e.g. HS-4821)', 'error');
     return;
   }
-
-  const planDays = planSelect === 'CUSTOM'
-    ? Math.max(1, Math.min(365, Math.floor(customDaysVal || 30)))
-    : Number(planSelect);
 
   const token = generateSuperAdminToken(storeId, planDays, issueCode);
   const now = Date.now();
 
-  // Update expected expiry date in Admin registry & view
   const registry = window.HolyStarDB.getTelemetryRegistryMap();
   const existing = registry[storeId] || {
     store_id: storeId,
@@ -700,8 +552,7 @@ async function triggerTokenGeneration() {
     total_products_count: 0,
     total_stock_units: 0,
     total_sales_count: 0,
-    total_revenue_ghs: 0,
-    offline_manual_only: true
+    total_revenue_ghs: 0
   };
 
   const currentExpiry = Math.max(now, Number(existing.admin_expected_expiry_ts || existing.license_expiry_ts || now));
@@ -712,12 +563,13 @@ async function triggerTokenGeneration() {
     store_name: storeName || existing.store_name || `Store ${storeId}`,
     owner_name: ownerName || existing.owner_name || 'Store Owner',
     owner_phone: ownerPhone || existing.owner_phone || '',
-    license_plan: `${planDays}-Day Prepaid Pass`,
+    license_plan: `${planDays}-Day Pass`,
     license_status: 'Active',
     admin_expected_expiry_ts: newExpectedExpiryTs,
     admin_expected_expiry_date: new Date(newExpectedExpiryTs).toISOString()
   };
   window.HolyStarDB.saveTelemetryRegistryMap(registry);
+  window.HolyStarDB.pushTelemetryToCloud(registry[storeId]).catch(() => {});
 
   const resolvedStoreName = registry[storeId].store_name;
   const resolvedOwnerName = registry[storeId].owner_name;
@@ -745,78 +597,25 @@ async function triggerTokenGeneration() {
     created_at: now
   };
 
-  // Log in Admin Token History
   const log = getTokenLog();
   log.unshift(AdminState.lastGenerated);
   saveTokenLog(log);
 
-  // Render output box
-  const panel = document.getElementById('sa-generated-token-panel');
   document.getElementById('sa-out-store-label').textContent = `${resolvedStoreName} (${storeId})`;
   document.getElementById('sa-out-days-label').textContent = String(planDays);
   document.getElementById('sa-out-token-code').textContent = token;
-  document.getElementById('sa-out-expiry-preview').textContent = `Expected Expiry: ${saFormatDate(newExpectedExpiryTs)} (Issue #${issueCode})`;
-  if (panel) panel.classList.remove('hidden');
+  document.getElementById('sa-out-expiry-preview').textContent = `Expires ${saFormatShortDate(newExpectedExpiryTs)} (#${issueCode})`;
 
-  renderTokenLogTable();
   await refreshPlatformStores(false);
-  saShowToast(`Generated ${planDays}-Day Token ${token} for ${storeId}!`, 'success');
-}
-
-function renderTokenLogTable() {
-  const tbody = document.getElementById('sa-token-history-tbody');
-  if (!tbody) return;
-
-  const log = getTokenLog();
-  if (log.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="4" style="text-align:center; padding:1.25rem; color:var(--text-secondary); font-size:0.78rem;">
-          No tokens generated yet.
-        </td>
-      </tr>
-    `;
-    return;
-  }
-
-  tbody.innerHTML = log
-    .slice(0, 25)
-    .map((item) => {
-      return `
-        <tr>
-          <td>
-            <div style="font-weight:800; font-family:monospace; font-size:0.8rem;">${saEscapeHtml(item.store_id)}</div>
-            <div style="font-size:0.7rem; color:var(--text-secondary);">${saEscapeHtml(item.store_name || '')}</div>
-          </td>
-          <td>
-            <span class="sa-pill sa-pill-blue">+${saEscapeHtml(item.plan_days)}d</span>
-            <div style="font-size:0.68rem; color:var(--text-muted);">#${saEscapeHtml(item.issue_code)}</div>
-          </td>
-          <td style="font-family:monospace; font-weight:900; font-size:0.9rem; color:#d97706;">
-            ${saEscapeHtml(item.token)}
-          </td>
-          <td>
-            <button type="button" class="btn btn-whatsapp btn-sm btn-sa-log-wa" data-token-id="${saEscapeHtml(item.id)}" style="padding:0.25rem 0.5rem; font-size:0.72rem;">
-              💬 Send
-            </button>
-          </td>
-        </tr>
-      `;
-    })
-    .join('');
-
-  tbody.querySelectorAll('.btn-sa-log-wa').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const entry = getTokenLog().find((x) => x.id === btn.dataset.tokenId);
-      if (entry) {
-        sendTokenViaWhatsApp(entry);
-      }
-    });
-  });
 }
 
 function sendTokenViaWhatsApp(tokenEntry) {
+  if (!tokenEntry || !tokenEntry.token) {
+    triggerTokenGeneration();
+    tokenEntry = AdminState.lastGenerated;
+  }
   if (!tokenEntry) return;
+
   const msg = tokenEntry.wa_message || buildRenewalWhatsAppMessage({
     ownerName: tokenEntry.owner_name,
     storeName: tokenEntry.store_name,
@@ -825,7 +624,7 @@ function sendTokenViaWhatsApp(tokenEntry) {
     token: tokenEntry.token
   });
 
-  const cleanPhone = saCleanWhatsAppPhone(tokenEntry.owner_phone);
+  const cleanPhone = saCleanWhatsAppPhone(tokenEntry.owner_phone || document.getElementById('sa-gen-owner-phone')?.value);
   const url = cleanPhone
     ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`
     : `https://wa.me/?text=${encodeURIComponent(msg)}`;
@@ -848,56 +647,65 @@ function bindSuperAdminEvents() {
       const passEl = document.getElementById('sa-login-password');
       if (passEl) passEl.value = '';
       await unlockDashboard();
-      saShowToast('Welcome to Holy Star Super-Admin Command Center!', 'success');
+      saShowToast('Unlocked', 'success');
     } else {
-      saShowToast('Invalid Super-Admin username or password.', 'error');
+      saShowToast('Invalid credentials', 'error');
     }
   });
 
-  // 2. Lock / Logout Button
+  // 2. Lock Button
   document.getElementById('btn-sa-logout')?.addEventListener('click', () => {
     AdminState.unlocked = false;
     sessionStorage.removeItem(SA_SESSION_KEY);
     document.getElementById('sa-login-overlay')?.classList.remove('hidden');
-    saShowToast('Super-Admin Command Center locked.', 'info');
   });
 
-  // 3. Sync Now Button
+  // 3. Sync Button
   document.getElementById('btn-sa-sync-now')?.addEventListener('click', async () => {
-    saShowToast('Syncing store telemetry across local & cloud channels...', 'info');
+    saShowToast('Syncing stores...', 'info');
     await refreshPlatformStores(true);
-    saShowToast('All registered stores synced!', 'success');
+    saShowToast('Stores synced!', 'success');
   });
 
-  // 4. Filter Buttons
-  document.querySelectorAll('.sa-filter-btn').forEach((btn) => {
+  // 4. Open Blank Token Modal
+  document.getElementById('btn-sa-open-token-modal-blank')?.addEventListener('click', () => {
+    openTokenModalForStore('');
+  });
+
+  // 5. Filter Pills
+  document.querySelectorAll('.sa-filter-pill').forEach((btn) => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.sa-filter-btn').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('.sa-filter-pill').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       AdminState.filter = btn.dataset.saFilter || 'ALL';
-      renderStoresDirectoryTable();
+      renderStoresList();
     });
   });
 
-  // 5. Search Input
+  // 6. Search Input
   const searchIn = document.getElementById('sa-store-search-input');
   if (searchIn) {
     searchIn.addEventListener('input', () => {
       AdminState.searchQuery = searchIn.value;
-      renderStoresDirectoryTable();
+      renderStoresList();
     });
   }
 
-  // 6. Plan Selector Custom Days Toggle
-  const planSelect = document.getElementById('sa-gen-plan-select');
-  const customWrap = document.getElementById('sa-custom-days-wrap');
-  if (planSelect && customWrap) {
-    planSelect.addEventListener('change', () => {
-      customWrap.classList.toggle('hidden', planSelect.value !== 'CUSTOM');
+  // 7. Plan Duration Buttons (7, 30, 14 Days) inside + Token Modal
+  document.querySelectorAll('.sa-plan-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.sa-plan-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const days = btn.getAttribute('data-plan-days') || '30';
+      const hiddenSelect = document.getElementById('sa-gen-plan-select');
+      if (hiddenSelect) hiddenSelect.value = days;
+      if (document.getElementById('sa-gen-store-id')?.value.trim()) {
+        triggerTokenGeneration();
+      }
     });
-  }
+  });
 
-  // Auto-fill store details if admin types an existing Store ID manually
+  // Auto-fill when Store ID is typed
   document.getElementById('sa-gen-store-id')?.addEventListener('input', (e) => {
     const typedId = String(e.target.value || '').trim().toUpperCase();
     const match = AdminState.stores.find((s) => s.store_id === typedId);
@@ -906,49 +714,35 @@ function bindSuperAdminEvents() {
       document.getElementById('sa-gen-owner-name').value = match.owner_name || '';
       document.getElementById('sa-gen-owner-phone').value = match.owner_phone || '';
       document.getElementById('sa-gen-issue-code').value = getNextIssueSerialForStore(typedId);
+      triggerTokenGeneration();
     }
   });
 
-  // 7. Token Generator Form Submit
+  // Token Form Submit
   document.getElementById('form-sa-generate-token')?.addEventListener('submit', (e) => {
     e.preventDefault();
     triggerTokenGeneration();
   });
 
-  // 8. 1-Tap WhatsApp & Copy Buttons
+  // Send to WhatsApp & Copy Token
   document.getElementById('btn-sa-send-token-whatsapp')?.addEventListener('click', () => {
-    if (AdminState.lastGenerated) {
-      sendTokenViaWhatsApp(AdminState.lastGenerated);
-    }
+    sendTokenViaWhatsApp(AdminState.lastGenerated);
   });
 
   document.getElementById('btn-sa-copy-token')?.addEventListener('click', async () => {
+    if (!AdminState.lastGenerated) {
+      await triggerTokenGeneration();
+    }
     if (!AdminState.lastGenerated) return;
     try {
       await navigator.clipboard.writeText(AdminState.lastGenerated.token);
-      saShowToast(`Token ${AdminState.lastGenerated.token} copied!`, 'success');
+      saShowToast(`Copied ${AdminState.lastGenerated.token}`, 'success');
     } catch {
-      saShowToast('Select and copy the token above.', 'info');
+      saShowToast('Select and copy token above', 'info');
     }
   });
 
-  document.getElementById('btn-sa-copy-wa-msg')?.addEventListener('click', async () => {
-    if (!AdminState.lastGenerated) return;
-    try {
-      await navigator.clipboard.writeText(AdminState.lastGenerated.wa_message);
-      saShowToast('Full WhatsApp renewal message copied!', 'success');
-    } catch {
-      saShowToast('Could not copy automatically.', 'info');
-    }
-  });
-
-  document.getElementById('btn-sa-clear-token-log')?.addEventListener('click', () => {
-    if (!confirm('Clear issued token history log?')) return;
-    saveTokenLog([]);
-    renderTokenLogTable();
-  });
-
-  // 9. Add Offline Store Modal
+  // 8. Add Offline Store Modal
   document.getElementById('btn-sa-open-manual-store')?.addEventListener('click', () => {
     document.getElementById('modal-sa-manual-store')?.classList.remove('hidden');
   });
@@ -978,7 +772,7 @@ function bindSuperAdminEvents() {
       total_stock_units: registry[storeId]?.total_stock_units || 0,
       total_sales_count: registry[storeId]?.total_sales_count || 0,
       total_revenue_ghs: registry[storeId]?.total_revenue_ghs || 0,
-      license_plan: '7-Day Free Trial (Offline Registered)',
+      license_plan: '7-Day Free Trial',
       license_status: 'Trial_Active',
       license_expiry_ts: now + 7 * 24 * 60 * 60 * 1000,
       license_expiry_date: new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -991,20 +785,14 @@ function bindSuperAdminEvents() {
     document.getElementById('modal-sa-manual-store')?.classList.add('hidden');
     e.target.reset();
     await refreshPlatformStores(false);
-    selectStoreForTokenGeneration(storeId);
-    saShowToast(`Offline store "${storeName}" (${storeId}) added to directory!`, 'success');
+    openTokenModalForStore(storeId);
   });
 
-  // 10. Admin Settings Modal
+  // 9. Admin Settings Modal
   document.getElementById('btn-sa-open-settings')?.addEventListener('click', () => {
     const creds = getMasterCredentials();
-    const cloudCfg = window.HolyStarDB.getCloudSyncConfig();
-
     document.getElementById('sa-set-username').value = creds.username;
     document.getElementById('sa-set-password').value = creds.password;
-    document.getElementById('sa-set-cloud-topic').value = cloudCfg.topic;
-    document.getElementById('sa-set-custom-webhook').value = cloudCfg.customUrl;
-
     document.getElementById('modal-sa-settings')?.classList.remove('hidden');
   });
 
@@ -1012,27 +800,13 @@ function bindSuperAdminEvents() {
     e.preventDefault();
     const newUser = String(document.getElementById('sa-set-username')?.value || '').trim();
     const newPass = String(document.getElementById('sa-set-password')?.value || '');
-    if (!newUser || !newPass) {
-      saShowToast('Username and password cannot be empty.', 'error');
-      return;
-    }
+    if (!newUser || !newPass) return;
     saveMasterCredentials(newUser, newPass);
-    saShowToast('Master Super-Admin credentials updated!', 'success');
+    document.getElementById('modal-sa-settings')?.classList.add('hidden');
+    saShowToast('Credentials saved!', 'success');
   });
 
-  document.getElementById('form-sa-cloud-config')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const topic = String(document.getElementById('sa-set-cloud-topic')?.value || '').trim();
-    const customUrl = String(document.getElementById('sa-set-custom-webhook')?.value || '').trim();
-    localStorage.setItem('holystar_cloud_sync_topic', topic || 'holystar_pos_telemetry_sync_2026_v1');
-    localStorage.setItem('holystar_cloud_sync_custom_url', customUrl);
-
-    startLiveCloudStream();
-    await refreshPlatformStores(true);
-    saShowToast('Cloud Sync Heartbeat channel updated!', 'success');
-  });
-
-  // Export & Import Directory Snapshot
+  // Export & Import Directory JSON
   document.getElementById('btn-sa-export-registry')?.addEventListener('click', () => {
     const payload = {
       app: 'HolyStarPOS_SuperAdmin_Directory',
@@ -1044,12 +818,11 @@ function bindSuperAdminEvents() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `HolyStar_SuperAdmin_Directory_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `HolyStar_Stores_${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    saShowToast('Store directory JSON exported!', 'success');
   });
 
   document.getElementById('input-sa-import-registry')?.addEventListener('change', async (e) => {
@@ -1059,22 +832,19 @@ function bindSuperAdminEvents() {
       const text = await file.text();
       const parsed = JSON.parse(text);
       const registry = window.HolyStarDB.getTelemetryRegistryMap();
-
-      if (parsed && parsed.telemetry_summary && parsed.telemetry_summary.store_id) {
-        // Single store backup file imported
+      if (parsed?.telemetry_summary?.store_id) {
         const t = parsed.telemetry_summary;
         registry[t.store_id] = { ...(registry[t.store_id] || {}), ...t };
-      } else if (parsed && parsed.stores && typeof parsed.stores === 'object') {
+      } else if (parsed?.stores && typeof parsed.stores === 'object') {
         Object.assign(registry, parsed.stores);
       }
-
       window.HolyStarDB.saveTelemetryRegistryMap(registry);
       e.target.value = '';
       await refreshPlatformStores(false);
-      saShowToast('Store telemetry imported into Super-Admin directory!', 'success');
-    } catch (err) {
+      saShowToast('Stores imported!', 'success');
+    } catch {
       e.target.value = '';
-      saShowToast('Invalid JSON file.', 'error');
+      saShowToast('Invalid JSON file', 'error');
     }
   });
 
@@ -1086,4 +856,3 @@ function bindSuperAdminEvents() {
     });
   });
 }
-

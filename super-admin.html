@@ -4,650 +4,561 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#0f172a" />
-  <meta name="description" content="Holy Star POS — Super-Admin Command Center, Store Directory, Telemetry Sync & Subscription Token Engine" />
-  <title>Holy Star POS — Super-Admin Command Center</title>
+  <meta name="description" content="Holy Star POS — Super-Admin" />
+  <title>Holy Star — Admin</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=3.0" />
   <style>
-    :root {
-      --sa-bg: #0b1120;
-      --sa-surface: #111827;
-      --sa-card: #1e293b;
-      --sa-border: #334155;
-      --sa-text: #f8fafc;
-      --sa-muted: #94a3b8;
-      --sa-gold: #f59e0b;
-      --sa-gold-bg: rgba(245, 158, 11, 0.14);
-      --sa-green: #10b981;
-      --sa-green-bg: rgba(16, 185, 129, 0.14);
-      --sa-red: #ef4444;
-      --sa-red-bg: rgba(239, 68, 68, 0.15);
-      --sa-blue: #3b82f6;
-      --sa-blue-bg: rgba(59, 130, 246, 0.15);
-    }
-
-    body.super-admin-body {
+    body.sa-body {
       background: #f1f5f9;
       color: #0f172a;
       min-height: 100vh;
     }
 
-    /* Super-Admin Top Header */
     .sa-header {
-      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
-      color: #fff;
-      padding: 0.85rem 1.25rem;
+      background: #0f172a;
+      color: #ffffff;
+      height: 56px;
+      padding: 0 1rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 0.75rem;
-      flex-wrap: wrap;
-      border-bottom: 2px solid #f59e0b;
+      border-bottom: 1px solid #1e293b;
       position: sticky;
       top: 0;
       z-index: 90;
-      box-shadow: 0 4px 16px rgba(15, 23, 42, 0.25);
     }
 
     .sa-brand {
       display: flex;
       align-items: center;
-      gap: 0.75rem;
+      gap: 0.55rem;
+      font-weight: 800;
+      font-size: 0.98rem;
     }
 
-    .sa-logo-shield {
-      width: 42px;
-      height: 42px;
-      border-radius: 11px;
+    .sa-shield {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
       background: linear-gradient(135deg, #f59e0b, #d97706);
       color: #0f172a;
-      font-weight: 900;
-      font-size: 1.3rem;
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 3px 10px rgba(245, 158, 11, 0.35);
+      font-size: 1rem;
     }
 
-    .sa-container {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 1.2rem;
-    }
-
-    /* Platform KPI Grid */
-    .sa-kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 1rem;
-      margin-bottom: 1.35rem;
-    }
-
-    .sa-kpi-card {
-      background: #ffffff;
-      border-radius: 14px;
-      padding: 1.1rem 1.2rem;
-      border: 1px solid #e2e8f0;
-      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+    .sa-actions {
       display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      position: relative;
-      overflow: hidden;
+      align-items: center;
+      gap: 0.4rem;
     }
 
-    .sa-kpi-card::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 5px;
-      height: 100%;
-      background: #1e3a8a;
-    }
-
-    .sa-kpi-card.kpi-subs::before { background: #10b981; }
-    .sa-kpi-card.kpi-sync::before { background: #3b82f6; }
-    .sa-kpi-card.kpi-activity::before { background: #f59e0b; }
-
-    .sa-kpi-title {
+    .sa-icon-btn {
+      background: #1e293b;
+      color: #f8fafc;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 0.38rem 0.65rem;
       font-size: 0.76rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+
+    .sa-icon-btn:hover {
+      background: #334155;
+    }
+
+    .sa-icon-btn.primary {
+      background: #4f46e5;
+      border-color: #4f46e5;
+      color: #fff;
+    }
+
+    .sa-icon-btn.gold {
+      background: #f59e0b;
+      border-color: #f59e0b;
+      color: #0f172a;
+    }
+
+    .sa-main {
+      max-width: 1020px;
+      margin: 0 auto;
+      padding: 1rem;
+    }
+
+    /* 4 Simple Top Stat Cards */
+    .sa-stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.65rem;
+      margin-bottom: 1rem;
+    }
+
+    @media (max-width: 640px) {
+      .sa-stats-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    .sa-stat-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 0.85rem 1rem;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .sa-stat-label {
+      font-size: 0.72rem;
       font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: #64748b;
-      margin-bottom: 0.35rem;
     }
 
-    .sa-kpi-main {
-      font-size: 1.75rem;
+    .sa-stat-val {
+      font-size: 1.5rem;
       font-weight: 900;
+      line-height: 1.1;
+      margin-top: 0.15rem;
       color: #0f172a;
-      line-height: 1.15;
-      margin-bottom: 0.55rem;
     }
 
-    .sa-kpi-breakdown {
+    .sa-stat-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
       display: flex;
-      flex-wrap: wrap;
-      gap: 0.4rem;
-      font-size: 0.76rem;
-      font-weight: 700;
-    }
-
-    .sa-pill {
-      display: inline-flex;
       align-items: center;
-      gap: 0.28rem;
-      padding: 0.22rem 0.55rem;
-      border-radius: 999px;
-      font-size: 0.74rem;
-      font-weight: 800;
-      white-space: nowrap;
+      justify-content: center;
+      font-size: 1.15rem;
+      background: #f1f5f9;
     }
 
-    .sa-pill-green { background: #dcfce7; color: #15803d; }
-    .sa-pill-amber { background: #fef3c7; color: #b45309; }
-    .sa-pill-red { background: #fee2e2; color: #b91c1c; }
-    .sa-pill-blue { background: #dbeafe; color: #1d4ed8; }
-    .sa-pill-slate { background: #f1f5f9; color: #334155; }
-
-    /* Main Workspace Layout */
-    .sa-workspace-grid {
-      display: grid;
-      grid-template-columns: 1fr 390px;
-      gap: 1.25rem;
-      align-items: start;
-    }
-
-    @media (max-width: 1120px) {
-      .sa-workspace-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    /* Filter Pills Bar */
-    .sa-filter-bar {
+    /* Toolbar: Filters + Search */
+    .sa-toolbar {
       display: flex;
-      flex-wrap: wrap;
-      gap: 0.45rem;
       align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.75rem;
     }
 
-    .sa-filter-btn {
+    .sa-filters {
+      display: flex;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+    }
+
+    .sa-filter-pill {
       border: 1px solid #cbd5e1;
-      background: #f8fafc;
-      color: #334155;
-      padding: 0.42rem 0.8rem;
+      background: #ffffff;
+      color: #475569;
+      padding: 0.35rem 0.7rem;
       border-radius: 999px;
-      font-size: 0.78rem;
+      font-size: 0.75rem;
       font-weight: 700;
       cursor: pointer;
-      transition: all 0.15s ease;
     }
 
-    .sa-filter-btn:hover {
-      border-color: #1e3a8a;
-      color: #1e3a8a;
-    }
-
-    .sa-filter-btn.active {
+    .sa-filter-pill.active {
       background: #0f172a;
       color: #ffffff;
       border-color: #0f172a;
     }
 
-    /* Token Display Box */
-    .sa-token-result-box {
-      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-      color: #ffffff;
-      border: 2px solid #f59e0b;
-      border-radius: 12px;
-      padding: 1rem;
-      text-align: center;
-      margin-top: 0.9rem;
+    /* Compact Store List Rows/Cards */
+    .sa-store-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
     }
 
-    .sa-token-digits {
+    .sa-store-row {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 0.75rem 0.95rem;
+      display: grid;
+      grid-template-columns: 1.4fr 1fr 1.1fr auto;
+      align-items: center;
+      gap: 0.75rem;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+      transition: border-color 0.15s ease;
+    }
+
+    .sa-store-row:hover {
+      border-color: #cbd5e1;
+    }
+
+    @media (max-width: 720px) {
+      .sa-store-row {
+        grid-template-columns: 1fr auto;
+        gap: 0.55rem;
+      }
+      .sa-store-metrics,
+      .sa-store-badges {
+        grid-column: 1 / -1;
+      }
+    }
+
+    .sa-store-id-tag {
+      font-family: monospace;
+      font-size: 0.72rem;
+      font-weight: 900;
+      background: #0f172a;
+      color: #fbbf24;
+      padding: 0.12rem 0.4rem;
+      border-radius: 5px;
+    }
+
+    .sa-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .sa-badge-green { background: #dcfce7; color: #15803d; }
+    .sa-badge-red { background: #fee2e2; color: #b91c1c; }
+    .sa-badge-amber { background: #fef3c7; color: #b45309; }
+    .sa-badge-slate { background: #f1f5f9; color: #475569; }
+
+    /* Plan Picker Buttons inside + Token Modal */
+    .sa-plan-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .sa-plan-btn {
+      border: 2px solid #e2e8f0;
+      background: #f8fafc;
+      color: #0f172a;
+      border-radius: 10px;
+      padding: 0.65rem 0.4rem;
+      text-align: center;
+      font-weight: 800;
+      font-size: 0.84rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .sa-plan-btn.active {
+      border-color: #f59e0b;
+      background: #fffbeb;
+      color: #92400e;
+    }
+
+    .sa-token-box {
+      background: #0f172a;
+      border: 2px solid #f59e0b;
+      border-radius: 12px;
+      padding: 0.9rem;
+      text-align: center;
+      color: #ffffff;
+      margin: 0.75rem 0;
+    }
+
+    .sa-token-code {
       font-family: 'Courier New', monospace;
       font-size: 1.85rem;
       font-weight: 900;
       letter-spacing: 0.18em;
       color: #fbbf24;
-      background: rgba(255, 255, 255, 0.06);
-      padding: 0.5rem 0.75rem;
-      border-radius: 8px;
-      margin: 0.45rem 0;
+      margin: 0.25rem 0;
       user-select: all;
-    }
-
-    .sync-dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      display: inline-block;
-    }
-    .sync-dot.online {
-      background: #10b981;
-      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
-    }
-    .sync-dot.offline {
-      background: #f59e0b;
-      box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25);
     }
   </style>
 </head>
-<body class="super-admin-body">
+<body class="sa-body">
 
-  <!-- ====================================================================
-       1. SUPER-ADMIN LOGIN GATE OVERLAY
-       ==================================================================== -->
+  <!-- 1. SUPER-ADMIN LOGIN GATE -->
   <div id="sa-login-overlay" class="auth-overlay">
-    <div class="auth-card" style="max-width:430px; border-top:4px solid #f59e0b;">
-      <div class="auth-brand-header" style="background:linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);">
+    <div class="auth-card" style="max-width:380px;">
+      <div class="auth-brand-header" style="padding:1.25rem;">
         <div class="auth-logo-circle" style="background:#f59e0b; color:#0f172a;">🛡️</div>
-        <h2 style="font-size:1.3rem; font-weight:900;">Holy Star Super-Admin</h2>
-        <p style="font-size:0.8rem; color:#cbd5e1; margin-top:0.2rem;">
-          Platform Owner Command Center • Store Telemetry &amp; Token Engine
-        </p>
+        <h2 style="font-size:1.15rem; font-weight:800;">Super-Admin</h2>
       </div>
-
-      <div class="auth-body">
+      <div class="auth-body" style="padding:1.25rem;">
         <form id="form-sa-login">
           <div class="form-group">
-            <label class="form-label" for="sa-login-username">Master Admin Username *</label>
+            <label class="form-label" for="sa-login-username">Username</label>
             <input type="text" id="sa-login-username" class="form-control" placeholder="holystar_admin" required autocomplete="username" />
           </div>
-
           <div class="form-group">
-            <label class="form-label" for="sa-login-password">Master Password *</label>
-            <input type="password" id="sa-login-password" class="form-control" placeholder="Enter master password" required autocomplete="current-password" />
+            <label class="form-label" for="sa-login-password">Password</label>
+            <input type="password" id="sa-login-password" class="form-control" placeholder="••••••••" required autocomplete="current-password" />
           </div>
-
-          <button type="submit" class="btn btn-primary btn-lg btn-block" style="background:#0f172a; border-color:#0f172a;">
-            🔓 Unlock Command Center
+          <button type="submit" class="btn btn-primary btn-lg btn-block" style="background:#0f172a;">
+            Unlock
           </button>
         </form>
       </div>
+      <div style="padding:0.65rem 1.25rem; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; font-size:0.75rem;">
+        <a href="index.html" style="color:#4f46e5; font-weight:700; text-decoration:none;">← Store POS</a>
+        <span style="color:#94a3b8;">Admin</span>
+      </div>
+    </div>
+  </div>
 
-      <div style="padding:0.75rem 1.25rem; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; align-items:center; justify-content:space-between; font-size:0.78rem;">
-        <a href="index.html" style="color:#1e3a8a; font-weight:700; text-decoration:none;">
-          ← Back to Store POS Login
-        </a>
-        <span style="color:#64748b;">Protected Access</span>
+  <!-- 2. MINIMAL HEADER -->
+  <header class="sa-header">
+    <div class="sa-brand">
+      <div class="sa-shield">🛡️</div>
+      <span>Holy Star Admin</span>
+      <span id="sa-last-refresh-text" style="font-size:0.7rem; color:#94a3b8; font-weight:600;">Synced</span>
+    </div>
+
+    <div class="sa-actions">
+      <button type="button" id="btn-sa-sync-now" class="sa-icon-btn primary" title="Sync Global Stores">
+        🔄 Sync
+      </button>
+      <button type="button" id="btn-sa-open-token-modal-blank" class="sa-icon-btn gold" title="Generate Token">
+        + Token
+      </button>
+      <button type="button" id="btn-sa-open-manual-store" class="sa-icon-btn" title="Add Offline Store">
+        + Store
+      </button>
+      <button type="button" id="btn-sa-open-settings" class="sa-icon-btn" title="Admin Settings">
+        ⚙️
+      </button>
+      <a href="index.html" class="sa-icon-btn" title="Open POS">
+        🏪 POS
+      </a>
+      <button type="button" id="btn-sa-logout" class="sa-icon-btn" style="color:#fca5a5;" title="Lock">
+        🔒
+      </button>
+    </div>
+  </header>
+
+  <!-- 3. MAIN CONTENT -->
+  <main class="sa-main">
+
+    <!-- 4 SIMPLE TOP STAT CARDS: Stores, Active, Expired, Offline -->
+    <div class="sa-stats-row">
+      <div class="sa-stat-card">
+        <div>
+          <div class="sa-stat-label">Stores</div>
+          <div id="kpi-total-stores" class="sa-stat-val">0</div>
+        </div>
+        <div class="sa-stat-icon">🏪</div>
+      </div>
+
+      <div class="sa-stat-card">
+        <div>
+          <div class="sa-stat-label">Active</div>
+          <div id="kpi-active-subs" class="sa-stat-val" style="color:#10b981;">0</div>
+        </div>
+        <div class="sa-stat-icon" style="background:#dcfce7;">✅</div>
+      </div>
+
+      <div class="sa-stat-card">
+        <div>
+          <div class="sa-stat-label">Expired</div>
+          <div id="kpi-expired-subs" class="sa-stat-val" style="color:#ef4444;">0</div>
+        </div>
+        <div class="sa-stat-icon" style="background:#fee2e2;">🔒</div>
+      </div>
+
+      <div class="sa-stat-card">
+        <div>
+          <div class="sa-stat-label">Offline</div>
+          <div id="kpi-offline-pill" class="sa-stat-val" style="color:#f59e0b;">0</div>
+        </div>
+        <div class="sa-stat-icon" style="background:#fef3c7;">📡</div>
+      </div>
+    </div>
+
+    <!-- FILTER PILLS & SEARCH -->
+    <div class="sa-toolbar">
+      <div class="sa-filters">
+        <button type="button" class="sa-filter-pill active" data-sa-filter="ALL">All</button>
+        <button type="button" class="sa-filter-pill" data-sa-filter="ACTIVE">Active</button>
+        <button type="button" class="sa-filter-pill" data-sa-filter="EXPIRED">Expired</button>
+        <button type="button" class="sa-filter-pill" data-sa-filter="OFFLINE">Offline</button>
+      </div>
+
+      <div style="flex:1; min-width:200px; max-width:300px;">
+        <input type="search" id="sa-store-search-input" class="form-control" placeholder="🔍 Search store or phone..." style="padding:0.4rem 0.7rem; font-size:0.8rem;" />
+      </div>
+    </div>
+
+    <!-- COMPACT STORE CARDS / ROWS -->
+    <div id="sa-stores-list" class="sa-store-list">
+      <!-- Populated by super-admin.js -->
+    </div>
+
+  </main>
+
+  <!-- ====================================================================
+       MODAL 1: COMPACT 1-CLICK "+ TOKEN" GENERATOR MODAL
+       ==================================================================== -->
+  <div id="modal-sa-token" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width:400px;">
+      <div class="modal-header">
+        <h3 class="modal-title">🔑 Generate Unlock Token</h3>
+        <button type="button" class="modal-close" data-close-sa-modal="modal-sa-token">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-sa-generate-token">
+          <div style="display:grid; grid-template-columns: 2fr 1fr; gap:0.5rem;">
+            <div class="form-group">
+              <label class="form-label" for="sa-gen-store-id">Store ID *</label>
+              <input type="text" id="sa-gen-store-id" class="form-control" placeholder="HS-4821" required style="text-transform:uppercase; font-family:monospace; font-weight:900;" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="sa-gen-issue-code">Issue #</label>
+              <input type="text" id="sa-gen-issue-code" class="form-control" value="001" required style="font-family:monospace; font-weight:800;" />
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem;">
+            <div class="form-group">
+              <label class="form-label" for="sa-gen-store-name">Store Name</label>
+              <input type="text" id="sa-gen-store-name" class="form-control" placeholder="Store Name" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="sa-gen-owner-phone">WhatsApp Phone</label>
+              <input type="tel" id="sa-gen-owner-phone" class="form-control" placeholder="0244..." />
+            </div>
+          </div>
+          <input type="hidden" id="sa-gen-owner-name" value="" />
+
+          <label class="form-label">Select Duration</label>
+          <div class="sa-plan-grid">
+            <button type="button" class="sa-plan-btn" data-plan-days="7">7 Days</button>
+            <button type="button" class="sa-plan-btn active" data-plan-days="30">30 Days</button>
+            <button type="button" class="sa-plan-btn" data-plan-days="14">14 Days</button>
+          </div>
+          <input type="hidden" id="sa-gen-plan-select" value="30" />
+
+          <!-- Instant Generated Token Display -->
+          <div id="sa-generated-token-panel" class="sa-token-box">
+            <div style="font-size:0.72rem; color:#94a3b8;">
+              <span id="sa-out-store-label">Store</span> • <span id="sa-out-days-label">30</span> Days
+            </div>
+            <div id="sa-out-token-code" class="sa-token-code">--------</div>
+            <div id="sa-out-expiry-preview" style="font-size:0.7rem; color:#34d399;"></div>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:0.45rem;">
+            <button type="button" id="btn-sa-send-token-whatsapp" class="btn btn-whatsapp btn-block" style="font-weight:800;">
+              💬 Send to WhatsApp
+            </button>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.45rem;">
+              <button type="button" id="btn-sa-copy-token" class="btn btn-outline btn-sm">
+                📋 Copy Token
+              </button>
+              <button type="submit" class="btn btn-primary btn-sm">
+                🔄 Regenerate
+              </button>
+            </div>
+          </div>
+        </form>
       </div>
     </div>
   </div>
 
   <!-- ====================================================================
-       2. SUPER-ADMIN TOP HEADER
-       ==================================================================== -->
-  <header class="sa-header">
-    <div class="sa-brand">
-      <div class="sa-logo-shield">🛡️</div>
-      <div>
-        <h1 style="font-size:1.1rem; font-weight:900; margin:0; letter-spacing:-0.01em;">
-          Holy Star POS — Super-Admin Command Center
-        </h1>
-        <div style="font-size:0.76rem; color:#cbd5e1; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-top:0.1rem;">
-          <span id="sa-live-sync-badge" style="display:inline-flex; align-items:center; gap:0.35rem; color:#34d399; font-weight:700;">
-            <span class="sync-dot online"></span> Live Heartbeat Engine Active
-          </span>
-          <span>•</span>
-          <span id="sa-last-refresh-text">Synced just now</span>
-        </div>
-      </div>
-    </div>
-
-    <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-      <button type="button" id="btn-sa-sync-now" class="btn btn-primary btn-sm" style="background:#2563eb; border-color:#2563eb;">
-        🔄 Sync Stores Now
-      </button>
-      <button type="button" id="btn-sa-open-manual-store" class="btn btn-outline btn-sm" style="background:#1e293b; color:#f8fafc; border-color:#475569;">
-        ➕ Add Offline Store
-      </button>
-      <button type="button" id="btn-sa-open-settings" class="btn btn-outline btn-sm" style="background:#1e293b; color:#f8fafc; border-color:#475569;">
-        ⚙️ Admin Settings
-      </button>
-      <a href="index.html" class="btn btn-outline btn-sm" style="background:#1e293b; color:#fbbf24; border-color:#475569; text-decoration:none;">
-        🏪 Open POS App
-      </a>
-      <button type="button" id="btn-sa-logout" class="btn btn-danger btn-sm">
-        🚪 Lock
-      </button>
-    </div>
-  </header>
-
-  <!-- ====================================================================
-       3. MAIN COMMAND CENTER CONTENT
-       ==================================================================== -->
-  <main class="sa-container">
-
-    <!-- TOP-LEVEL PLATFORM KPI CARDS -->
-    <div class="sa-kpi-grid">
-      <!-- KPI 1: Total Registered Stores -->
-      <div class="sa-kpi-card">
-        <div>
-          <div class="sa-kpi-title">🏪 Total Registered Stores</div>
-          <div id="kpi-total-stores" class="sa-kpi-main">0</div>
-        </div>
-        <div class="sa-kpi-breakdown">
-          <span id="kpi-new-stores-week" class="sa-pill sa-pill-blue">0 registered this week</span>
-          <span id="kpi-categories-count" class="sa-pill sa-pill-slate">0 categories</span>
-        </div>
-      </div>
-
-      <!-- KPI 2: Subscription Status Breakdown -->
-      <div class="sa-kpi-card kpi-subs">
-        <div>
-          <div class="sa-kpi-title">🔑 Subscription Health</div>
-          <div id="kpi-active-subs" class="sa-kpi-main" style="color:#15803d;">0 Active</div>
-        </div>
-        <div class="sa-kpi-breakdown">
-          <span id="kpi-expiring-soon" class="sa-pill sa-pill-amber">⚠️ 0 Expiring Soon (≤2d)</span>
-          <span id="kpi-expired-subs" class="sa-pill sa-pill-red">🔒 0 Expired / Renewal</span>
-        </div>
-      </div>
-
-      <!-- KPI 3: Synced Online vs Running Offline -->
-      <div class="sa-kpi-card kpi-sync">
-        <div>
-          <div class="sa-kpi-title">📡 Store Sync Heartbeat (24h)</div>
-          <div id="kpi-synced-online" class="sa-kpi-main" style="color:#1d4ed8;">0 Synced Online</div>
-        </div>
-        <div class="sa-kpi-breakdown">
-          <span id="kpi-synced-pill" class="sa-pill sa-pill-green">🟢 0 Synced (&lt;24h)</span>
-          <span id="kpi-offline-pill" class="sa-pill sa-pill-amber">🟠 0 Offline / Unsynced (&gt;24h)</span>
-        </div>
-      </div>
-
-      <!-- KPI 4: Platform-Wide Activity -->
-      <div class="sa-kpi-card kpi-activity">
-        <div>
-          <div class="sa-kpi-title">📊 Platform-Wide Activity</div>
-          <div id="kpi-platform-sales-vol" class="sa-kpi-main">GHS 0.00</div>
-        </div>
-        <div class="sa-kpi-breakdown">
-          <span id="kpi-platform-sales-count" class="sa-pill sa-pill-blue">🧾 0 Total Sales</span>
-          <span id="kpi-platform-products-count" class="sa-pill sa-pill-slate">📦 0 Products Listed</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- WORKSPACE: LEFT = STORE DIRECTORY TABLE | RIGHT = TOKEN GENERATOR & HISTORY -->
-    <div class="sa-workspace-grid">
-
-      <!-- LEFT COLUMN: PRIVACY-RESPECTING STORE DIRECTORY & MONITORING TABLE -->
-      <div class="card">
-        <div class="card-header" style="flex-direction:column; align-items:stretch; gap:0.85rem;">
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
-            <div>
-              <h2 class="card-title" style="font-size:1.05rem;">🌍 Registered Stores Directory &amp; Live Telemetry</h2>
-              <p style="font-size:0.76rem; color:var(--text-secondary); margin-top:0.15rem;">
-                Privacy-respecting summary: displays high-level store metrics only (private item names &amp; customer debtor names remain private on the shop's device).
-              </p>
-            </div>
-            <span id="sa-showing-count-badge" class="badge badge-info">0 Stores</span>
-          </div>
-
-          <!-- Search + Filter Bar -->
-          <div style="display:flex; flex-wrap:wrap; gap:0.65rem; justify-content:space-between; align-items:center;">
-            <div class="sa-filter-bar">
-              <button type="button" class="sa-filter-btn active" data-sa-filter="ALL">All Stores</button>
-              <button type="button" class="sa-filter-btn" data-sa-filter="ACTIVE">Active Subscription</button>
-              <button type="button" class="sa-filter-btn" data-sa-filter="EXPIRING_SOON">Expiring Soon (≤2d)</button>
-              <button type="button" class="sa-filter-btn" data-sa-filter="EXPIRED">Expired / Locked</button>
-              <button type="button" class="sa-filter-btn" data-sa-filter="OFFLINE">Offline / Unsynced (&gt;24h)</button>
-            </div>
-
-            <div style="flex:1; min-width:230px; max-width:340px;">
-              <input type="search" id="sa-store-search-input" class="form-control" placeholder="🔍 Search Store ID, Name, Owner, Phone..." />
-            </div>
-          </div>
-        </div>
-
-        <div class="card-body" style="padding:0;">
-          <div class="table-responsive">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Store ID &amp; Business</th>
-                  <th>Owner &amp; WhatsApp</th>
-                  <th>Store Usage Summary</th>
-                  <th>Subscription Status</th>
-                  <th>Sync / Connection</th>
-                  <th>Renewal Token</th>
-                </tr>
-              </thead>
-              <tbody id="sa-stores-table-body">
-                <!-- Populated by super-admin.js -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- RIGHT COLUMN: BUILT-IN CRYPTOGRAPHIC TOKEN GENERATOR & 1-TAP WHATSAPP DELIVERY -->
-      <div style="display:flex; flex-direction:column; gap:1.15rem;">
-
-        <div class="card" id="sa-keygen-card" style="border-top:4px solid #f59e0b;">
-          <div class="card-header" style="background:#fffbeb;">
-            <h3 class="card-title" style="color:#92400e;">⚡ Subscription Token Generator</h3>
-            <span class="badge badge-warning">SHA-256</span>
-          </div>
-          <div class="card-body">
-            <p style="font-size:0.78rem; color:var(--text-secondary); margin-bottom:0.85rem;">
-              Click <strong>"🔑 Generate Token"</strong> next to any store in the table, or type a <strong>Store ID</strong> manually for shops that registered 100% offline.
-            </p>
-
-            <form id="form-sa-generate-token">
-              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.6rem;">
-                <div class="form-group">
-                  <label class="form-label" for="sa-gen-store-id">Target Store ID *</label>
-                  <input type="text" id="sa-gen-store-id" class="form-control" placeholder="e.g. HS-4821" required style="text-transform:uppercase; font-family:monospace; font-weight:900; font-size:1rem;" />
-                </div>
-                <div class="form-group">
-                  <label class="form-label" for="sa-gen-issue-code">Issue Serial *</label>
-                  <input type="text" id="sa-gen-issue-code" class="form-control" value="001" required style="text-transform:uppercase; font-weight:800;" />
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="sa-gen-store-name">Store Name (For WhatsApp Message)</label>
-                <input type="text" id="sa-gen-store-name" class="form-control" placeholder="e.g. Mother's Grace Enterprise" />
-              </div>
-
-              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.6rem;">
-                <div class="form-group">
-                  <label class="form-label" for="sa-gen-owner-name">Owner Name</label>
-                  <input type="text" id="sa-gen-owner-name" class="form-control" placeholder="e.g. Grace Mensah" />
-                </div>
-                <div class="form-group">
-                  <label class="form-label" for="sa-gen-owner-phone">Owner WhatsApp Phone</label>
-                  <input type="tel" id="sa-gen-owner-phone" class="form-control" placeholder="e.g. 0244123456" />
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="sa-gen-plan-select">Subscription Plan Duration *</label>
-                <select id="sa-gen-plan-select" class="form-control" style="font-weight:800;">
-                  <option value="30">30 Days (Monthly Subscription)</option>
-                  <option value="14">14 Days (Bi-Weekly Pass)</option>
-                  <option value="7">7 Days (Weekly Pass)</option>
-                  <option value="CUSTOM">Custom Days (Enter Below)</option>
-                </select>
-              </div>
-
-              <div id="sa-custom-days-wrap" class="form-group hidden">
-                <label class="form-label" for="sa-gen-custom-days">Custom Number of Days (1 – 365) *</label>
-                <input type="number" id="sa-gen-custom-days" class="form-control" min="1" max="365" value="60" placeholder="e.g. 60 or 90 or 365" />
-              </div>
-
-              <button type="submit" class="btn btn-primary btn-lg btn-block" style="background:#d97706; border-color:#d97706;">
-                🔐 Generate 8-Char Unlock Token
-              </button>
-            </form>
-
-            <!-- Generated Token Output & 1-Tap WhatsApp Delivery -->
-            <div id="sa-generated-token-panel" class="sa-token-result-box hidden">
-              <div style="font-size:0.74rem; text-transform:uppercase; letter-spacing:0.06em; color:#cbd5e1;">
-                Unlock Token for <strong id="sa-out-store-label" style="color:#fff;">HS-0000</strong> (<span id="sa-out-days-label">30</span> Days)
-              </div>
-              <div id="sa-out-token-code" class="sa-token-digits">--------</div>
-              <div id="sa-out-expiry-preview" style="font-size:0.75rem; color:#34d399; margin-bottom:0.75rem;">
-                New Expected Expiry: -
-              </div>
-
-              <div style="display:flex; flex-direction:column; gap:0.45rem;">
-                <button type="button" id="btn-sa-send-token-whatsapp" class="btn btn-whatsapp btn-block" style="font-weight:800;">
-                  💬 Send Token via WhatsApp (1-Tap)
-                </button>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.45rem;">
-                  <button type="button" id="btn-sa-copy-token" class="btn btn-outline btn-sm" style="background:#334155; color:#fff; border-color:#475569;">
-                    📋 Copy Token Only
-                  </button>
-                  <button type="button" id="btn-sa-copy-wa-msg" class="btn btn-outline btn-sm" style="background:#334155; color:#fff; border-color:#475569;">
-                    📝 Copy Full Message
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ISSUED TOKEN LOG HISTORY CARD -->
-        <div class="card">
-          <div class="card-header">
-            <h3 class="card-title" style="font-size:0.95rem;">📜 Issued Token Log</h3>
-            <button type="button" id="btn-sa-clear-token-log" class="btn btn-outline btn-sm" style="font-size:0.72rem;">Clear</button>
-          </div>
-          <div class="card-body" style="padding:0; max-height:310px; overflow-y:auto;">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Store</th>
-                  <th>Plan</th>
-                  <th>Token</th>
-                  <th>WhatsApp</th>
-                </tr>
-              </thead>
-              <tbody id="sa-token-history-tbody">
-                <!-- Populated dynamically -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </div>
-    </div>
-  </main>
-
-  <!-- ====================================================================
-       MODAL 1: REGISTER / ADD OFFLINE STORE MANUALLY
+       MODAL 2: ADD OFFLINE STORE
        ==================================================================== -->
   <div id="modal-sa-manual-store" class="modal-backdrop hidden">
-    <div class="modal-card">
+    <div class="modal-card" style="max-width:400px;">
       <div class="modal-header">
-        <h3 class="modal-title">🏪 Add Offline Store to Directory</h3>
+        <h3 class="modal-title">+ Add Store</h3>
         <button type="button" class="modal-close" data-close-sa-modal="modal-sa-manual-store">✕</button>
       </div>
       <form id="form-sa-manual-store">
         <div class="modal-body">
-          <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.85rem;">
-            If a shop owner registered 100% offline on their phone and called/messaged you their <strong>Store ID</strong>, add them here to track their subscription and send renewal tokens.
-          </p>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.65rem;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
             <div class="form-group">
               <label class="form-label" for="sa-man-store-id">Store ID *</label>
-              <input type="text" id="sa-man-store-id" class="form-control" placeholder="e.g. HS-4821" required style="text-transform:uppercase; font-family:monospace; font-weight:800;" />
+              <input type="text" id="sa-man-store-id" class="form-control" placeholder="HS-4821" required style="text-transform:uppercase; font-family:monospace; font-weight:800;" />
             </div>
             <div class="form-group">
               <label class="form-label" for="sa-man-category">Category</label>
               <select id="sa-man-category" class="form-control">
-                <option value="Provision & Mini-Mart">Provision &amp; Mini-Mart</option>
-                <option value="Boutique & Fashion">Boutique &amp; Fashion</option>
-                <option value="Pharmacy/Over-the-Counter">Pharmacy / OTC</option>
+                <option value="Provision & Mini-Mart">Provision</option>
+                <option value="Boutique & Fashion">Boutique</option>
+                <option value="Pharmacy/Over-the-Counter">Pharmacy</option>
                 <option value="Cosmetics">Cosmetics</option>
-                <option value="Electronics/Phone Shop">Electronics / Phone Shop</option>
-                <option value="Food/Restaurant">Food / Restaurant</option>
-                <option value="Other">Other Retail</option>
+                <option value="Electronics/Phone Shop">Electronics</option>
+                <option value="Food/Restaurant">Food</option>
+                <option value="Other">Other</option>
               </select>
             </div>
           </div>
           <div class="form-group">
             <label class="form-label" for="sa-man-store-name">Store Name *</label>
-            <input type="text" id="sa-man-store-name" class="form-control" placeholder="e.g. Mother's Grace Enterprise" required />
+            <input type="text" id="sa-man-store-name" class="form-control" placeholder="Store Name" required />
           </div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.65rem;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
             <div class="form-group">
-              <label class="form-label" for="sa-man-owner-name">Owner Full Name *</label>
-              <input type="text" id="sa-man-owner-name" class="form-control" placeholder="e.g. Grace Mensah" required />
+              <label class="form-label" for="sa-man-owner-name">Owner Name *</label>
+              <input type="text" id="sa-man-owner-name" class="form-control" placeholder="Owner" required />
             </div>
             <div class="form-group">
-              <label class="form-label" for="sa-man-owner-phone">Owner Phone *</label>
-              <input type="tel" id="sa-man-owner-phone" class="form-control" placeholder="e.g. 0244123456" required />
+              <label class="form-label" for="sa-man-owner-phone">Phone *</label>
+              <input type="tel" id="sa-man-owner-phone" class="form-control" placeholder="0244..." required />
             </div>
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline" data-close-sa-modal="modal-sa-manual-store">Cancel</button>
-          <button type="submit" class="btn btn-primary">💾 Save Store to Directory</button>
+          <button type="button" class="btn btn-outline btn-sm" data-close-sa-modal="modal-sa-manual-store">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Save Store</button>
         </div>
       </form>
     </div>
   </div>
 
   <!-- ====================================================================
-       MODAL 2: SUPER-ADMIN CREDENTIALS & CLOUD HEARTBEAT SETTINGS
+       MODAL 3: ADMIN SETTINGS
        ==================================================================== -->
   <div id="modal-sa-settings" class="modal-backdrop hidden">
-    <div class="modal-card">
+    <div class="modal-card" style="max-width:420px;">
       <div class="modal-header">
-        <h3 class="modal-title">⚙️ Super-Admin Security &amp; Cloud Sync Settings</h3>
+        <h3 class="modal-title">⚙️ Admin Settings</h3>
         <button type="button" class="modal-close" data-close-sa-modal="modal-sa-settings">✕</button>
       </div>
       <div class="modal-body">
-        <form id="form-sa-credentials" style="margin-bottom:1.25rem; padding-bottom:1.1rem; border-bottom:1px solid var(--border);">
-          <h4 style="font-size:0.9rem; font-weight:800; margin-bottom:0.6rem;">🔐 Master Admin Credentials</h4>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.65rem;">
+        <form id="form-sa-credentials" style="margin-bottom:1rem; padding-bottom:1rem; border-bottom:1px solid var(--border);">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
             <div class="form-group">
-              <label class="form-label" for="sa-set-username">Admin Username *</label>
+              <label class="form-label" for="sa-set-username">Admin Username</label>
               <input type="text" id="sa-set-username" class="form-control" required />
             </div>
             <div class="form-group">
-              <label class="form-label" for="sa-set-password">New Master Password *</label>
-              <input type="password" id="sa-set-password" class="form-control" placeholder="Enter new password" required />
+              <label class="form-label" for="sa-set-password">Admin Password</label>
+              <input type="password" id="sa-set-password" class="form-control" required />
             </div>
           </div>
-          <button type="submit" class="btn btn-primary btn-sm">💾 Update Master Credentials</button>
+          <button type="submit" class="btn btn-primary btn-sm">Save Credentials</button>
         </form>
 
-        <form id="form-sa-cloud-config" style="margin-bottom:1.25rem; padding-bottom:1.1rem; border-bottom:1px solid var(--border);">
-          <h4 style="font-size:0.9rem; font-weight:800; margin-bottom:0.35rem;">☁️ Cross-Device Cloud Heartbeat Channel</h4>
-          <p style="font-size:0.76rem; color:var(--text-secondary); margin-bottom:0.65rem;">
-            Stores automatically broadcast encrypted-safe high-level telemetry heartbeats to this channel when online so your phone and laptop stay in sync.
-          </p>
-          <div class="form-group">
-            <label class="form-label" for="sa-set-cloud-topic">Cloud Sync Channel ID *</label>
-            <input type="text" id="sa-set-cloud-topic" class="form-control" required />
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="sa-set-custom-webhook">Optional Custom Webhook / REST Endpoint URL</label>
-            <input type="url" id="sa-set-custom-webhook" class="form-control" placeholder="https://your-custom-api.com/telemetry (optional)" />
-          </div>
-          <button type="submit" class="btn btn-success btn-sm">☁️ Save Cloud Sync Config</button>
-        </form>
-
-        <div>
-          <h4 style="font-size:0.9rem; font-weight:800; margin-bottom:0.5rem;">📦 Export / Import Store Directory Snapshot</h4>
-          <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-            <button type="button" id="btn-sa-export-registry" class="btn btn-outline btn-sm">⬇️ Export Directory JSON</button>
-            <label class="btn btn-outline btn-sm" style="cursor:pointer; margin:0;">
-              ⬆️ Import Directory JSON
-              <input type="file" id="input-sa-import-registry" accept=".json,application/json" style="display:none;" />
-            </label>
-          </div>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+          <button type="button" id="btn-sa-export-registry" class="btn btn-outline btn-sm">⬇️ Export JSON</button>
+          <label class="btn btn-outline btn-sm" style="cursor:pointer; margin:0;">
+            ⬆️ Import JSON
+            <input type="file" id="input-sa-import-registry" accept=".json,application/json" style="display:none;" />
+          </label>
         </div>
       </div>
     </div>
@@ -657,8 +568,7 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Scripts -->
-  <script src="db.js?v=2.3"></script>
-  <script src="super-admin.js?v=2.3"></script>
+  <script src="db.js?v=3.0"></script>
+  <script src="super-admin.js?v=3.0"></script>
 </body>
 </html>
-

@@ -1,14 +1,18 @@
 /**
- * Holy Star POS - Multi-Store SaaS IndexedDB Wrapper (db.js)
- * Strictly isolates every store's products, sales, debtors, and licenses by `store_id`.
- * Purges any legacy prototype records lacking a `store_id` so every new store
- * starts with 0 Products, 0 Sales, and 0 Debtors.
+ * Holy Star POS v3.0 - Multi-Store SaaS IndexedDB & Cross-Device Cloud Sync Engine (db.js)
+ * Features:
+ * - Strict Store Isolation by `store_id` (0 Products, 0 Sales, 0 Debtors on new store)
+ * - Cross-Device Cloud Login & Hydration (`/api/auth`, `/api/sync`, and Cloud Relay)
+ * - Period Financial Analytics (Today, Pick Date, This Week, This Month, All-Time)
+ * - Daily Close Receipt Archiving (`closed_days` object store)
+ * - Full Store Cloud Backup & Sync (`syncFullStoreOnline`)
  */
 
 const DB_NAME = 'HolyStarPOS_DB';
-const DB_VERSION = 3;
-const CLOCK_DRIFT_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes tolerance
+const DB_VERSION = 4;
+const CLOCK_DRIFT_TOLERANCE_MS = 5 * 60 * 1000;
 const SESSION_STORAGE_KEY = 'holystar_active_session_v3';
+const CLOUD_SYNC_TOPIC_V3 = 'holystar_pos_cloud_v3_sync_2026';
 
 class HolyStarDatabase {
   constructor() {
@@ -17,7 +21,7 @@ class HolyStarDatabase {
   }
 
   /**
-   * Initialize IndexedDB (v3 schema with strict store_id isolation & non-blocking upgrade)
+   * Initialize IndexedDB (v4 schema with `closed_days` and non-blocking upgrade)
    */
   async init() {
     if (this.db) return this.db;
@@ -44,7 +48,7 @@ class HolyStarDatabase {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onblocked = () => {
-        console.warn('IndexedDB upgrade blocked by another open tab; closing stale connections...');
+        console.warn('IndexedDB upgrade blocked by another tab; closing old connection...');
       };
 
       request.onupgradeneeded = (event) => {
@@ -56,24 +60,20 @@ class HolyStarDatabase {
           this.db = null;
         };
 
-        // 1. Settings Store
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings', { keyPath: 'key' });
         }
 
-        // 2. Stores Registry
         if (!db.objectStoreNames.contains('stores')) {
           const storeObj = db.createObjectStore('stores', { keyPath: 'store_id' });
           storeObj.createIndex('owner_phone', 'owner_phone', { unique: false });
         }
 
-        // 3. Staff & Devices Store (Modular for future premium multi-staff tier)
         if (!db.objectStoreNames.contains('staff_devices')) {
           const staffStore = db.createObjectStore('staff_devices', { keyPath: 'id' });
           staffStore.createIndex('store_id', 'store_id', { unique: false });
         }
 
-        // 4. Products Store
         if (!db.objectStoreNames.contains('products')) {
           const productStore = db.createObjectStore('products', { keyPath: 'id' });
           productStore.createIndex('name', 'name', { unique: false });
@@ -82,7 +82,6 @@ class HolyStarDatabase {
           productStore.createIndex('barcode', 'barcode', { unique: false });
         }
 
-        // 5. Sales Store
         if (!db.objectStoreNames.contains('sales')) {
           const salesStore = db.createObjectStore('sales', { keyPath: 'id' });
           salesStore.createIndex('date_str', 'date_str', { unique: false });
@@ -91,7 +90,6 @@ class HolyStarDatabase {
           salesStore.createIndex('store_id', 'store_id', { unique: false });
         }
 
-        // 6. Debtors Store
         if (!db.objectStoreNames.contains('debtors')) {
           const debtorStore = db.createObjectStore('debtors', { keyPath: 'id' });
           debtorStore.createIndex('phone', 'phone', { unique: false });
@@ -99,13 +97,18 @@ class HolyStarDatabase {
           debtorStore.createIndex('store_id', 'store_id', { unique: false });
         }
 
-        // 7. License Store
         if (!db.objectStoreNames.contains('license')) {
           const licenseStore = db.createObjectStore('license', { keyPath: 'token_id' });
           licenseStore.createIndex('applied_at', 'applied_at', { unique: false });
         }
 
-        // Purge any legacy v1 prototype records without `store_id` during upgrade
+        if (!db.objectStoreNames.contains('closed_days')) {
+          const closedStore = db.createObjectStore('closed_days', { keyPath: 'id' });
+          closedStore.createIndex('store_id', 'store_id', { unique: false });
+          closedStore.createIndex('date_str', 'date_str', { unique: false });
+        }
+
+        // Purge any legacy records without `store_id`
         ['products', 'sales', 'debtors', 'license'].forEach((storeName) => {
           if (db.objectStoreNames.contains(storeName)) {
             const os = tx.objectStore(storeName);
@@ -142,9 +145,6 @@ class HolyStarDatabase {
     }
   }
 
-  /**
-   * Ensure any legacy records without `store_id` are completely removed
-   */
   async purgeLegacyRecordsWithoutStoreId() {
     if (!this.db) return;
     return new Promise((resolve) => {
@@ -172,7 +172,7 @@ class HolyStarDatabase {
   }
 
   // =========================================================================
-  // SESSION, AUTHENTICATION & MULTI-STORE ONBOARDING
+  // SESSION, AUTHENTICATION & CROSS-DEVICE MULTI-STORE ONBOARDING
   // =========================================================================
 
   getActiveSession() {
@@ -256,7 +256,8 @@ class HolyStarDatabase {
   }
 
   /**
-   * Create a brand-new Store account with 0 products, 0 sales, 0 debtors, and a 7-day trial
+   * Create a brand-new Store account with 0 products, 0 sales, 0 debtors, and a 7-day trial,
+   * and immediately sync to Cloud if online so it works across Phone & PC.
    */
   async registerNewStore(params = {}) {
     await this.initFromExisting();
@@ -298,6 +299,7 @@ class HolyStarDatabase {
       license_plan: '7-Day Initial Trial',
       last_seen_timestamp: now,
       last_active_at: now,
+      last_synced_at: typeof navigator !== 'undefined' && navigator.onLine ? now : 0,
       clock_tampered: false,
       created_at: now
     };
@@ -315,11 +317,22 @@ class HolyStarDatabase {
       logged_in_at: now
     };
     this.setActiveSession(session);
+
+    // Sync new store to Cloud in background if online so Phone & PC both see it
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      this.syncFullStoreOnline(storeId).catch(() => {});
+    } else {
+      this.syncTelemetryHeartbeat(storeId, 'store_registered_offline').catch(() => {});
+    }
+
     return { store: newStore, session };
   }
 
   /**
-   * Unified Store Login (Phone/Username/Store ID + Password)
+   * Cross-Device Unified Store Login:
+   * 1. Checks local IndexedDB.
+   * 2. If not on this device yet (or if online), fetches from `/api/auth` & Cloud Sync Channel
+   *    and hydrates local IndexedDB so the user can log in from ANY phone or PC anywhere!
    */
   async loginToStore({ identifier, password }) {
     await this.initFromExisting();
@@ -328,26 +341,40 @@ class HolyStarDatabase {
     const cleanPass = String(password || '').trim();
 
     if (!cleanId || !cleanPass) {
-      throw new Error('Please enter your Store Phone / Username and Password.');
+      throw new Error('Please enter your Store Phone / ID and Password.');
     }
 
-    const stores = await this.getAllStores();
-    if (stores.length === 0) {
-      throw new Error('No store registered on this device yet. Please switch to "Create New Store" first.');
-    }
+    const matchStoreFn = (s) =>
+      s &&
+      (this.normalizePhone(s.owner_phone) === cleanPhone ||
+        String(s.store_id || '').toUpperCase() === cleanId.toUpperCase() ||
+        String(s.store_name || '').toLowerCase() === cleanId.toLowerCase());
 
-    const store = stores.find(
-      (s) =>
-        this.normalizePhone(s.owner_phone) === cleanPhone ||
-        s.store_id.toUpperCase() === cleanId.toUpperCase() ||
-        s.store_name.toLowerCase() === cleanId.toLowerCase()
-    );
+    let localStores = await this.getAllStores();
+    let store = localStores.find(matchStoreFn);
+
+    // If online, try fetching latest cloud bundle (especially if store isn't on this device yet!)
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      try {
+        const cloudResult = await this.fetchCloudStoreBundleForLogin(cleanId, cleanPass);
+        if (cloudResult && cloudResult.store) {
+          await this.hydrateStoreBundleIntoIndexedDB(cloudResult.bundle || { store: cloudResult.store });
+          localStores = await this.getAllStores();
+          store = localStores.find(matchStoreFn) || cloudResult.store;
+        }
+      } catch (cloudErr) {
+        // Fallback to local store if cloud unreachable
+      }
+    }
 
     if (!store) {
-      throw new Error('Store not found. Check your Phone Number or Store ID.');
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        throw new Error('Store not found on this device while offline. Connect to the internet once to download your store from Cloud.');
+      }
+      throw new Error('Store account not found. Check your Phone Number / Store ID, or sync the store online from your other device first.');
     }
 
-    if (cleanPass !== store.owner_password) {
+    if (cleanPass !== String(store.owner_password || '')) {
       throw new Error('Incorrect password. Please try again.');
     }
 
@@ -358,7 +385,141 @@ class HolyStarDatabase {
     };
     this.setActiveSession(session);
     await this.TouchClock();
+
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      this.syncFullStoreOnline(store.store_id).catch(() => {});
+    }
+
     return { store, session };
+  }
+
+  /**
+   * Look up a store bundle from `/api/auth` and the Cloud Sync Stream (`ntfy.sh`)
+   */
+  async fetchCloudStoreBundleForLogin(identifier, password) {
+    const cleanId = String(identifier || '').trim();
+    const cleanPhone = this.normalizePhone(cleanId);
+
+    // 1. Try serverless `/api/auth`
+    try {
+      const res = await fetch('./api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'login', identifier: cleanId, password })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.ok && data.store) {
+          return { store: data.store, bundle: data.bundle };
+        }
+      }
+    } catch (e) {
+      // Ignore if running without /api/auth
+    }
+
+    // 2. Fallback: Query Cloud Sync Channel directly from browser
+    try {
+      const res = await fetch(`https://ntfy.sh/${CLOUD_SYNC_TOPIC_V3}/json?poll=1&since=all`, {
+        cache: 'no-store'
+      });
+      if (res.ok) {
+        const text = await res.text();
+        const lines = text.split('\n').filter((l) => l.trim().length > 0);
+        let latestBundle = null;
+        let latestTs = 0;
+
+        for (const line of lines) {
+          try {
+            const env = JSON.parse(line);
+            if (env && env.event === 'message' && env.message) {
+              const msg = JSON.parse(env.message);
+              const b = msg && msg.bundle;
+              if (b && b.store) {
+                const s = b.store;
+                const isMatch =
+                  this.normalizePhone(s.owner_phone) === cleanPhone ||
+                  String(s.store_id || '').toUpperCase() === cleanId.toUpperCase() ||
+                  String(s.store_name || '').toLowerCase() === cleanId.toLowerCase();
+
+                const ts = Number(msg.updated_at || b.updated_at || 0);
+                if (isMatch && ts >= latestTs) {
+                  latestTs = ts;
+                  latestBundle = b;
+                }
+              }
+            }
+          } catch (lineErr) {}
+        }
+
+        if (latestBundle && latestBundle.store) {
+          if (String(latestBundle.store.owner_password || '') === String(password || '').trim()) {
+            return { store: latestBundle.store, bundle: latestBundle };
+          }
+        }
+      }
+    } catch (e) {}
+
+    return null;
+  }
+
+  /**
+   * Hydrate a store bundle (`store`, `products`, `sales`, `debtors`, `closed_days`, `license`)
+   * into local IndexedDB so a newly logged-in phone or PC has all store data offline!
+   */
+  async hydrateStoreBundleIntoIndexedDB(bundle) {
+    if (!bundle || !bundle.store || !bundle.store.store_id) return false;
+    await this.initFromExisting();
+
+    const targetStore = bundle.store;
+    const storeId = targetStore.store_id;
+    targetStore.last_seen_timestamp = Date.now();
+    targetStore.clock_tampered = false;
+
+    const products = Array.isArray(bundle.products) ? bundle.products : [];
+    const sales = Array.isArray(bundle.sales) ? bundle.sales : [];
+    const debtors = Array.isArray(bundle.debtors) ? bundle.debtors : [];
+    const closedDays = Array.isArray(bundle.closed_days) ? bundle.closed_days : [];
+    const license = Array.isArray(bundle.license) ? bundle.license : [];
+
+    return new Promise((resolve) => {
+      try {
+        const tx = this.db.transaction(
+          ['stores', 'products', 'sales', 'debtors', 'closed_days', 'license'],
+          'readwrite'
+        );
+        tx.objectStore('stores').put(targetStore);
+
+        const pStore = tx.objectStore('products');
+        for (const p of products) {
+          if (p && p.id) pStore.put({ ...p, store_id: storeId });
+        }
+
+        const sStore = tx.objectStore('sales');
+        for (const s of sales) {
+          if (s && s.id) sStore.put({ ...s, store_id: storeId });
+        }
+
+        const dStore = tx.objectStore('debtors');
+        for (const d of debtors) {
+          if (d && d.id) dStore.put({ ...d, store_id: storeId });
+        }
+
+        const cStore = tx.objectStore('closed_days');
+        for (const c of closedDays) {
+          if (c && c.id) cStore.put({ ...c, store_id: storeId });
+        }
+
+        const lStore = tx.objectStore('license');
+        for (const l of license) {
+          if (l && l.token_id) lStore.put({ ...l, store_id: storeId });
+        }
+
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+      } catch (e) {
+        resolve(false);
+      }
+    });
   }
 
   // =========================================================================
@@ -380,7 +541,7 @@ class HolyStarDatabase {
         valid: false,
         lastSeen,
         now,
-        message: `System clock rollback detected! Current device time (${new Date(now).toLocaleString()}) is behind last recorded activity (${new Date(lastSeen).toLocaleString()}). Please fix your device date and time.`
+        message: 'Device clock was rolled backward. Please fix your phone/PC date and time.'
       };
     }
 
@@ -411,18 +572,6 @@ class HolyStarDatabase {
     };
   }
 
-  async setSetting(key, value) {
-    const store = await this.getActiveStore();
-    if (!store) return false;
-    store[key] = value;
-    if (key === 'shop_name' || key === 'store_name') {
-      store.store_name = value;
-      store.shop_name = value;
-    }
-    await this.saveActiveStoreRecord(store);
-    return true;
-  }
-
   async saveSettings(updates) {
     const store = await this.getActiveStore();
     if (!store) return false;
@@ -437,16 +586,15 @@ class HolyStarDatabase {
   // LICENSE & TOKEN MANAGEMENT (STRICTLY SCOPED BY STORE_ID)
   // =========================================================================
 
-  async getUsedTokens() {
+  async getUsedTokens(storeId = this.getActiveStoreId()) {
     await this.initFromExisting();
-    const storeId = this.getActiveStoreId();
     if (!storeId) return [];
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction(['license'], 'readonly');
       const req = tx.objectStore('license').getAll();
       req.onsuccess = () => {
         const all = req.result || [];
-        resolve(all.filter((t) => t.store_id === storeId || t.shop_id === storeId));
+        resolve(all.filter((t) => t && (t.store_id === storeId || t.shop_id === storeId)));
       };
       req.onerror = () => reject(req.error);
     });
@@ -472,7 +620,7 @@ class HolyStarDatabase {
       checkReq.onsuccess = () => {
         if (checkReq.result) {
           tx.abort();
-          reject(new Error('This token / issue code has already been used on this store.'));
+          reject(new Error('This token has already been used on this store.'));
           return;
         }
 
@@ -515,7 +663,6 @@ class HolyStarDatabase {
       const tx = this.db.transaction(['products'], 'readonly');
       const req = tx.objectStore('products').getAll();
       req.onsuccess = () => {
-        // Strict store_id equality check: never leak legacy or other store items
         const list = (req.result || []).filter((p) => p && p.store_id === storeId);
         list.sort((a, b) => a.name.localeCompare(b.name));
         resolve(list);
@@ -610,7 +757,7 @@ class HolyStarDatabase {
   }
 
   // =========================================================================
-  // ATOMIC CHECKOUT TRANSACTION (STRICTLY SCOPED BY STORE_ID)
+  // ATOMIC CHECKOUT TRANSACTION (SUPPORTS CASH, MOMO & PARTIAL-CASH DEBTORS)
   // =========================================================================
 
   async processAtomicCheckout(checkoutPayload) {
@@ -624,7 +771,7 @@ class HolyStarDatabase {
     }
 
     const session = this.getActiveSession();
-    const { cartItems, paymentMethod, creditDetails } = checkoutPayload;
+    const { cartItems, paymentMethod, cashTendered, momoPhone, creditDetails } = checkoutPayload;
 
     if (!Array.isArray(cartItems) || cartItems.length === 0) {
       throw new Error('Cannot checkout an empty cart.');
@@ -644,7 +791,7 @@ class HolyStarDatabase {
       const failTransaction = (msg) => {
         if (!aborted) {
           aborted = true;
-          try { tx.abort(); } catch (e) { /* ignore */ }
+          try { tx.abort(); } catch (e) {}
           reject(new Error(msg));
         }
       };
@@ -665,7 +812,7 @@ class HolyStarDatabase {
           if (aborted) return;
           const dbProduct = getReq.result;
           if (!dbProduct || dbProduct.store_id !== storeId) {
-            return failTransaction(`Product not found in store inventory (ID: ${cartItem.id}).`);
+            return failTransaction(`Product not found in store inventory.`);
           }
           if (qty > dbProduct.stock_qty) {
             return failTransaction(`Insufficient stock for "${dbProduct.name}". Available: ${dbProduct.stock_qty}, Requested: ${qty}.`);
@@ -716,7 +863,7 @@ class HolyStarDatabase {
 
         if (paymentMethod === 'Credit') {
           if (!creditDetails) {
-            return failTransaction('Customer credit details are required for Credit sales.');
+            return failTransaction('Customer details are required to record balance in Debtors.');
           }
           const cName = String(creditDetails.customerName || '').trim();
           const cPhone = String(creditDetails.customerPhone || '').trim();
@@ -725,12 +872,12 @@ class HolyStarDatabase {
           depositMethod = creditDetails.depositMethod === 'MoMo' ? 'MoMo' : 'Cash';
           initialDeposit = Number(Number(creditDetails.initialDeposit || 0).toFixed(2));
 
-          if (!cName) return failTransaction('Customer Name is required for Credit sales.');
-          if (!cPhone) return failTransaction('Customer Phone Number is required for Credit sales.');
-          if (!cLoc) return failTransaction('Customer Location / Landmark is required for Credit sales.');
-          if (isNaN(initialDeposit) || initialDeposit < 0) return failTransaction('Initial deposit cannot be negative.');
+          if (!cName) return failTransaction('Customer Name is required.');
+          if (!cPhone) return failTransaction('Customer Phone Number is required.');
+          if (!cLoc) return failTransaction('Customer Location / Landmark is required.');
+          if (isNaN(initialDeposit) || initialDeposit < 0) return failTransaction('Amount paid cannot be negative.');
           if (initialDeposit >= totalAmount) {
-            return failTransaction('Initial deposit equals or exceeds total amount. Please use Cash or MoMo payment instead.');
+            return failTransaction('Amount paid equals or exceeds total. Use Cash or MoMo instead.');
           }
 
           balanceOwed = Number((totalAmount - initialDeposit).toFixed(2));
@@ -745,6 +892,9 @@ class HolyStarDatabase {
           };
         }
 
+        const tenderedNum = cashTendered !== undefined && cashTendered !== '' ? Number(cashTendered) : totalAmount;
+        const changeGiven = paymentMethod === 'Cash' ? Math.max(0, Number((tenderedNum - totalAmount).toFixed(2))) : 0;
+
         const saleRecord = {
           id: receiptId,
           store_id: storeId,
@@ -755,6 +905,9 @@ class HolyStarDatabase {
           total_amount: totalAmount,
           total_profit: totalProfit,
           payment_method: paymentMethod,
+          cash_tendered: paymentMethod === 'Cash' ? tenderedNum : initialDeposit,
+          change_given: changeGiven,
+          momo_phone: momoPhone || '',
           initial_deposit: paymentMethod === 'Credit' ? initialDeposit : totalAmount,
           deposit_method: paymentMethod === 'Credit' ? depositMethod : paymentMethod,
           balance_owed: paymentMethod === 'Credit' ? balanceOwed : 0,
@@ -783,7 +936,6 @@ class HolyStarDatabase {
 
         allDebtorsReq.onsuccess = () => {
           if (aborted) return;
-          // Strict store_id check
           const allDebtors = (allDebtorsReq.result || []).filter((d) => d && d.store_id === storeId);
           let debtor = allDebtors.find(
             (d) => String(d.phone || '').replace(/\s+/g, '') === normalizedPhone
@@ -792,7 +944,7 @@ class HolyStarDatabase {
           const historyEntry = {
             id: 'HST-' + now + '-' + Math.random().toString(36).substring(2, 5).toUpperCase(),
             type: 'CREDIT_SALE',
-            receipt_id: receiptId,
+            sale_id: receiptId,
             timestamp: now,
             date_str: todayStr,
             items: verifiedItems.map((i) => ({
@@ -806,7 +958,7 @@ class HolyStarDatabase {
             deposit_method: depositMethod,
             amount_added_to_debt: balanceOwed,
             due_date: customerInfo.due_date || null,
-            note: `Credit purchase (${verifiedItems.length} item${verifiedItems.length === 1 ? '' : 's'})`
+            note: `Paid GHS ${initialDeposit.toFixed(2)}, Remainder GHS ${balanceOwed.toFixed(2)}`
           };
 
           if (debtor) {
@@ -860,7 +1012,7 @@ class HolyStarDatabase {
   }
 
   // =========================================================================
-  // DEBTORS BOOK MANAGEMENT (STRICTLY SCOPED BY STORE_ID)
+  // DEBTORS MANAGEMENT (STRICTLY SCOPED BY STORE_ID)
   // =========================================================================
 
   async getAllDebtors(storeId = this.getActiveStoreId()) {
@@ -890,10 +1042,10 @@ class HolyStarDatabase {
     const cPhone = String(phone || '').trim();
     const cLoc = String(location || '').trim();
     const owed = Number(Number(amountOwed || 0).toFixed(2));
-    const desc = String(itemDescription || 'Manual credit entry').trim();
+    const desc = String(itemDescription || 'Credit entry').trim();
 
     if (!cName || !cPhone || !cLoc) {
-      throw new Error('Name, Phone Number, and Location/Landmark are required.');
+      throw new Error('Name, Phone Number, and Location are required.');
     }
     if (isNaN(owed) || owed <= 0) {
       throw new Error('Amount owed must be greater than GHS 0.');
@@ -991,11 +1143,11 @@ class HolyStarDatabase {
         const currentOwed = Number(debtor.total_owed || 0);
         if (currentOwed <= 0) {
           tx.abort();
-          return reject(new Error('This customer already has a cleared balance (GHS 0.00).'));
+          return reject(new Error('This customer already has a cleared balance.'));
         }
         if (payAmount > currentOwed) {
           tx.abort();
-          return reject(new Error(`Payment amount (GHS ${payAmount.toFixed(2)}) exceeds balance owed (GHS ${currentOwed.toFixed(2)}).`));
+          return reject(new Error(`Payment (GHS ${payAmount.toFixed(2)}) exceeds balance owed (GHS ${currentOwed.toFixed(2)}).`));
         }
 
         const newBalance = Number((currentOwed - payAmount).toFixed(2));
@@ -1013,7 +1165,7 @@ class HolyStarDatabase {
           payment_method: method,
           balance_before: currentOwed,
           balance_after: newBalance,
-          note: String(note || `Debt repayment via ${method}`).trim()
+          note: String(note || `Repayment via ${method}`).trim()
         };
 
         debtor.history = Array.isArray(debtor.history) ? debtor.history : [];
@@ -1028,7 +1180,7 @@ class HolyStarDatabase {
   }
 
   // =========================================================================
-  // SALES HISTORY & DAILY FINANCIAL METRICS (STRICTLY SCOPED BY STORE_ID)
+  // SALES ANALYTICS (TODAY / PICK DATE / THIS WEEK / THIS MONTH / ALL-TIME)
   // =========================================================================
 
   async getAllSales(storeId = this.getActiveStoreId()) {
@@ -1046,13 +1198,39 @@ class HolyStarDatabase {
     });
   }
 
-  async getDailyReport(dateStr) {
+  isDateInPeriod(dateStr, timestamp, periodType = 'TODAY', customDateStr = '') {
+    const todayStr = this.formatLocalDate();
+    if (periodType === 'ALL') return true;
+    if (periodType === 'TODAY') return dateStr === todayStr;
+    if (periodType === 'DATE') return dateStr === (customDateStr || todayStr);
+
+    const now = new Date();
+    if (periodType === 'MONTH') {
+      const monthPrefix = todayStr.slice(0, 7); // YYYY-MM
+      return String(dateStr || '').startsWith(monthPrefix);
+    }
+
+    if (periodType === 'WEEK') {
+      // Monday-start of current week (or last 7 days)
+      const dayOfWeek = now.getDay(); // 0 (Sun) .. 6 (Sat)
+      const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMonday, 0, 0, 0, 0);
+      const itemTs = timestamp ? Number(timestamp) : Date.parse(dateStr + 'T12:00:00');
+      return itemTs >= startOfWeek.getTime();
+    }
+
+    return dateStr === todayStr;
+  }
+
+  async getSalesReportByPeriod(periodType = 'TODAY', customDateStr = '') {
     const [allSales, allDebtors] = await Promise.all([
       this.getAllSales(),
       this.getAllDebtors()
     ]);
 
-    const daySales = allSales.filter((s) => s.date_str === dateStr);
+    const filteredSales = allSales.filter((s) =>
+      this.isDateInPeriod(s.date_str, s.timestamp, periodType, customDateStr)
+    );
 
     let totalRevenue = 0;
     let grossProfit = 0;
@@ -1060,7 +1238,7 @@ class HolyStarDatabase {
     let momoSalesCollected = 0;
     let newCreditGiven = 0;
 
-    for (const sale of daySales) {
+    for (const sale of filteredSales) {
       totalRevenue += Number(sale.total_amount || 0);
 
       const saleProfit = Array.isArray(sale.items)
@@ -1090,19 +1268,19 @@ class HolyStarDatabase {
 
     let cashDebtRepayments = 0;
     let momoDebtRepayments = 0;
-    const dayRepayments = [];
+    const periodRepayments = [];
 
     for (const debtor of allDebtors) {
       if (!Array.isArray(debtor.history)) continue;
       for (const h of debtor.history) {
-        if (h.type === 'PAYMENT' && h.date_str === dateStr) {
+        if (h.type === 'PAYMENT' && this.isDateInPeriod(h.date_str, h.timestamp, periodType, customDateStr)) {
           const amt = Number(h.amount_paid || 0);
           if (h.payment_method === 'MoMo') {
             momoDebtRepayments += amt;
           } else {
             cashDebtRepayments += amt;
           }
-          dayRepayments.push({
+          periodRepayments.push({
             ...h,
             debtor_name: debtor.name,
             debtor_phone: debtor.phone
@@ -1115,9 +1293,10 @@ class HolyStarDatabase {
     const totalMoMoRecorded = momoSalesCollected + momoDebtRepayments;
 
     return {
-      dateStr,
-      sales: daySales,
-      repayments: dayRepayments,
+      periodType,
+      dateStr: customDateStr || this.formatLocalDate(),
+      sales: filteredSales,
+      repayments: periodRepayments,
       metrics: {
         totalRevenue: Number(totalRevenue.toFixed(2)),
         grossProfit: Number(grossProfit.toFixed(2)),
@@ -1128,13 +1307,68 @@ class HolyStarDatabase {
         momoFromSales: Number(momoSalesCollected.toFixed(2)),
         momoFromDebtors: Number(momoDebtRepayments.toFixed(2)),
         newCreditGiven: Number(newCreditGiven.toFixed(2)),
-        salesCount: daySales.length
+        salesCount: filteredSales.length
       }
     };
   }
 
+  async getDailyReport(dateStr) {
+    return this.getSalesReportByPeriod('DATE', dateStr || this.formatLocalDate());
+  }
+
   // =========================================================================
-  // STAGE 3 & 4 SUPER-ADMIN TELEMETRY SUMMARY & CLOUD/LOCAL HEARTBEAT ENGINE
+  // DAILY CLOSE RECEIPT ARCHIVE (`closed_days` STORE)
+  // =========================================================================
+
+  async archiveClosedDay({ dateStr, metrics, auditSeal }) {
+    await this.initFromExisting();
+    const store = await this.getActiveStore();
+    if (!store) throw new Error('No active store.');
+
+    const targetDate = dateStr || this.formatLocalDate();
+    const recordId = `${store.store_id}_${targetDate}`;
+    const now = Date.now();
+
+    const closedRecord = {
+      id: recordId,
+      store_id: store.store_id,
+      store_name: store.store_name,
+      date_str: targetDate,
+      sales_count: Number(metrics?.salesCount || 0),
+      revenue: Number(metrics?.totalRevenue || 0),
+      profit: Number(metrics?.grossProfit || 0),
+      cash_collected: Number(metrics?.cashCollected || 0),
+      momo: Number(metrics?.momoRecorded || 0),
+      credit_given: Number(metrics?.newCreditGiven || 0),
+      audit_seal: auditSeal || '',
+      closed_at: now
+    };
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(['closed_days'], 'readwrite');
+      tx.objectStore('closed_days').put(closedRecord);
+      tx.oncomplete = () => resolve(closedRecord);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async getAllClosedDays(storeId = this.getActiveStoreId()) {
+    await this.initFromExisting();
+    if (!storeId) return [];
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(['closed_days'], 'readonly');
+      const req = tx.objectStore('closed_days').getAll();
+      req.onsuccess = () => {
+        const list = (req.result || []).filter((c) => c && c.store_id === storeId);
+        list.sort((a, b) => String(b.date_str || '').localeCompare(String(a.date_str || '')));
+        resolve(list);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  // =========================================================================
+  // CLOUD + LOCAL SYNC ENGINE (`/api/sync` + `ntfy.sh` + `localStorage`)
   // =========================================================================
 
   getTelemetryRegistryMap() {
@@ -1151,23 +1385,14 @@ class HolyStarDatabase {
   saveTelemetryRegistryMap(mapObj) {
     try {
       localStorage.setItem('holystar_telemetry_registry_v1', JSON.stringify(mapObj || {}));
-    } catch (e) {
-      // Ignore quota errors
-    }
+    } catch (e) {}
   }
 
   getCloudSyncConfig() {
-    const defaultTopic = 'holystar_pos_telemetry_sync_2026_v1';
-    try {
-      const savedTopic = localStorage.getItem('holystar_cloud_sync_topic') || defaultTopic;
-      const customUrl = localStorage.getItem('holystar_cloud_sync_custom_url') || '';
-      return {
-        topic: String(savedTopic).trim() || defaultTopic,
-        customUrl: String(customUrl).trim()
-      };
-    } catch (e) {
-      return { topic: defaultTopic, customUrl: '' };
-    }
+    return {
+      topic: CLOUD_SYNC_TOPIC_V3,
+      customUrl: ''
+    };
   }
 
   async getStoreTelemetrySummary(storeId = this.getActiveStoreId()) {
@@ -1201,10 +1426,7 @@ class HolyStarDatabase {
       licenseStatus = 'Trial_Active';
     }
 
-    const isOnlineNow = typeof navigator !== 'undefined' ? Boolean(navigator.onLine) : true;
-    const lastSyncedTs = isOnlineNow
-      ? now
-      : Number(store.last_synced_at || store.last_active_at || store.created_at || now);
+    const lastSyncedTs = Number(store.last_synced_at || 0);
 
     return {
       store_id: store.store_id,
@@ -1212,7 +1434,7 @@ class HolyStarDatabase {
       store_category: store.store_category || 'Provision & Mini-Mart',
       owner_name: store.owner_name || '',
       owner_phone: store.owner_phone || '',
-      location: store.location || '',
+      location: store.shop_location || store.location || '',
       created_at: new Date(store.created_at || now).toISOString(),
       created_at_ts: Number(store.created_at || now),
       total_products_count: products.length,
@@ -1226,16 +1448,106 @@ class HolyStarDatabase {
       license_expiry_date: new Date(expiry || now).toISOString(),
       last_active_at: new Date(store.last_active_at || now).toISOString(),
       last_active_ts: Number(store.last_active_at || now),
-      last_synced_at: new Date(lastSyncedTs).toISOString(),
-      last_synced_ts: lastSyncedTs,
-      online_now: isOnlineNow
+      last_synced_at: lastSyncedTs ? new Date(lastSyncedTs).toISOString() : '',
+      last_synced_ts: lastSyncedTs
     };
   }
 
   /**
-   * Push a store's high-level telemetry heartbeat to:
-   * 1. Local Cross-Store Telemetry Registry (`localStorage`)
-   * 2. Cloud Pub/Sub Relay (`ntfy.sh` + optional custom Webhook/REST URL) when online
+   * Explicit Full Store Cloud Sync (used by `Sync Database Online` in Settings & `Close Day` Sync Prompt).
+   * Throws `OFFLINE_NO_INTERNET` if the device is disconnected or cannot reach the server.
+   */
+  async syncFullStoreOnline(storeId = this.getActiveStoreId()) {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      throw new Error('OFFLINE_NO_INTERNET');
+    }
+
+    await this.initFromExisting();
+    const store = await this.getStoreById(storeId);
+    if (!store) throw new Error('No active store to sync.');
+
+    const [products, sales, debtors, closed_days, license, telemetry] = await Promise.all([
+      this.getAllProducts(storeId),
+      this.getAllSales(storeId),
+      this.getAllDebtors(storeId),
+      this.getAllClosedDays(storeId),
+      this.getUsedTokens(storeId),
+      this.getStoreTelemetrySummary(storeId)
+    ]);
+
+    const now = Date.now();
+    telemetry.last_synced_ts = now;
+    telemetry.last_synced_at = new Date(now).toISOString();
+
+    const fullBundle = {
+      store_id: storeId,
+      store: { ...store, last_synced_at: now },
+      products,
+      sales,
+      debtors,
+      closed_days,
+      license,
+      telemetry,
+      updated_at: now
+    };
+
+    let anySuccess = false;
+
+    // 1. Push to `/api/sync`
+    try {
+      const apiRes = await fetch('./api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fullBundle)
+      });
+      if (apiRes.ok) {
+        anySuccess = true;
+      }
+    } catch (e) {}
+
+    // 2. Push to Cloud Relay (`ntfy.sh`) for cross-instance persistence
+    try {
+      const cloudRes = await fetch(`https://ntfy.sh/${CLOUD_SYNC_TOPIC_V3}`, {
+        method: 'POST',
+        headers: {
+          'Title': `HolyStar Cloud Sync ${storeId}`,
+          'Priority': 'default'
+        },
+        body: JSON.stringify({
+          _type: 'HOLYSTAR_CLOUD_SYNC_V3',
+          store_id: storeId,
+          updated_at: now,
+          telemetry,
+          bundle: fullBundle
+        })
+      });
+      if (cloudRes.ok) {
+        anySuccess = true;
+      }
+    } catch (e) {}
+
+    if (!anySuccess) {
+      throw new Error('OFFLINE_NO_INTERNET');
+    }
+
+    // Update `last_synced_at` in local IndexedDB & registry
+    store.last_synced_at = now;
+    await this.saveActiveStoreRecord(store);
+
+    const registry = this.getTelemetryRegistryMap();
+    registry[storeId] = {
+      ...(registry[storeId] || {}),
+      ...telemetry,
+      last_synced_ts: now,
+      last_synced_at: new Date(now).toISOString()
+    };
+    this.saveTelemetryRegistryMap(registry);
+
+    return { ok: true, synced_at: now, telemetry: registry[storeId] };
+  }
+
+  /**
+   * Non-blocking background heartbeat
    */
   async syncTelemetryHeartbeat(storeId = this.getActiveStoreId(), eventReason = 'heartbeat') {
     try {
@@ -1245,45 +1557,17 @@ class HolyStarDatabase {
       const summary = await this.getStoreTelemetrySummary(storeId);
       if (!summary) return null;
 
-      summary.last_event = eventReason;
-
-      // Merge into local cross-store registry
       const registry = this.getTelemetryRegistryMap();
-      const existing = registry[storeId] || {};
-
-      const isOnline = typeof navigator !== 'undefined' ? Boolean(navigator.onLine) : true;
-      if (!isOnline && existing.last_synced_ts) {
-        summary.last_synced_ts = existing.last_synced_ts;
-        summary.last_synced_at = existing.last_synced_at;
-        summary.pending_cloud_sync = true;
-      } else if (isOnline) {
-        summary.last_synced_ts = Date.now();
-        summary.last_synced_at = new Date(summary.last_synced_ts).toISOString();
-        summary.pending_cloud_sync = false;
-      }
-
       registry[storeId] = {
-        ...existing,
+        ...(registry[storeId] || {}),
         ...summary,
+        last_event: eventReason,
         updated_local_ts: Date.now()
       };
       this.saveTelemetryRegistryMap(registry);
 
-      // Update store's `last_synced_at` in IndexedDB if online
-      if (isOnline) {
-        const store = await this.getStoreById(storeId);
-        if (store) {
-          store.last_synced_at = summary.last_synced_ts;
-          await new Promise((resolve) => {
-            const tx = this.db.transaction(['stores'], 'readwrite');
-            tx.objectStore('stores').put(store);
-            tx.oncomplete = () => resolve(true);
-            tx.onerror = () => resolve(false);
-          });
-        }
-
-        // Non-blocking Cloud Push (cross-device phone <-> laptop sync)
-        this.pushTelemetryToCloud(registry[storeId]).catch(() => {});
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        this.syncFullStoreOnline(storeId).catch(() => {});
       }
 
       return registry[storeId];
@@ -1295,46 +1579,22 @@ class HolyStarDatabase {
   async pushTelemetryToCloud(telemetryItem) {
     if (!telemetryItem || !telemetryItem.store_id) return false;
     if (typeof navigator !== 'undefined' && !navigator.onLine) return false;
-
-    const { topic, customUrl } = this.getCloudSyncConfig();
-    const payloadStr = JSON.stringify({
-      _type: 'HOLYSTAR_STORE_HEARTBEAT_V1',
-      sent_at: Date.now(),
-      telemetry: telemetryItem
-    });
-
-    const promises = [];
-
-    if (topic) {
-      promises.push(
-        fetch(`https://ntfy.sh/${encodeURIComponent(topic)}`, {
-          method: 'POST',
-          headers: {
-            'Title': `HolyStar POS Sync: ${telemetryItem.store_id}`,
-            'Priority': 'default'
-          },
-          body: payloadStr
-        }).catch(() => null)
-      );
+    try {
+      await fetch(`https://ntfy.sh/${CLOUD_SYNC_TOPIC_V3}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          _type: 'HOLYSTAR_CLOUD_SYNC_V3',
+          store_id: telemetryItem.store_id,
+          updated_at: Date.now(),
+          telemetry: telemetryItem
+        })
+      });
+      return true;
+    } catch (e) {
+      return false;
     }
-
-    if (customUrl) {
-      promises.push(
-        fetch(customUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: payloadStr
-        }).catch(() => null)
-      );
-    }
-
-    await Promise.all(promises);
-    return true;
   }
 
-  /**
-   * Aggregate all stores from IndexedDB + localStorage Registry for Super-Admin
-   */
   async getAllStoresTelemetry() {
     await this.initFromExisting();
     const dbStores = await this.getAllStores();
@@ -1345,7 +1605,6 @@ class HolyStarDatabase {
       const liveSummary = await this.getStoreTelemetrySummary(s.store_id);
       if (liveSummary) {
         const prev = registry[s.store_id] || {};
-        // Preserve admin-override expiry if admin generated a token for an offline store
         if (prev.admin_expected_expiry_ts && prev.admin_expected_expiry_ts > liveSummary.license_expiry_ts) {
           liveSummary.admin_expected_expiry_ts = prev.admin_expected_expiry_ts;
           liveSummary.admin_expected_expiry_date = prev.admin_expected_expiry_date;
@@ -1362,20 +1621,44 @@ class HolyStarDatabase {
   }
 
   /**
-   * Pull recent cross-device heartbeats from the Cloud Sync Channel
+   * Pull global store directory from `/api/sync?all=1` + Cloud Sync Channel,
+   * and auto-push any local IndexedDB stores that haven't been announced to the cloud yet
+   * so PC and Phone always show the exact same stores!
    */
   async pullCloudTelemetry() {
-    const currentList = await this.getAllStoresTelemetry();
+    const localList = await this.getAllStoresTelemetry();
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      return currentList;
+      return localList;
     }
 
-    const { topic, customUrl } = this.getCloudSyncConfig();
     const registry = this.getTelemetryRegistryMap();
+    const seenInCloud = new Set();
 
-    if (topic) {
+    // 1. Fetch from `/api/sync?all=1`
+    try {
+      const apiRes = await fetch('./api/sync?all=1', { cache: 'no-store' });
+      if (apiRes.ok) {
+        const data = await apiRes.json();
+        if (data && Array.isArray(data.stores)) {
+          for (const t of data.stores) {
+            if (t && t.store_id) {
+              seenInCloud.add(t.store_id);
+              const existing = registry[t.store_id];
+              const incomingTs = Number(t.last_synced_ts || 0);
+              const existingTs = existing ? Number(existing.last_synced_ts || 0) : 0;
+              if (!existing || incomingTs >= existingTs) {
+                registry[t.store_id] = { ...(existing || {}), ...t };
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 2. Fetch from Cloud Relay (`ntfy.sh` v3 + legacy v1 topic)
+    for (const topic of [CLOUD_SYNC_TOPIC_V3, 'holystar_pos_telemetry_sync_2026_v1']) {
       try {
-        const res = await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}/json?poll=1&since=all`, {
+        const res = await fetch(`https://ntfy.sh/${topic}/json?poll=1&since=all`, {
           cache: 'no-store'
         });
         if (res.ok) {
@@ -1383,13 +1666,14 @@ class HolyStarDatabase {
           const lines = text.split('\n').filter((l) => l.trim().length > 0);
           for (const line of lines) {
             try {
-              const envelope = JSON.parse(line);
-              if (envelope && envelope.event === 'message' && envelope.message) {
-                const parsed = JSON.parse(envelope.message);
-                if (parsed && parsed._type === 'HOLYSTAR_STORE_HEARTBEAT_V1' && parsed.telemetry && parsed.telemetry.store_id) {
-                  const t = parsed.telemetry;
+              const env = JSON.parse(line);
+              if (env && env.event === 'message' && env.message) {
+                const parsed = JSON.parse(env.message);
+                const t = parsed && parsed.telemetry ? parsed.telemetry : null;
+                if (t && t.store_id) {
+                  seenInCloud.add(t.store_id);
                   const existing = registry[t.store_id];
-                  const incomingTs = Number(t.last_synced_ts || parsed.sent_at || 0);
+                  const incomingTs = Number(t.last_synced_ts || parsed.updated_at || parsed.sent_at || 0);
                   const existingTs = existing ? Number(existing.last_synced_ts || 0) : 0;
                   if (!existing || incomingTs >= existingTs) {
                     registry[t.store_id] = {
@@ -1401,36 +1685,17 @@ class HolyStarDatabase {
                   }
                 }
               }
-            } catch (lineErr) {
-              // Ignore malformed message line
-            }
+            } catch (lineErr) {}
           }
         }
-      } catch (err) {
-        // Offline or unreachable
-      }
+      } catch (err) {}
     }
 
-    if (customUrl) {
-      try {
-        const res = await fetch(customUrl, { cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          const items = Array.isArray(data) ? data : (data && typeof data === 'object' ? Object.values(data) : []);
-          for (const item of items) {
-            const t = item && item.telemetry ? item.telemetry : item;
-            if (t && t.store_id) {
-              const existing = registry[t.store_id];
-              const incomingTs = Number(t.last_synced_ts || 0);
-              const existingTs = existing ? Number(existing.last_synced_ts || 0) : 0;
-              if (!existing || incomingTs >= existingTs) {
-                registry[t.store_id] = { ...(existing || {}), ...t };
-              }
-            }
-          }
-        }
-      } catch (err) {
-        // Ignore custom URL fetch errors
+    // 3. Re-announce any local IndexedDB stores not yet in Cloud so Phone & PC stay 100% identical
+    const localDbStores = await this.getAllStores();
+    for (const s of localDbStores) {
+      if (s && s.store_id && !seenInCloud.has(s.store_id)) {
+        this.syncFullStoreOnline(s.store_id).catch(() => {});
       }
     }
 
@@ -1445,18 +1710,19 @@ class HolyStarDatabase {
   async exportFullBackup() {
     await this.initFromExisting();
     const storeId = this.getActiveStoreId();
-    const [store, products, sales, debtors, license, telemetry] = await Promise.all([
+    const [store, products, sales, debtors, closed_days, license, telemetry] = await Promise.all([
       this.getActiveStore(),
       this.getAllProducts(storeId),
       this.getAllSales(storeId),
       this.getAllDebtors(storeId),
-      this.getUsedTokens(),
+      this.getAllClosedDays(storeId),
+      this.getUsedTokens(storeId),
       this.getStoreTelemetrySummary(storeId)
     ]);
 
     return {
       app: 'HolyStarPOS',
-      version: '2.1.0',
+      version: '3.0.0',
       exported_at: new Date().toISOString(),
       shop_id: store ? store.store_id : 'HS-0000',
       telemetry_summary: telemetry,
@@ -1466,6 +1732,7 @@ class HolyStarDatabase {
         products,
         sales,
         debtors,
+        closed_days,
         license
       }
     };
@@ -1477,10 +1744,10 @@ class HolyStarDatabase {
       throw new Error('Invalid backup file format. Expected a valid HolyStarPOS JSON backup.');
     }
 
-    const { settings, store, products, sales, debtors, license } = backupJson.data;
+    const { settings, store, products, sales, debtors, closed_days, license } = backupJson.data;
     const targetStore = store && store.store_id ? store : settings;
     if (!Array.isArray(products) || !Array.isArray(sales) || !Array.isArray(debtors) || !targetStore) {
-      throw new Error('Corrupted backup structure: missing products, sales, debtors, or store settings.');
+      throw new Error('Corrupted backup structure.');
     }
 
     const storeId = targetStore.store_id || targetStore.shop_id || this.getActiveStoreId() || 'HS-RESTORED';
@@ -1491,35 +1758,16 @@ class HolyStarDatabase {
     targetStore.last_seen_timestamp = Date.now();
     targetStore.clock_tampered = false;
 
-    return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['stores', 'products', 'sales', 'debtors', 'license'], 'readwrite');
-      tx.objectStore('stores').put(targetStore);
-
-      const pStore = tx.objectStore('products');
-      for (const p of products) {
-        if (p && p.id) pStore.put({ ...p, store_id: storeId });
-      }
-
-      const sStore = tx.objectStore('sales');
-      for (const s of sales) {
-        if (s && s.id) sStore.put({ ...s, store_id: storeId });
-      }
-
-      const dStore = tx.objectStore('debtors');
-      for (const d of debtors) {
-        if (d && d.id) dStore.put({ ...d, store_id: storeId });
-      }
-
-      if (Array.isArray(license)) {
-        const lStore = tx.objectStore('license');
-        for (const l of license) {
-          if (l && l.token_id) lStore.put({ ...l, store_id: storeId });
-        }
-      }
-
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => reject(tx.error || new Error('Failed to restore backup.'));
+    await this.hydrateStoreBundleIntoIndexedDB({
+      store: targetStore,
+      products,
+      sales,
+      debtors,
+      closed_days: Array.isArray(closed_days) ? closed_days : [],
+      license: Array.isArray(license) ? license : []
     });
+
+    return true;
   }
 
   formatLocalDate(ts = Date.now()) {
