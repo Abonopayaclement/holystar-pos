@@ -422,12 +422,12 @@ function renderStoresList() {
   container.innerHTML = filtered
     .map((s) => {
       const subPill = s.computed_sub_status === 'EXPIRED'
-        ? `<span class="sa-badge sa-badge-red">Expired</span>`
-        : `<span class="sa-badge sa-badge-green">Active (${s.days_remaining}d)</span>`;
+        ? `<span class="sa-badge sa-badge-red">● Expired</span>`
+        : `<span class="sa-badge sa-badge-green">● Active (${s.days_remaining}d left)</span>`;
 
       const syncPill = s.is_synced_24h
-        ? `<span class="sa-badge sa-badge-green">🟢 Synced</span>`
-        : `<span class="sa-badge sa-badge-amber">🟠 Offline</span>`;
+        ? `<span class="sa-badge sa-badge-blue">🟢 Synced Online</span>`
+        : `<span class="sa-badge sa-badge-amber">🟠 Offline (>24h)</span>`;
 
       const waDigits = saCleanWhatsAppPhone(s.owner_phone);
       const waHref = waDigits
@@ -435,36 +435,37 @@ function renderStoresList() {
         : '#';
 
       return `
-        <div class="sa-store-row">
-          <!-- 1. Store Name & Phone -->
+        <div class="sa-store-card">
+          <!-- 1. Store Name, Category & ID -->
           <div>
-            <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">
+            <div class="sa-store-title-bar">
               <span class="sa-store-id-tag">${saEscapeHtml(s.store_id)}</span>
-              <strong style="font-size:0.9rem; color:#0f172a;">${saEscapeHtml(s.store_name)}</strong>
+              <span class="sa-store-name">${saEscapeHtml(s.store_name)}</span>
+              <span class="sa-category-tag">${saEscapeHtml(s.store_category || 'Retail')}</span>
             </div>
-            <div style="font-size:0.75rem; color:#64748b; margin-top:0.2rem; display:flex; align-items:center; gap:0.45rem;">
+            <div class="sa-owner-row">
+              <span>👤 ${saEscapeHtml(s.owner_name || 'Owner')}</span>
               <span>📞 ${saEscapeHtml(s.owner_phone || '-')}</span>
-              ${waDigits ? `<a href="${waHref}" target="_blank" rel="noopener" style="color:#15803d; font-weight:800; text-decoration:none;">💬 Chat</a>` : ''}
+              ${waDigits ? `<a href="${waHref}" target="_blank" rel="noopener" class="sa-wa-btn">💬 WhatsApp</a>` : ''}
             </div>
           </div>
 
-          <!-- 2. Items | Sales (GHS) -->
-          <div class="sa-store-metrics" style="font-size:0.8rem; font-weight:700; color:#334155;">
-            <span>📦 ${Number(s.total_products_count || 0)} items</span>
-            <span style="color:#cbd5e1; margin:0 0.3rem;">|</span>
-            <strong style="color:#0f172a;">${saFormatGHS(s.total_revenue_ghs || 0)}</strong>
+          <!-- 2. Stock Items & Total Sales (GHS) -->
+          <div class="sa-store-metrics">
+            <div>📦 <span class="sa-metrics-val">${Number(s.total_products_count || 0)}</span> items (${Number(s.total_stock_units || 0)} units)</div>
+            <div>💰 <span class="sa-metrics-val">${saFormatGHS(s.total_revenue_ghs || 0)}</span> (${Number(s.total_sales_count || 0)} sales)</div>
           </div>
 
-          <!-- 3. Status Pill: Active (X days) or Expired | Synced or Offline -->
-          <div class="sa-store-badges" style="display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">
+          <!-- 3. Status Pills -->
+          <div class="sa-store-badges">
             ${subPill}
             ${syncPill}
           </div>
 
-          <!-- 4. 1-Click + Token Button -->
+          <!-- 4. Generate Token Button -->
           <div style="text-align:right;">
-            <button type="button" class="btn btn-primary btn-sm btn-sa-row-token" data-store-id="${saEscapeHtml(s.store_id)}" style="background:#f59e0b; border-color:#f59e0b; color:#0f172a; font-weight:800;">
-              + Token
+            <button type="button" class="btn-generate-token btn-sa-row-token" data-store-id="${saEscapeHtml(s.store_id)}">
+              🔑 Generate Token
             </button>
           </div>
         </div>

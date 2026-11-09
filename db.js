@@ -353,14 +353,15 @@ class HolyStarDatabase {
     const cleanPass = String(password || '').trim();
 
     if (!cleanId || !cleanPass) {
-      throw new Error('Please enter your Store Phone / ID and Password.');
+      throw new Error('Please enter your Store Name and Password.');
     }
 
     const matchStoreFn = (s) =>
       s &&
-      (this.normalizePhone(s.owner_phone) === cleanPhone ||
-        String(s.store_id || '').toUpperCase() === cleanId.toUpperCase() ||
-        String(s.store_name || '').toLowerCase() === cleanId.toLowerCase());
+      (String(s.store_name || '').trim().toLowerCase() === cleanId.toLowerCase() ||
+        String(s.shop_name || '').trim().toLowerCase() === cleanId.toLowerCase() ||
+        this.normalizePhone(s.owner_phone) === cleanPhone ||
+        String(s.store_id || '').toUpperCase() === cleanId.toUpperCase());
 
     let localStores = await this.getAllStores();
     let store = localStores.find(matchStoreFn);
@@ -427,8 +428,13 @@ class HolyStarDatabase {
         } else {
           const prevTs = Number(prev.updated_at || prev.timestamp || prev.closed_at || prev.applied_at || prev.created_at || 0);
           const nextTs = Number(item.updated_at || item.timestamp || item.closed_at || item.applied_at || item.created_at || 0);
-          if (nextTs >= prevTs) {
+          if (nextTs > prevTs) {
             map.set(item[idField], { ...prev, ...item });
+          } else if (nextTs === prevTs) {
+            // If timestamps match, preserve local stock reductions if prev has lower stock
+            if (prev.stock_qty !== undefined && item.stock_qty !== undefined && Number(prev.stock_qty) < Number(item.stock_qty)) {
+              map.set(item[idField], { ...item, stock_qty: prev.stock_qty });
+            }
           }
         }
       }
@@ -654,6 +660,7 @@ class HolyStarDatabase {
   /**
    * Hydrate a store bundle (`store`, `products`, `sales`, `debtors`, `closed_days`, `license`)
    * into local IndexedDB so a newly logged-in phone or PC has all store data offline!
+   * NEVER overwrites local stock reductions or newer local edits with stale incoming data.
    */
   async hydrateStoreBundleIntoIndexedDB(bundle) {
     if (!bundle || !bundle.store || !bundle.store.store_id) return false;
@@ -670,6 +677,12 @@ class HolyStarDatabase {
     const closedDays = Array.isArray(bundle.closed_days) ? bundle.closed_days : [];
     const license = Array.isArray(bundle.license) ? bundle.license : [];
 
+    const existingProducts = await this.getAllProducts(storeId);
+    const existingMap = new Map();
+    for (const ep of existingProducts) {
+      if (ep && ep.id) existingMap.set(ep.id, ep);
+    }
+
     return new Promise((resolve) => {
       try {
         const tx = this.db.transaction(
@@ -684,7 +697,19 @@ class HolyStarDatabase {
           if (delId) pStore.delete(delId);
         }
         for (const p of products) {
-          if (p && p.id && !deletedIds.includes(p.id)) pStore.put({ ...p, store_id: storeId });
+          if (!p || !p.id || deletedIds.includes(p.id)) continue;
+          const localItem = existingMap.get(p.id);
+          if (!localItem) {
+            pStore.put({ ...p, store_id: storeId });
+          } else {
+            const localTs = Number(localItem.updated_at || localItem.timestamp || 0);
+            const incomingTs = Number(p.updated_at || p.timestamp || 0);
+            if (incomingTs > localTs) {
+              pStore.put({ ...p, store_id: storeId });
+            } else if (incomingTs === localTs && Number(p.stock_qty) < Number(localItem.stock_qty)) {
+              pStore.put({ ...p, store_id: storeId });
+            }
+          }
         }
 
         const sStore = tx.objectStore('sales');
@@ -707,6 +732,66 @@ class HolyStarDatabase {
           if (l && l.token_id) lStore.put({ ...l, store_id: storeId });
         }
 
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+      } catch (e) {
+        resolve(false);
+      }
+    });
+  }
+
+  /**
+   * Automatically ensure demo store "test account 1" is pre-loaded with rich sample products
+   * covering all 14 categories. If already seeded, NEVER overwrites stock reductions or sales!
+   * All other stores remain 100% blank.
+   */
+  async ensureDemoStoreSeeded(storeId = this.getActiveStoreId()) {
+    if (!storeId) return false;
+    await this.initFromExisting();
+    const store = await this.getStoreById(storeId);
+    if (!store) return false;
+
+    const storeName = String(store.store_name || store.shop_name || '').trim().toLowerCase();
+    if (storeName !== 'test account 1') {
+      return false;
+    }
+
+    const existingProds = await this.getAllProducts(storeId);
+    if (existingProds.length > 0) {
+      // Already populated! NEVER re-seed or reset stock quantities!
+      return false;
+    }
+
+    const catalogItems = typeof window !== 'undefined' && Array.isArray(window.MASTER_CATALOG)
+      ? window.MASTER_CATALOG
+      : [];
+
+    if (catalogItems.length === 0) return false;
+
+    const now = Date.now();
+    return new Promise((resolve) => {
+      try {
+        const tx = this.db.transaction(['products', 'stores'], 'readwrite');
+        const pStore = tx.objectStore('products');
+        for (const item of catalogItems) {
+          const prodId = 'PRD-DEMO-' + (item.catalog_id || Math.random().toString(36).slice(2, 7).toUpperCase());
+          const seededProduct = {
+            id: prodId,
+            store_id: storeId,
+            name: item.name,
+            category: item.category || 'General',
+            barcode: item.suggested_barcode || '',
+            image_url: item.image_url || '',
+            cost_price: Number(item.cost_price || 10),
+            selling_price: Number(item.selling_price || 15),
+            stock_qty: 30, // 30 units in stock
+            low_stock_threshold: 5,
+            updated_at: now
+          };
+          pStore.put(seededProduct);
+        }
+        store.seeded_demo = true;
+        tx.objectStore('stores').put(store);
         tx.oncomplete = () => resolve(true);
         tx.onerror = () => resolve(false);
       } catch (e) {
@@ -996,6 +1081,14 @@ class HolyStarDatabase {
         }
       };
 
+      if (paymentMethod === 'MoMo') {
+        const cleanMoMo = String(momoPhone || '').replace(/[\s\-]/g, '');
+        const isValidMoMo = /^(\+233|0)[235]\d{8}$/.test(cleanMoMo);
+        if (!cleanMoMo || !isValidMoMo) {
+          return failTransaction('Valid Ghana Customer MoMo Number (e.g. 0244123456 or 0551234567) is required for MoMo checkout.');
+        }
+      }
+
       const verifiedItems = [];
       let totalAmount = 0;
       let totalProfit = 0;
@@ -1018,7 +1111,7 @@ class HolyStarDatabase {
             return failTransaction(`Insufficient stock for "${dbProduct.name}". Available: ${dbProduct.stock_qty}, Requested: ${qty}.`);
           }
 
-          dbProduct.stock_qty -= qty;
+          dbProduct.stock_qty = Math.max(0, Number(dbProduct.stock_qty || 0) - Number(qty));
           dbProduct.updated_at = now;
           productStore.put(dbProduct);
 

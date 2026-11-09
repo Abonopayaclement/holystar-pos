@@ -9,12 +9,12 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
   <link rel="apple-touch-icon" href="icon-192.png" />
-  <link rel="stylesheet" href="style.css?v=3.2" />
+  <link rel="stylesheet" href="style.css?v=3.3" />
   <script>
     (function () {
       try {
-        if (localStorage.getItem('holystar_sw_migrated_v12') !== '1' && navigator.onLine) {
-          localStorage.setItem('holystar_sw_migrated_v12', '1');
+        if (localStorage.getItem('holystar_sw_migrated_v13') !== '1' && navigator.onLine) {
+          localStorage.setItem('holystar_sw_migrated_v13', '1');
           Promise.all([
             'serviceWorker' in navigator
               ? navigator.serviceWorker.getRegistrations().then(function (regs) {
@@ -27,7 +27,7 @@
                 })
               : Promise.resolve()
           ]).then(function () {
-            window.location.replace(window.location.pathname + '?v=3.2');
+            window.location.replace(window.location.pathname + '?v=3.3');
           });
         }
       } catch (e) {}
@@ -64,8 +64,8 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="login-identifier">Phone or Store ID *</label>
-            <input type="text" id="login-identifier" class="form-control" placeholder="0244123456 or HS-XXXX" required />
+            <label class="form-label" for="login-identifier">Store Name *</label>
+            <input type="text" id="login-identifier" class="form-control" placeholder="e.g. Test Account 1 or Mother's Grace" required />
           </div>
 
           <div class="form-group">
@@ -91,10 +91,21 @@
             <label class="form-label" for="reg-store-category">Category *</label>
             <select id="reg-store-category" class="form-control" required>
               <option value="Provision & Mini-Mart">🛒 Provision &amp; Mini-Mart</option>
+              <option value="Biscuits & Snacks">🍪 Biscuits &amp; Snacks</option>
+              <option value="Beverages & Drinks">☕ Beverages &amp; Drinks</option>
+              <option value="Milk & Dairy">🥛 Milk &amp; Dairy</option>
+              <option value="Canned & Tin Foods">🥫 Canned &amp; Tin Foods</option>
+              <option value="Cooking Oil & Paste">🛢️ Cooking Oil &amp; Paste</option>
+              <option value="Rice, Grains & Flour">🌾 Rice, Grains &amp; Flour</option>
+              <option value="Bread & Bakery">🍞 Bread &amp; Bakery</option>
+              <option value="Soaps & Detergents">🧼 Soaps &amp; Detergents</option>
+              <option value="Toiletries & Cosmetics">🧴 Toiletries &amp; Cosmetics</option>
+              <option value="Baby Products">👶 Baby Products</option>
+              <option value="OTC Medicine & First Aid">💊 OTC Medicine &amp; First Aid</option>
+              <option value="Phone Accessories">🔌 Phone Accessories</option>
+              <option value="Stationery">📚 Stationery</option>
+              <option value="Household & Plastics">🪣 Household &amp; Plastics</option>
               <option value="Boutique & Fashion">👗 Boutique &amp; Fashion</option>
-              <option value="Pharmacy/Over-the-Counter">💊 Pharmacy / OTC</option>
-              <option value="Cosmetics">🧴 Cosmetics</option>
-              <option value="Electronics/Phone Shop">📱 Electronics / Phone</option>
               <option value="Food/Restaurant">🍲 Food / Restaurant</option>
               <option value="Other">📦 Other</option>
             </select>
@@ -140,9 +151,16 @@
   </div>
 
   <!-- ====================================================================
-       MINIMAL TOP HEADER (STORE NAME + ONLINE DOT + LOGOUT ICON)
+       TOP HEADER (HAMBURGER MENU + ACTIVE SECTION + STORE NAME + STATUS)
        ==================================================================== -->
   <header class="app-header">
+    <div class="header-left-bar">
+      <button type="button" id="btn-hamburger-menu" class="btn-hamburger" aria-label="Open Navigation Menu" title="Open Navigation Menu">
+        <span class="hamburger-icon">☰</span>
+      </button>
+      <div id="header-active-section-title" class="header-section-title">POS</div>
+    </div>
+
     <div class="brand-group">
       <div class="brand-logo" aria-hidden="true">★</div>
       <div class="header-store-title-wrap">
@@ -157,10 +175,53 @@
       </button>
       <button type="button" id="btn-logout-store" class="btn-icon-logout" title="Switch Store / Log Out">
         <span>🚪</span>
-        <span>Switch / Exit</span>
+        <span class="btn-logout-text">Switch</span>
       </button>
     </div>
   </header>
+
+  <!-- ====================================================================
+       SLIDE-OUT NAVIGATION DRAWER (ONLY 4 MAIN SECTIONS)
+       ==================================================================== -->
+  <div id="nav-drawer-backdrop" class="nav-drawer-backdrop hidden"></div>
+  <aside id="nav-drawer" class="nav-drawer">
+    <div class="nav-drawer-header">
+      <div class="nav-drawer-brand">
+        <div class="nav-drawer-star">★</div>
+        <div>
+          <div class="nav-drawer-title">Holy Star POS</div>
+          <div id="drawer-store-name" class="nav-drawer-store-sub">Store</div>
+        </div>
+      </div>
+      <button type="button" id="btn-close-nav-drawer" class="btn-drawer-close" aria-label="Close menu">✕</button>
+    </div>
+
+    <div class="nav-drawer-menu">
+      <button type="button" class="drawer-nav-item active" data-tab="tab-pos">
+        <span class="drawer-item-icon">🛒</span>
+        <span class="drawer-item-label">POS</span>
+      </button>
+      <button type="button" class="drawer-nav-item" data-tab="tab-inventory">
+        <span class="drawer-item-icon">📦</span>
+        <span class="drawer-item-label">Inventory</span>
+        <span id="drawer-badge-stock" class="badge badge-warning hidden">0</span>
+      </button>
+      <button type="button" class="drawer-nav-item" data-tab="tab-sales">
+        <span class="drawer-item-icon">📊</span>
+        <span class="drawer-item-label">Sales</span>
+      </button>
+      <button type="button" class="drawer-nav-item" data-tab="tab-settings">
+        <span class="drawer-item-icon">⚙️</span>
+        <span class="drawer-item-label">Settings</span>
+      </button>
+    </div>
+
+    <div class="nav-drawer-footer">
+      <button type="button" id="btn-drawer-logout" class="btn btn-outline btn-block btn-sm" style="color:#ef4444; border-color:#fca5a5; font-weight:700;">
+        🚪 Log Out / Switch Store
+      </button>
+    </div>
+  </aside>
 
   <!-- ====================================================================
        SYSTEM LOCK BANNERS
@@ -174,23 +235,6 @@
     <span>🔒 Subscription Expired (Read-Only)</span>
     <button type="button" id="btn-banner-unlock" class="btn btn-danger btn-sm">🔑 Unlock</button>
   </div>
-
-  <!-- ====================================================================
-       CLEAN 1-WORD NAVIGATION TABS
-       ==================================================================== -->
-  <nav class="app-nav" role="tablist">
-    <button type="button" class="nav-tab active" data-tab="tab-pos">POS</button>
-    <button type="button" class="nav-tab" data-tab="tab-inventory">
-      Inventory
-      <span id="nav-badge-stock" class="nav-badge badge-warning hidden">0</span>
-    </button>
-    <button type="button" class="nav-tab" data-tab="tab-debtors">
-      Debtors
-      <span id="nav-badge-debtors" class="nav-badge hidden">0</span>
-    </button>
-    <button type="button" class="nav-tab" data-tab="tab-sales">Sales</button>
-    <button type="button" class="nav-tab" data-tab="tab-settings">Settings</button>
-  </nav>
 
   <!-- ====================================================================
        MAIN WORKSPACE
@@ -285,10 +329,10 @@
               </div>
             </div>
 
-            <!-- MoMo Optional Phone Box (Ready for future USSD/API Push) -->
+            <!-- MoMo Customer Number Box (Compulsory for MoMo checkout) -->
             <div id="momo-payment-fields" class="form-group hidden" style="background:#eff6ff; padding:0.55rem 0.65rem; border-radius:8px; border:1px solid #bfdbfe;">
-              <label class="form-label" for="momo-phone-input">Customer MoMo Number (Optional)</label>
-              <input type="tel" id="momo-phone-input" class="form-control" placeholder="024XXXXXXX" />
+              <label class="form-label" for="momo-phone-input">Customer MoMo Number *</label>
+              <input type="tel" id="momo-phone-input" class="form-control" placeholder="024XXXXXXX or 05XXXXXXXX" required />
             </div>
 
             <!-- Credit Fields -->
@@ -401,9 +445,20 @@
     </section>
 
     <!-- ==================================================================
-         TAB 3: DEBTORS
+         DEBTORS (ACCESSIBLE VIA SALES -> DEBTORS)
          ================================================================== -->
     <section id="tab-debtors" class="tab-panel">
+      <!-- Back to Sales Navigation Bar -->
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.75rem; background:#ffffff; padding:0.6rem 0.9rem; border-radius:10px; border:1px solid var(--border);">
+        <button type="button" id="btn-back-to-sales" class="btn btn-outline btn-sm" style="font-weight:800;">
+          ← Back to Sales
+        </button>
+        <span style="font-size:0.9rem; font-weight:800; color:var(--text-primary);">📒 Debtors Book</span>
+        <button type="button" id="btn-open-manual-debtor-modal" class="btn btn-primary btn-sm">
+          ➕ Add Debtor
+        </button>
+      </div>
+
       <div class="metrics-grid">
         <div class="metric-card">
           <div class="metric-label">Total Owed</div>
@@ -421,10 +476,7 @@
 
       <div class="card">
         <div class="card-header">
-          <h2 class="card-title">Debtors</h2>
-          <button type="button" id="btn-open-manual-debtor-modal" class="btn btn-primary btn-sm">
-            ➕ Add Debtor
-          </button>
+          <h2 class="card-title">Debtors List</h2>
         </div>
         <div class="card-body">
           <div class="pos-filter-bar">
@@ -458,11 +510,11 @@
     </section>
 
     <!-- ==================================================================
-         TAB 4: SALES (PERIOD FILTERS, 4 CARDS & CLOSE DAY)
+         TAB 3: SALES (PERIOD FILTERS, DEBTORS BUTTON & CLOSE DAY)
          ================================================================== -->
     <section id="tab-sales" class="tab-panel">
       <div class="card" style="margin-bottom:0.85rem;">
-        <div class="card-header">
+        <div class="card-header" style="flex-wrap:wrap; gap:0.5rem; justify-content:space-between;">
           <div class="period-pills-bar">
             <button type="button" class="period-pill-btn active" data-period="TODAY" id="btn-sales-today">Today</button>
             <button type="button" class="period-pill-btn" data-period="DATE" id="btn-sales-pick-date">Pick Date</button>
@@ -472,9 +524,14 @@
             <button type="button" class="period-pill-btn" data-period="ALL">All-Time</button>
           </div>
 
-          <button type="button" id="btn-open-close-day-modal" class="btn btn-warning btn-sm">
-            🔒 Close Day
-          </button>
+          <div style="display:flex; align-items:center; gap:0.45rem;">
+            <button type="button" id="btn-sales-open-debtors" class="btn btn-outline btn-sm" style="font-weight:800; background:#f8fafc; border-color:#cbd5e1;">
+              👥 Debtors (<span id="sales-badge-debtors">0</span>)
+            </button>
+            <button type="button" id="btn-open-close-day-modal" class="btn btn-warning btn-sm">
+              🔒 Close Day
+            </button>
+          </div>
         </div>
       </div>
 
@@ -581,7 +638,7 @@
                 <span id="settings-last-synced-text" style="font-size:0.74rem; color:#475569;">Not synced yet</span>
               </div>
               <button type="button" id="btn-sync-online-settings" class="btn btn-primary btn-block">
-                🔄 Sync Database Online
+                🔄 Update Store
               </button>
             </div>
 
@@ -695,14 +752,19 @@
               <input type="text" id="prod-category" class="form-control" list="category-suggestions" placeholder="Category" required />
               <datalist id="category-suggestions">
                 <option value="Biscuits & Snacks"></option>
-                <option value="Beverages"></option>
+                <option value="Beverages & Drinks"></option>
                 <option value="Milk & Dairy"></option>
-                <option value="Tin & Canned Foods"></option>
-                <option value="Grains & Oils"></option>
-                <option value="Toiletries & Household"></option>
-                <option value="Pharmacy / OTC"></option>
-                <option value="Cosmetics & Beauty"></option>
-                <option value="Phone & Electronics"></option>
+                <option value="Canned & Tin Foods"></option>
+                <option value="Cooking Oil & Paste"></option>
+                <option value="Rice, Grains & Flour"></option>
+                <option value="Bread & Bakery"></option>
+                <option value="Soaps & Detergents"></option>
+                <option value="Toiletries & Cosmetics"></option>
+                <option value="Baby Products"></option>
+                <option value="OTC Medicine & First Aid"></option>
+                <option value="Phone Accessories"></option>
+                <option value="Stationery"></option>
+                <option value="Household & Plastics"></option>
               </datalist>
             </div>
 
@@ -970,10 +1032,10 @@
         <!-- Sync Online Prompt Banner -->
         <div id="close-day-sync-prompt" style="background:#eff6ff; border:1.5px solid #3b82f6; border-radius:10px; padding:0.75rem; margin-bottom:0.85rem;">
           <div style="font-weight:800; font-size:0.85rem; color:#1e3a8a; margin-bottom:0.5rem;">
-            Day Closed! Do you want to Sync your database online now?
+            Day Closed! Would you like to Update Store online now?
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.45rem;">
-            <button type="button" id="btn-close-day-sync-now" class="btn btn-primary btn-sm">☁️ Sync Now</button>
+            <button type="button" id="btn-close-day-sync-now" class="btn btn-primary btn-sm">🔄 Update Store</button>
             <button type="button" id="btn-close-day-skip-sync" class="btn btn-outline btn-sm">Skip (Stay Offline)</button>
           </div>
         </div>
@@ -1021,6 +1083,22 @@
     </div>
   </div>
 
+  <!-- ====================================================================
+       MODAL 10: UPDATE STORE BLOCKING POPUP DIALOG (WITH OK BUTTON)
+       ==================================================================== -->
+  <div id="modal-update-store-dialog" class="modal-backdrop hidden" style="z-index: 10000;">
+    <div class="modal-box" style="max-width:390px; text-align:center; padding:1.75rem 1.4rem; border-radius:16px;">
+      <div id="update-dialog-icon" style="font-size:3.5rem; line-height:1; margin-bottom:0.85rem;">✅</div>
+      <h3 id="update-dialog-title" style="font-size:1.2rem; font-weight:900; margin-bottom:0.5rem; color:var(--text-primary);">Store Updated Successfully!</h3>
+      <p id="update-dialog-message" style="font-size:0.9rem; color:var(--text-secondary); line-height:1.45; margin-bottom:1.4rem;">
+        Your latest sales and inventory are safely backed up online.
+      </p>
+      <button type="button" id="btn-update-dialog-ok" class="btn btn-primary btn-lg btn-block" style="font-weight:900; font-size:1rem; padding:0.75rem;">
+        OK
+      </button>
+    </div>
+  </div>
+
   <!-- Minimal Bottom Footer -->
   <footer style="max-width:1400px; margin:1rem auto 0.5rem; padding:0.6rem 1rem; display:flex; align-items:center; justify-content:space-between; font-size:0.74rem; color:#64748b;">
     <span>Holy Star POS v3.0</span>
@@ -1053,8 +1131,8 @@
   </script>
 
   <!-- Scripts -->
-  <script src="catalog.js?v=3.2"></script>
-  <script src="db.js?v=3.2"></script>
-  <script src="app.js?v=3.2"></script>
+  <script src="catalog.js?v=3.3"></script>
+  <script src="db.js?v=3.3"></script>
+  <script src="app.js?v=3.3"></script>
 </body>
 </html>

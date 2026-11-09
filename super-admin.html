@@ -4,146 +4,211 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#0f172a" />
-  <meta name="description" content="Holy Star POS — Super-Admin" />
-  <title>Holy Star — Admin</title>
+  <meta name="description" content="Holy Star POS — Super-Admin Command Center" />
+  <title>Holy Star POS — Super-Admin</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
-  <link rel="stylesheet" href="style.css?v=3.0" />
+  <link rel="stylesheet" href="style.css?v=3.3" />
   <style>
-    body.sa-body {
-      background: #f1f5f9;
-      color: #0f172a;
-      min-height: 100vh;
+    :root {
+      --sa-navy: #0f172a;
+      --sa-navy-dark: #090d16;
+      --sa-surface: #ffffff;
+      --sa-bg: #f8fafc;
+      --sa-border: #e2e8f0;
+      --sa-primary: #4f46e5;
+      --sa-primary-hover: #4338ca;
+      --sa-success: #10b981;
+      --sa-warning: #f59e0b;
+      --sa-danger: #ef4444;
+      --sa-gold: #f59e0b;
     }
 
+    body.sa-body {
+      background: var(--sa-bg);
+      color: #0f172a;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* Executive Top Bar */
     .sa-header {
-      background: #0f172a;
+      background: var(--sa-navy);
       color: #ffffff;
-      height: 56px;
-      padding: 0 1rem;
+      height: 60px;
+      padding: 0 1.25rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      border-bottom: 1px solid #1e293b;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       position: sticky;
       top: 0;
-      z-index: 90;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.15);
     }
 
     .sa-brand {
       display: flex;
       align-items: center;
-      gap: 0.55rem;
-      font-weight: 800;
-      font-size: 0.98rem;
+      gap: 0.75rem;
     }
 
     .sa-shield {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
       background: linear-gradient(135deg, #f59e0b, #d97706);
       color: #0f172a;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1rem;
+      font-size: 1.15rem;
+      font-weight: 900;
+      box-shadow: 0 2px 6px rgba(245, 158, 11, 0.35);
+    }
+
+    .sa-title-text {
+      font-weight: 900;
+      font-size: 1.05rem;
+      letter-spacing: -0.01em;
+      color: #ffffff;
+    }
+
+    .sa-sync-dot-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      color: #94a3b8;
+      font-weight: 600;
+    }
+
+    .sa-live-pulse {
+      width: 7px;
+      height: 7px;
+      background: #10b981;
+      border-radius: 50%;
+      box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.3);
+      animation: saPulse 2s infinite;
+    }
+
+    @keyframes saPulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.3); opacity: 0.7; }
     }
 
     .sa-actions {
       display: flex;
       align-items: center;
-      gap: 0.4rem;
+      gap: 0.5rem;
     }
 
     .sa-icon-btn {
-      background: #1e293b;
+      background: rgba(255, 255, 255, 0.08);
       color: #f8fafc;
-      border: 1px solid #334155;
-      border-radius: 8px;
-      padding: 0.38rem 0.65rem;
-      font-size: 0.76rem;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 9px;
+      padding: 0.42rem 0.75rem;
+      font-size: 0.78rem;
       font-weight: 700;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 0.3rem;
+      gap: 0.35rem;
       text-decoration: none;
       transition: all 0.15s ease;
     }
 
     .sa-icon-btn:hover {
-      background: #334155;
+      background: rgba(255, 255, 255, 0.16);
+      transform: translateY(-1px);
     }
 
     .sa-icon-btn.primary {
-      background: #4f46e5;
-      border-color: #4f46e5;
+      background: var(--sa-primary);
+      border-color: var(--sa-primary);
       color: #fff;
     }
 
+    .sa-icon-btn.primary:hover {
+      background: var(--sa-primary-hover);
+    }
+
     .sa-icon-btn.gold {
-      background: #f59e0b;
+      background: linear-gradient(135deg, #f59e0b, #d97706);
       border-color: #f59e0b;
       color: #0f172a;
+      font-weight: 800;
     }
 
+    /* Main Container */
     .sa-main {
-      max-width: 1020px;
+      max-width: 1180px;
       margin: 0 auto;
-      padding: 1rem;
+      padding: 1.5rem 1.25rem 3rem;
     }
 
-    /* 4 Simple Top Stat Cards */
+    /* 4 Bold SaaS KPI Cards */
     .sa-stats-row {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 0.65rem;
-      margin-bottom: 1rem;
+      gap: 0.85rem;
+      margin-bottom: 1.5rem;
     }
 
-    @media (max-width: 640px) {
+    @media (max-width: 768px) {
       .sa-stats-row {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
     }
 
     .sa-stat-card {
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-      padding: 0.85rem 1rem;
-      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+      background: var(--sa-surface);
+      border: 1px solid var(--sa-border);
+      border-radius: 14px;
+      padding: 1.1rem 1.15rem;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
       display: flex;
       align-items: center;
       justify-content: space-between;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .sa-stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
     }
 
     .sa-stat-label {
       font-size: 0.72rem;
       font-weight: 800;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.06em;
       color: #64748b;
+      margin-bottom: 0.25rem;
     }
 
     .sa-stat-val {
-      font-size: 1.5rem;
+      font-size: 1.75rem;
       font-weight: 900;
       line-height: 1.1;
-      margin-top: 0.15rem;
       color: #0f172a;
     }
 
-    .sa-stat-icon {
-      width: 38px;
-      height: 38px;
-      border-radius: 10px;
+    .sa-stat-icon-wrap {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.15rem;
-      background: #f1f5f9;
+      font-size: 1.35rem;
+      flex-shrink: 0;
     }
 
     /* Toolbar: Filters + Search */
@@ -151,67 +216,105 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 0.6rem;
+      gap: 0.75rem;
       flex-wrap: wrap;
-      margin-bottom: 0.75rem;
+      margin-bottom: 1rem;
     }
 
     .sa-filters {
       display: flex;
-      gap: 0.35rem;
+      gap: 0.4rem;
       flex-wrap: wrap;
     }
 
     .sa-filter-pill {
-      border: 1px solid #cbd5e1;
+      border: 1px solid var(--sa-border);
       background: #ffffff;
       color: #475569;
-      padding: 0.35rem 0.7rem;
+      padding: 0.45rem 0.85rem;
       border-radius: 999px;
-      font-size: 0.75rem;
-      font-weight: 700;
+      font-size: 0.78rem;
+      font-weight: 800;
       cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .sa-filter-pill:hover {
+      background: #f1f5f9;
+      color: #0f172a;
     }
 
     .sa-filter-pill.active {
       background: #0f172a;
       color: #ffffff;
       border-color: #0f172a;
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.15);
     }
 
-    /* Compact Store List Rows/Cards */
-    .sa-store-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.55rem;
-    }
-
-    .sa-store-row {
+    .sa-search-input {
+      padding: 0.5rem 0.85rem;
+      font-size: 0.82rem;
+      border-radius: 10px;
+      border: 1px solid var(--sa-border);
       background: #ffffff;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-      padding: 0.75rem 0.95rem;
-      display: grid;
-      grid-template-columns: 1.4fr 1fr 1.1fr auto;
-      align-items: center;
-      gap: 0.75rem;
-      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+      outline: none;
+      width: 100%;
+      box-sizing: border-box;
       transition: border-color 0.15s ease;
     }
 
-    .sa-store-row:hover {
-      border-color: #cbd5e1;
+    .sa-search-input:focus {
+      border-color: var(--sa-primary);
     }
 
-    @media (max-width: 720px) {
-      .sa-store-row {
+    /* Store Cards Grid / Table */
+    .sa-store-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .sa-store-card {
+      background: var(--sa-surface);
+      border: 1px solid var(--sa-border);
+      border-radius: 14px;
+      padding: 1rem 1.25rem;
+      display: grid;
+      grid-template-columns: 1.5fr 1.1fr 1.2fr auto;
+      align-items: center;
+      gap: 1rem;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
+      transition: all 0.18s ease;
+    }
+
+    .sa-store-card:hover {
+      border-color: #cbd5e1;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+    }
+
+    @media (max-width: 860px) {
+      .sa-store-card {
         grid-template-columns: 1fr auto;
-        gap: 0.55rem;
+        gap: 0.75rem;
       }
       .sa-store-metrics,
       .sa-store-badges {
         grid-column: 1 / -1;
       }
+    }
+
+    .sa-store-title-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.25rem;
+    }
+
+    .sa-store-name {
+      font-size: 0.98rem;
+      font-weight: 900;
+      color: #0f172a;
     }
 
     .sa-store-id-tag {
@@ -220,43 +323,122 @@
       font-weight: 900;
       background: #0f172a;
       color: #fbbf24;
-      padding: 0.12rem 0.4rem;
-      border-radius: 5px;
+      padding: 0.15rem 0.45rem;
+      border-radius: 6px;
+      letter-spacing: 0.05em;
+    }
+
+    .sa-category-tag {
+      font-size: 0.7rem;
+      font-weight: 700;
+      background: #f1f5f9;
+      color: #475569;
+      padding: 0.12rem 0.45rem;
+      border-radius: 6px;
+    }
+
+    .sa-owner-row {
+      font-size: 0.78rem;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+
+    .sa-wa-btn {
+      color: #15803d;
+      font-weight: 800;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      background: #dcfce7;
+      padding: 0.15rem 0.45rem;
+      border-radius: 6px;
+      font-size: 0.72rem;
+    }
+
+    .sa-wa-btn:hover {
+      background: #bbf7d0;
+    }
+
+    .sa-store-metrics {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      font-size: 0.8rem;
+      color: #475569;
+    }
+
+    .sa-metrics-val {
+      font-weight: 900;
+      color: #0f172a;
+      font-size: 0.88rem;
+    }
+
+    .sa-store-badges {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
     }
 
     .sa-badge {
       display: inline-flex;
       align-items: center;
-      gap: 0.25rem;
-      padding: 0.2rem 0.5rem;
+      gap: 0.35rem;
+      padding: 0.25rem 0.6rem;
       border-radius: 999px;
-      font-size: 0.7rem;
+      font-size: 0.72rem;
       font-weight: 800;
       white-space: nowrap;
+      width: fit-content;
     }
 
     .sa-badge-green { background: #dcfce7; color: #15803d; }
     .sa-badge-red { background: #fee2e2; color: #b91c1c; }
     .sa-badge-amber { background: #fef3c7; color: #b45309; }
-    .sa-badge-slate { background: #f1f5f9; color: #475569; }
+    .sa-badge-blue { background: #eff6ff; color: #1d4ed8; }
 
-    /* Plan Picker Buttons inside + Token Modal */
+    .btn-generate-token {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: #0f172a;
+      border: none;
+      padding: 0.55rem 0.95rem;
+      border-radius: 10px;
+      font-weight: 900;
+      font-size: 0.8rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      box-shadow: 0 2px 6px rgba(245, 158, 11, 0.25);
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .btn-generate-token:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(245, 158, 11, 0.35);
+    }
+
+    /* Token Generator Modal Box */
     .sa-plan-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 0.5rem;
-      margin-bottom: 0.75rem;
+      margin-bottom: 0.85rem;
     }
 
     .sa-plan-btn {
-      border: 2px solid #e2e8f0;
+      border: 2px solid var(--sa-border);
       background: #f8fafc;
       color: #0f172a;
       border-radius: 10px;
-      padding: 0.65rem 0.4rem;
+      padding: 0.75rem 0.4rem;
       text-align: center;
-      font-weight: 800;
-      font-size: 0.84rem;
+      font-weight: 900;
+      font-size: 0.85rem;
       cursor: pointer;
       transition: all 0.15s ease;
     }
@@ -270,20 +452,20 @@
     .sa-token-box {
       background: #0f172a;
       border: 2px solid #f59e0b;
-      border-radius: 12px;
-      padding: 0.9rem;
+      border-radius: 14px;
+      padding: 1.1rem;
       text-align: center;
       color: #ffffff;
-      margin: 0.75rem 0;
+      margin: 0.85rem 0;
     }
 
     .sa-token-code {
       font-family: 'Courier New', monospace;
-      font-size: 1.85rem;
+      font-size: 2.1rem;
       font-weight: 900;
-      letter-spacing: 0.18em;
+      letter-spacing: 0.2em;
       color: #fbbf24;
-      margin: 0.25rem 0;
+      margin: 0.35rem 0;
       user-select: all;
     }
   </style>
@@ -292,39 +474,45 @@
 
   <!-- 1. SUPER-ADMIN LOGIN GATE -->
   <div id="sa-login-overlay" class="auth-overlay">
-    <div class="auth-card" style="max-width:380px;">
-      <div class="auth-brand-header" style="padding:1.25rem;">
-        <div class="auth-logo-circle" style="background:#f59e0b; color:#0f172a;">🛡️</div>
-        <h2 style="font-size:1.15rem; font-weight:800;">Super-Admin</h2>
+    <div class="auth-card" style="max-width:390px; border-radius:18px; box-shadow:0 12px 36px rgba(15,23,42,0.25);">
+      <div class="auth-brand-header" style="padding:1.4rem; background:#0f172a; color:#fff;">
+        <div class="auth-logo-circle" style="background:#f59e0b; color:#0f172a; font-size:1.35rem;">🛡️</div>
+        <h2 style="font-size:1.2rem; font-weight:900; color:#fff; margin-top:0.4rem;">Holy Star Super-Admin</h2>
+        <div style="font-size:0.75rem; color:#94a3b8;">Platform Owner Executive Console</div>
       </div>
-      <div class="auth-body" style="padding:1.25rem;">
+      <div class="auth-body" style="padding:1.4rem;">
         <form id="form-sa-login">
           <div class="form-group">
-            <label class="form-label" for="sa-login-username">Username</label>
+            <label class="form-label" for="sa-login-username">Admin Username</label>
             <input type="text" id="sa-login-username" class="form-control" placeholder="holystar_admin" required autocomplete="username" />
           </div>
           <div class="form-group">
-            <label class="form-label" for="sa-login-password">Password</label>
+            <label class="form-label" for="sa-login-password">Admin Password</label>
             <input type="password" id="sa-login-password" class="form-control" placeholder="••••••••" required autocomplete="current-password" />
           </div>
-          <button type="submit" class="btn btn-primary btn-lg btn-block" style="background:#0f172a;">
-            Unlock
+          <button type="submit" class="btn btn-primary btn-lg btn-block" style="background:#0f172a; font-weight:800;">
+            Unlock Console
           </button>
         </form>
       </div>
-      <div style="padding:0.65rem 1.25rem; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; font-size:0.75rem;">
-        <a href="index.html" style="color:#4f46e5; font-weight:700; text-decoration:none;">← Store POS</a>
-        <span style="color:#94a3b8;">Admin</span>
+      <div style="padding:0.75rem 1.4rem; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; font-size:0.75rem;">
+        <a href="index.html" style="color:#4f46e5; font-weight:800; text-decoration:none;">← Open Store POS</a>
+        <span style="color:#94a3b8;">Holy Star POS v3.3</span>
       </div>
     </div>
   </div>
 
-  <!-- 2. MINIMAL HEADER -->
+  <!-- 2. EXECUTIVE TOP HEADER -->
   <header class="sa-header">
     <div class="sa-brand">
       <div class="sa-shield">🛡️</div>
-      <span>Holy Star Admin</span>
-      <span id="sa-last-refresh-text" style="font-size:0.7rem; color:#94a3b8; font-weight:600;">Synced</span>
+      <div>
+        <div class="sa-title-text">Holy Star Super-Admin</div>
+      </div>
+      <div class="sa-sync-dot-wrap">
+        <span class="sa-live-pulse"></span>
+        <span id="sa-last-refresh-text">Synced</span>
+      </div>
     </div>
 
     <div class="sa-actions">
@@ -343,83 +531,81 @@
       <a href="index.html" class="sa-icon-btn" title="Open POS">
         🏪 POS
       </a>
-      <button type="button" id="btn-sa-logout" class="sa-icon-btn" style="color:#fca5a5;" title="Lock">
+      <button type="button" id="btn-sa-logout" class="sa-icon-btn" style="color:#fca5a5;" title="Lock Console">
         🔒
       </button>
     </div>
   </header>
 
-  <!-- 3. MAIN CONTENT -->
+  <!-- 3. MAIN DASHBOARD -->
   <main class="sa-main">
 
-    <!-- 4 SIMPLE TOP STAT CARDS: Stores, Active, Expired, Offline -->
+    <!-- 4 BOLD FINTECH KPI CARDS -->
     <div class="sa-stats-row">
       <div class="sa-stat-card">
         <div>
-          <div class="sa-stat-label">Stores</div>
+          <div class="sa-stat-label">Total Stores</div>
           <div id="kpi-total-stores" class="sa-stat-val">0</div>
         </div>
-        <div class="sa-stat-icon">🏪</div>
+        <div class="sa-stat-icon-wrap" style="background:#f1f5f9; color:#0f172a;">🏪</div>
       </div>
 
       <div class="sa-stat-card">
         <div>
-          <div class="sa-stat-label">Active</div>
+          <div class="sa-stat-label">Active Subscriptions</div>
           <div id="kpi-active-subs" class="sa-stat-val" style="color:#10b981;">0</div>
         </div>
-        <div class="sa-stat-icon" style="background:#dcfce7;">✅</div>
+        <div class="sa-stat-icon-wrap" style="background:#dcfce7; color:#15803d;">✅</div>
       </div>
 
       <div class="sa-stat-card">
         <div>
-          <div class="sa-stat-label">Expired</div>
+          <div class="sa-stat-label">Expired / Due</div>
           <div id="kpi-expired-subs" class="sa-stat-val" style="color:#ef4444;">0</div>
         </div>
-        <div class="sa-stat-icon" style="background:#fee2e2;">🔒</div>
+        <div class="sa-stat-icon-wrap" style="background:#fee2e2; color:#b91c1c;">🔒</div>
       </div>
 
       <div class="sa-stat-card">
         <div>
-          <div class="sa-stat-label">Offline</div>
+          <div class="sa-stat-label">Offline (>24h)</div>
           <div id="kpi-offline-pill" class="sa-stat-val" style="color:#f59e0b;">0</div>
         </div>
-        <div class="sa-stat-icon" style="background:#fef3c7;">📡</div>
+        <div class="sa-stat-icon-wrap" style="background:#fef3c7; color:#b45309;">📡</div>
       </div>
     </div>
 
-    <!-- FILTER PILLS & SEARCH -->
+    <!-- TOOLBAR: FILTER PILLS & LIVE SEARCH -->
     <div class="sa-toolbar">
       <div class="sa-filters">
-        <button type="button" class="sa-filter-pill active" data-sa-filter="ALL">All</button>
+        <button type="button" class="sa-filter-pill active" data-sa-filter="ALL">All Stores</button>
         <button type="button" class="sa-filter-pill" data-sa-filter="ACTIVE">Active</button>
         <button type="button" class="sa-filter-pill" data-sa-filter="EXPIRED">Expired</button>
-        <button type="button" class="sa-filter-pill" data-sa-filter="OFFLINE">Offline</button>
+        <button type="button" class="sa-filter-pill" data-sa-filter="OFFLINE">Offline (>24h)</button>
       </div>
 
-      <div style="flex:1; min-width:200px; max-width:300px;">
-        <input type="search" id="sa-store-search-input" class="form-control" placeholder="🔍 Search store or phone..." style="padding:0.4rem 0.7rem; font-size:0.8rem;" />
+      <div style="flex:1; min-width:220px; max-width:320px;">
+        <input type="search" id="sa-store-search-input" class="sa-search-input" placeholder="🔍 Search store, phone or ID..." />
       </div>
     </div>
 
-    <!-- COMPACT STORE CARDS / ROWS -->
-    <div id="sa-stores-list" class="sa-store-list">
-      <!-- Populated by super-admin.js -->
-    </div>
+    <!-- STORE DIRECTORY (RENDERED BY SUPER-ADMIN.JS) -->
+    <div id="sa-stores-list" class="sa-store-list"></div>
 
   </main>
 
   <!-- ====================================================================
-       MODAL 1: COMPACT 1-CLICK "+ TOKEN" GENERATOR MODAL
+       MODAL 1: CRYPTOGRAPHIC TOKEN GENERATOR & 1-TAP WHATSAPP
        ==================================================================== -->
   <div id="modal-sa-token" class="modal-backdrop hidden">
-    <div class="modal-card" style="max-width:400px;">
+    <div class="modal-card" style="max-width:420px; border-radius:18px;">
       <div class="modal-header">
-        <h3 class="modal-title">🔑 Generate Unlock Token</h3>
+        <h3 class="modal-title">🔑 Generate Store Token</h3>
         <button type="button" class="modal-close" data-close-sa-modal="modal-sa-token">✕</button>
       </div>
       <div class="modal-body">
         <form id="form-sa-generate-token">
-          <div style="display:grid; grid-template-columns: 2fr 1fr; gap:0.5rem;">
+          <div style="display:grid; grid-template-columns: 2fr 1fr; gap:0.55rem;">
             <div class="form-group">
               <label class="form-label" for="sa-gen-store-id">Store ID *</label>
               <input type="text" id="sa-gen-store-id" class="form-control" placeholder="HS-4821" required style="text-transform:uppercase; font-family:monospace; font-weight:900;" />
@@ -430,7 +616,7 @@
             </div>
           </div>
 
-          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem;">
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.55rem;">
             <div class="form-group">
               <label class="form-label" for="sa-gen-store-name">Store Name</label>
               <input type="text" id="sa-gen-store-name" class="form-control" placeholder="Store Name" />
@@ -442,7 +628,7 @@
           </div>
           <input type="hidden" id="sa-gen-owner-name" value="" />
 
-          <label class="form-label">Select Duration</label>
+          <label class="form-label">Subscription Duration</label>
           <div class="sa-plan-grid">
             <button type="button" class="sa-plan-btn" data-plan-days="7">7 Days</button>
             <button type="button" class="sa-plan-btn active" data-plan-days="30">30 Days</button>
@@ -450,24 +636,24 @@
           </div>
           <input type="hidden" id="sa-gen-plan-select" value="30" />
 
-          <!-- Instant Generated Token Display -->
+          <!-- High-Contrast Token Display Box -->
           <div id="sa-generated-token-panel" class="sa-token-box">
-            <div style="font-size:0.72rem; color:#94a3b8;">
+            <div style="font-size:0.74rem; color:#94a3b8;">
               <span id="sa-out-store-label">Store</span> • <span id="sa-out-days-label">30</span> Days
             </div>
             <div id="sa-out-token-code" class="sa-token-code">--------</div>
-            <div id="sa-out-expiry-preview" style="font-size:0.7rem; color:#34d399;"></div>
+            <div id="sa-out-expiry-preview" style="font-size:0.74rem; color:#34d399; font-weight:700;"></div>
           </div>
 
-          <div style="display:flex; flex-direction:column; gap:0.45rem;">
-            <button type="button" id="btn-sa-send-token-whatsapp" class="btn btn-whatsapp btn-block" style="font-weight:800;">
-              💬 Send to WhatsApp
+          <div style="display:flex; flex-direction:column; gap:0.5rem;">
+            <button type="button" id="btn-sa-send-token-whatsapp" class="btn btn-whatsapp btn-block" style="font-weight:900; font-size:0.92rem; padding:0.65rem;">
+              💬 Send via WhatsApp
             </button>
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.45rem;">
-              <button type="button" id="btn-sa-copy-token" class="btn btn-outline btn-sm">
-                📋 Copy Token
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem;">
+              <button type="button" id="btn-sa-copy-token" class="btn btn-outline btn-sm" style="font-weight:800;">
+                📋 Copy Code
               </button>
-              <button type="submit" class="btn btn-primary btn-sm">
+              <button type="submit" class="btn btn-primary btn-sm" style="font-weight:800;">
                 🔄 Regenerate
               </button>
             </div>
@@ -478,17 +664,17 @@
   </div>
 
   <!-- ====================================================================
-       MODAL 2: ADD OFFLINE STORE
+       MODAL 2: ADD OFFLINE STORE MANUALLY
        ==================================================================== -->
   <div id="modal-sa-manual-store" class="modal-backdrop hidden">
-    <div class="modal-card" style="max-width:400px;">
+    <div class="modal-card" style="max-width:420px; border-radius:18px;">
       <div class="modal-header">
-        <h3 class="modal-title">+ Add Store</h3>
+        <h3 class="modal-title">➕ Register Offline Store</h3>
         <button type="button" class="modal-close" data-close-sa-modal="modal-sa-manual-store">✕</button>
       </div>
       <form id="form-sa-manual-store">
         <div class="modal-body">
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.55rem;">
             <div class="form-group">
               <label class="form-label" for="sa-man-store-id">Store ID *</label>
               <input type="text" id="sa-man-store-id" class="form-control" placeholder="HS-4821" required style="text-transform:uppercase; font-family:monospace; font-weight:800;" />
@@ -496,28 +682,28 @@
             <div class="form-group">
               <label class="form-label" for="sa-man-category">Category</label>
               <select id="sa-man-category" class="form-control">
-                <option value="Provision & Mini-Mart">Provision</option>
-                <option value="Boutique & Fashion">Boutique</option>
-                <option value="Pharmacy/Over-the-Counter">Pharmacy</option>
+                <option value="Provision & Mini-Mart">Provision &amp; Mini-Mart</option>
+                <option value="Boutique & Fashion">Boutique &amp; Fashion</option>
+                <option value="Pharmacy/Over-the-Counter">Pharmacy / OTC</option>
                 <option value="Cosmetics">Cosmetics</option>
-                <option value="Electronics/Phone Shop">Electronics</option>
-                <option value="Food/Restaurant">Food</option>
+                <option value="Electronics/Phone Shop">Electronics / Phone</option>
+                <option value="Food/Restaurant">Food / Restaurant</option>
                 <option value="Other">Other</option>
               </select>
             </div>
           </div>
           <div class="form-group">
             <label class="form-label" for="sa-man-store-name">Store Name *</label>
-            <input type="text" id="sa-man-store-name" class="form-control" placeholder="Store Name" required />
+            <input type="text" id="sa-man-store-name" class="form-control" placeholder="e.g. Star Provision" required />
           </div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.55rem;">
             <div class="form-group">
               <label class="form-label" for="sa-man-owner-name">Owner Name *</label>
-              <input type="text" id="sa-man-owner-name" class="form-control" placeholder="Owner" required />
+              <input type="text" id="sa-man-owner-name" class="form-control" placeholder="Owner Full Name" required />
             </div>
             <div class="form-group">
-              <label class="form-label" for="sa-man-owner-phone">Phone *</label>
-              <input type="tel" id="sa-man-owner-phone" class="form-control" placeholder="0244..." required />
+              <label class="form-label" for="sa-man-owner-phone">Owner Phone *</label>
+              <input type="tel" id="sa-man-owner-phone" class="form-control" placeholder="024XXXXXXX" required />
             </div>
           </div>
         </div>
@@ -530,33 +716,33 @@
   </div>
 
   <!-- ====================================================================
-       MODAL 3: ADMIN SETTINGS
+       MODAL 3: ADMIN SETTINGS & CREDENTIALS
        ==================================================================== -->
   <div id="modal-sa-settings" class="modal-backdrop hidden">
-    <div class="modal-card" style="max-width:420px;">
+    <div class="modal-card" style="max-width:440px; border-radius:18px;">
       <div class="modal-header">
-        <h3 class="modal-title">⚙️ Admin Settings</h3>
+        <h3 class="modal-title">⚙️ Admin Credentials &amp; Backup</h3>
         <button type="button" class="modal-close" data-close-sa-modal="modal-sa-settings">✕</button>
       </div>
       <div class="modal-body">
-        <form id="form-sa-credentials" style="margin-bottom:1rem; padding-bottom:1rem; border-bottom:1px solid var(--border);">
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+        <form id="form-sa-credentials" style="margin-bottom:1rem; padding-bottom:1rem; border-bottom:1px solid var(--sa-border);">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.55rem;">
             <div class="form-group">
-              <label class="form-label" for="sa-set-username">Admin Username</label>
+              <label class="form-label" for="sa-set-username">Username</label>
               <input type="text" id="sa-set-username" class="form-control" required />
             </div>
             <div class="form-group">
-              <label class="form-label" for="sa-set-password">Admin Password</label>
+              <label class="form-label" for="sa-set-password">Password</label>
               <input type="password" id="sa-set-password" class="form-control" required />
             </div>
           </div>
-          <button type="submit" class="btn btn-primary btn-sm">Save Credentials</button>
+          <button type="submit" class="btn btn-primary btn-sm">Save Master Credentials</button>
         </form>
 
-        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-          <button type="button" id="btn-sa-export-registry" class="btn btn-outline btn-sm">⬇️ Export JSON</button>
+        <div style="display:flex; gap:0.55rem; flex-wrap:wrap;">
+          <button type="button" id="btn-sa-export-registry" class="btn btn-outline btn-sm">⬇️ Export Registry JSON</button>
           <label class="btn btn-outline btn-sm" style="cursor:pointer; margin:0;">
-            ⬆️ Import JSON
+            ⬆️ Import Registry JSON
             <input type="file" id="input-sa-import-registry" accept=".json,application/json" style="display:none;" />
           </label>
         </div>
@@ -568,7 +754,7 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Scripts -->
-  <script src="db.js?v=3.2"></script>
-  <script src="super-admin.js?v=3.2"></script>
+  <script src="db.js?v=3.3"></script>
+  <script src="super-admin.js?v=3.3"></script>
 </body>
 </html>

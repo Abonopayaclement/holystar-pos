@@ -357,7 +357,7 @@ function registerServiceWorkerSafe() {
       refreshing = true;
       window.location.reload();
     });
-    navigator.serviceWorker.register('./sw.js?v=3.2').then((reg) => {
+    navigator.serviceWorker.register('./sw.js?v=3.3').then((reg) => {
       reg.update().catch(() => {});
     }).catch(() => {});
   }
@@ -379,6 +379,10 @@ async function checkAuthAndBoot() {
   AppState.store = activeStore;
   AppState.settings = activeStore;
   hideAuthOverlay();
+
+  // If this is demo store "test account 1", ensure rich sample products are loaded once
+  await window.HolyStarDB.ensureDemoStoreSeeded(activeStore.store_id);
+
   await refreshAllData();
 
   // Pull & merge latest cloud items for this store on boot so Phone and PC always match!
@@ -402,10 +406,10 @@ function populateLoginStoreDropdown(storesList) {
   if (storesList && storesList.length > 0 && selectWrap && selectEl) {
     selectWrap.classList.remove('hidden');
     selectEl.innerHTML = `<option value="">-- Select Store (${storesList.length}) --</option>` +
-      storesList.map((s) => `<option value="${escapeHtml(s.owner_phone || s.store_id)}">${escapeHtml(s.store_name)} (${escapeHtml(s.store_id)})</option>`).join('');
+      storesList.map((s) => `<option value="${escapeHtml(s.store_name || s.owner_phone || s.store_id)}">${escapeHtml(s.store_name)} (${escapeHtml(s.store_id)})</option>`).join('');
     if (storesList.length === 1 && loginIdInput && !loginIdInput.value) {
-      loginIdInput.value = storesList[0].owner_phone || storesList[0].store_id;
-      selectEl.value = storesList[0].owner_phone || storesList[0].store_id;
+      loginIdInput.value = storesList[0].store_name || storesList[0].owner_phone || storesList[0].store_id;
+      selectEl.value = storesList[0].store_name || storesList[0].owner_phone || storesList[0].store_id;
     }
   } else if (selectWrap) {
     selectWrap.classList.add('hidden');
@@ -1132,6 +1136,22 @@ async function handleCompleteSale() {
 
   const momoPhone = document.getElementById('momo-phone-input')?.value || '';
 
+  // Mandatory Customer MoMo Phone Validation
+  if (paymentMethod === 'MoMo') {
+    const cleanMoMo = String(momoPhone).replace(/[\s\-]/g, '');
+    const isValidMoMo = /^(\+233|0)[235]\d{8}$/.test(cleanMoMo);
+    if (!cleanMoMo || !isValidMoMo) {
+      showToast('Customer MoMo Number is required (e.g. 0244123456 or 0551234567).', 'error');
+      const input = document.getElementById('momo-phone-input');
+      if (input) {
+        input.focus();
+        input.style.borderColor = '#ef4444';
+        setTimeout(() => { input.style.borderColor = ''; }, 3000);
+      }
+      return;
+    }
+  }
+
   const creditDetails = {
     customerName: document.getElementById('credit-customer-name')?.value || '',
     customerPhone: document.getElementById('credit-customer-phone')?.value || '',
@@ -1230,6 +1250,7 @@ async function finalizeCompletedSaleUI(sale) {
 
   await refreshAllData();
   window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'checkout_sale');
+  triggerSilentBackgroundSync();
 
   // Show non-blocking Sale Completed Banner with optional Receipt button (do NOT force-open modal)
   const banner = document.getElementById('sale-completed-banner');
@@ -1270,7 +1291,11 @@ function showSaleReceiptModal(sale) {
     .join('');
 
   let extraHtml = '';
-  if (sale.payment_method === 'Cash' && Number(sale.change_given || 0) > 0) {
+  if (sale.payment_method === 'MoMo' && sale.momo_phone) {
+    extraHtml = `
+      <div class="receipt-line"><span>Customer MoMo:</span><strong>${escapeHtml(sale.momo_phone)}</strong></div>
+    `;
+  } else if (sale.payment_method === 'Cash' && Number(sale.change_given || 0) > 0) {
     extraHtml = `
       <div class="receipt-line"><span>Amount Given:</span><span>${formatGHS(sale.cash_tendered)}</span></div>
       <div class="receipt-line"><span>Change Due:</span><strong>${formatGHS(sale.change_given)}</strong></div>
@@ -1349,6 +1374,11 @@ function renderInventoryView() {
   if (navBadgeStock) {
     navBadgeStock.textContent = String(lowOrOutCount);
     navBadgeStock.classList.toggle('hidden', lowOrOutCount === 0);
+  }
+  const drawerBadgeStock = document.getElementById('drawer-badge-stock');
+  if (drawerBadgeStock) {
+    drawerBadgeStock.textContent = String(lowOrOutCount);
+    drawerBadgeStock.classList.toggle('hidden', lowOrOutCount === 0);
   }
 
   const query = AppState.inventorySearchQuery.trim().toLowerCase();
@@ -1527,6 +1557,7 @@ async function handleSaveProductForm(e) {
     document.getElementById('modal-product')?.classList.add('hidden');
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'inventory_saved');
+    triggerSilentBackgroundSync();
     showToast(`Saved "${saved.name}"!`, 'success');
   } catch (err) {
     showToast(err.message || 'Could not save product.', 'error');
@@ -1561,6 +1592,7 @@ async function handleRestockSubmit(e) {
     document.getElementById('modal-restock')?.classList.add('hidden');
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'inventory_restocked');
+    triggerSilentBackgroundSync();
     showToast(`Restocked "${updated.name}" (${updated.stock_qty} in stock).`, 'success');
   } catch (err) {
     showToast(err.message || 'Failed to restock.', 'error');
@@ -1578,6 +1610,7 @@ async function handleDeleteProduct(productId) {
     AppState.cart = AppState.cart.filter((c) => c.id !== productId);
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'inventory_deleted');
+    triggerSilentBackgroundSync();
     showToast(`Deleted "${product.name}".`, 'info');
   } catch (err) {
     showToast('Failed to delete: ' + err.message, 'error');
@@ -1617,6 +1650,10 @@ function renderDebtorsView() {
   if (navBadgeDebtors) {
     navBadgeDebtors.textContent = String(unpaidCustomers);
     navBadgeDebtors.classList.toggle('hidden', unpaidCustomers === 0);
+  }
+  const salesBadgeDebtors = document.getElementById('sales-badge-debtors');
+  if (salesBadgeDebtors) {
+    salesBadgeDebtors.textContent = String(unpaidCustomers);
   }
 
   const query = AppState.debtorSearchQuery.trim().toLowerCase();
@@ -1775,6 +1812,7 @@ async function handleRecordDebtorPayment(e) {
     document.getElementById('modal-debtor-payment')?.classList.add('hidden');
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'debtor_payment');
+    triggerSilentBackgroundSync();
     showToast(`Recorded ${formatGHS(paymentEntry.amount_paid)} from ${debtor.name}!`, 'success');
   } catch (err) {
     showToast(err.message || 'Failed to record payment.', 'error');
@@ -1804,6 +1842,7 @@ async function handleAddManualDebtor(e) {
     e.target.reset();
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'manual_debtor_added');
+    triggerSilentBackgroundSync();
     showToast(`Added ${debtor.name} (${formatGHS(debtor.total_owed)}).`, 'success');
   } catch (err) {
     showToast(err.message || 'Could not add debtor.', 'error');
@@ -2039,6 +2078,7 @@ async function handleCloseDayClick() {
     });
 
     await refreshAllData();
+    triggerSilentBackgroundSync();
     showArchivedCloseDayModal(closedRecord, true);
   } catch (err) {
     showToast('Could not close day: ' + err.message, 'error');
@@ -2121,32 +2161,76 @@ async function renderSettingsView() {
   if (setShopLoc) setShopLoc.value = s.shop_location || s.location || '';
 }
 
-async function handleSyncDatabaseOnline() {
+function showUpdateStoreDialog(type, title, message) {
+  const modal = document.getElementById('modal-update-store-dialog');
+  const iconEl = document.getElementById('update-dialog-icon');
+  const titleEl = document.getElementById('update-dialog-title');
+  const msgEl = document.getElementById('update-dialog-message');
+  const okBtn = document.getElementById('btn-update-dialog-ok');
+
+  if (!modal) return;
+  if (iconEl) iconEl.textContent = type === 'success' ? '✅' : '⚠️';
+  if (titleEl) titleEl.textContent = title;
+  if (msgEl) msgEl.textContent = message;
+
+  modal.classList.remove('hidden');
+
+  if (okBtn) {
+    okBtn.onclick = () => {
+      modal.classList.add('hidden');
+    };
+    okBtn.focus();
+  }
+}
+
+function triggerSilentBackgroundSync() {
+  if (typeof navigator !== 'undefined' && navigator.onLine && AppState.store?.store_id) {
+    window.HolyStarDB.syncFullStoreOnline(AppState.store.store_id).catch(() => {});
+  }
+}
+
+async function handleSyncDatabaseOnline(isManual = true) {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    alert(OFFLINE_SYNC_ALERT_MSG);
-    showToast(OFFLINE_SYNC_ALERT_MSG, 'error');
+    if (isManual) {
+      showUpdateStoreDialog(
+        'error',
+        'Update Failed',
+        'Update Failed — No Internet Connection. Please check your mobile data or Wi-Fi and try again.'
+      );
+    }
     return false;
   }
 
   const syncBtn = document.getElementById('btn-sync-online-settings');
-  if (syncBtn) {
+  if (syncBtn && isManual) {
     syncBtn.disabled = true;
-    syncBtn.textContent = '⏳ Syncing Online...';
+    syncBtn.textContent = '⏳ Updating Store...';
   }
 
   try {
     await window.HolyStarDB.syncFullStoreOnline(AppState.store?.store_id);
     await refreshAllData();
-    showToast('Database Updated Online!', 'success');
+    if (isManual) {
+      showUpdateStoreDialog(
+        'success',
+        'Store Updated Successfully!',
+        'Your latest sales and inventory are safely backed up online.'
+      );
+    }
     return true;
   } catch (err) {
-    alert(OFFLINE_SYNC_ALERT_MSG);
-    showToast(OFFLINE_SYNC_ALERT_MSG, 'error');
+    if (isManual) {
+      showUpdateStoreDialog(
+        'error',
+        'Update Failed',
+        'Update Failed — No Internet Connection. Please check your mobile data or Wi-Fi and try again.'
+      );
+    }
     return false;
   } finally {
-    if (syncBtn) {
+    if (syncBtn && isManual) {
       syncBtn.disabled = false;
-      syncBtn.textContent = '🔄 Sync Database Online';
+      syncBtn.textContent = '🔄 Update Store';
     }
   }
 }
@@ -2687,14 +2771,83 @@ function bindUIEvents() {
       }
     });
   });
+  // 12. Hamburger Menu & Navigation Drawer
+  document.getElementById('btn-hamburger-menu')?.addEventListener('click', openNavDrawer);
+  document.getElementById('btn-close-nav-drawer')?.addEventListener('click', closeNavDrawer);
+  document.getElementById('nav-drawer-backdrop')?.addEventListener('click', closeNavDrawer);
+
+  document.querySelectorAll('.drawer-nav-item').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      switchTab(btn.dataset.tab);
+    });
+  });
+
+  document.getElementById('btn-drawer-logout')?.addEventListener('click', async () => {
+    closeNavDrawer();
+    window.HolyStarDB.logoutSession();
+    AppState.session = null;
+    AppState.store = null;
+    AppState.cart = [];
+    AppState.products = [];
+    AppState.debtors = [];
+    await showAuthOverlay();
+    showToast('Switched / Logged out.', 'info');
+  });
+
+  // 13. Sales -> Debtors and Debtors -> Back to Sales
+  document.getElementById('btn-sales-open-debtors')?.addEventListener('click', () => {
+    switchTab('tab-debtors');
+  });
+
+  document.getElementById('btn-back-to-sales')?.addEventListener('click', () => {
+    switchTab('tab-sales');
+  });
+}
+
+function openNavDrawer() {
+  const drawer = document.getElementById('nav-drawer');
+  const backdrop = document.getElementById('nav-drawer-backdrop');
+  const storeSub = document.getElementById('drawer-store-name');
+  if (storeSub && AppState.store) {
+    storeSub.textContent = `${AppState.store.store_name} (${AppState.store.store_id})`;
+  }
+  if (drawer) drawer.classList.add('open');
+  if (backdrop) backdrop.classList.remove('hidden');
+}
+
+function closeNavDrawer() {
+  const drawer = document.getElementById('nav-drawer');
+  const backdrop = document.getElementById('nav-drawer-backdrop');
+  if (drawer) drawer.classList.remove('open');
+  if (backdrop) backdrop.classList.add('hidden');
 }
 
 function switchTab(tabId) {
   if (!tabId) return;
+
+  const titles = {
+    'tab-pos': 'POS',
+    'tab-inventory': 'Inventory',
+    'tab-sales': 'Sales',
+    'tab-settings': 'Settings',
+    'tab-debtors': 'Debtors'
+  };
+
+  const titleText = titles[tabId] || 'POS';
+  const headerTitleEl = document.getElementById('header-active-section-title');
+  if (headerTitleEl) {
+    headerTitleEl.textContent = titleText;
+  }
+
+  document.querySelectorAll('.drawer-nav-item').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.tab === tabId);
+  });
   document.querySelectorAll('.nav-tab').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.tab === tabId);
   });
   document.querySelectorAll('.tab-panel').forEach((panel) => {
     panel.classList.toggle('active', panel.id === tabId);
   });
+
+  closeNavDrawer();
 }

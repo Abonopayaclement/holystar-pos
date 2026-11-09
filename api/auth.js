@@ -47,8 +47,14 @@ function mergeById(existingArr = [], incomingArr = [], idField = 'id', deletedId
       } else {
         const prevTs = Number(prev.updated_at || prev.timestamp || prev.closed_at || prev.applied_at || prev.created_at || 0);
         const nextTs = Number(item.updated_at || item.timestamp || item.closed_at || item.applied_at || item.created_at || 0);
-        if (nextTs >= prevTs) {
+        if (nextTs > prevTs) {
           map.set(item[idField], { ...prev, ...item });
+        } else if (nextTs === prevTs) {
+          if (prev.stock_qty !== undefined && item.stock_qty !== undefined) {
+            map.set(item[idField], { ...prev, ...item, stock_qty: Math.min(Number(prev.stock_qty), Number(item.stock_qty)) });
+          } else {
+            map.set(item[idField], { ...prev, ...item });
+          }
         }
       }
     }
