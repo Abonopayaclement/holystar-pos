@@ -3,18 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="screen-orientation" content="portrait" />
+  <meta name="x5-orientation" content="portrait" />
   <meta name="theme-color" content="#0f172a" />
   <meta name="description" content="Holy Star POS — Retail POS, Inventory & Debtors" />
   <title>Holy Star POS</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
   <link rel="apple-touch-icon" href="icon-192.png" />
-  <link rel="stylesheet" href="style.css?v=3.3" />
+  <link rel="stylesheet" href="style.css?v=3.4" />
   <script>
     (function () {
       try {
-        if (localStorage.getItem('holystar_sw_migrated_v13') !== '1' && navigator.onLine) {
-          localStorage.setItem('holystar_sw_migrated_v13', '1');
+        if (localStorage.getItem('holystar_sw_migrated_v14') !== '1' && navigator.onLine) {
+          localStorage.setItem('holystar_sw_migrated_v14', '1');
           Promise.all([
             'serviceWorker' in navigator
               ? navigator.serviceWorker.getRegistrations().then(function (regs) {
@@ -27,7 +29,7 @@
                 })
               : Promise.resolve()
           ]).then(function () {
-            window.location.replace(window.location.pathname + '?v=3.3');
+            window.location.replace(window.location.pathname + '?v=3.4');
           });
         }
       } catch (e) {}
@@ -37,21 +39,26 @@
 <body>
 
   <!-- ====================================================================
-       AUTH OVERLAY (LOGIN & CREATE STORE FROM ANY PHONE OR PC)
+       AUTH OVERLAY (UNIFIED LOGIN & CREATE STORE)
+       Auto-detects Super-Admin credentials without exposing admin links
        ==================================================================== -->
   <div id="auth-screen-overlay" class="auth-overlay hidden">
     <div class="auth-card">
       <div class="auth-brand-header">
-        <div class="auth-logo-circle">★</div>
+        <div class="auth-logo-circle">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="#fbbf24" stroke="#fbbf24" stroke-width="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </div>
         <h2 style="font-size:1.25rem; font-weight:900;">Holy Star POS</h2>
       </div>
 
       <div class="auth-tabs">
         <button type="button" class="auth-tab-btn active" data-auth-tab="login">
-          🔑 Login
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px; vertical-align:-2px;"><path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2"/></svg>
+          Login
         </button>
         <button type="button" class="auth-tab-btn" data-auth-tab="register">
-          🏪 New Store
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px; vertical-align:-2px;"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/></svg>
+          New Store
         </button>
       </div>
 
@@ -90,24 +97,24 @@
           <div class="form-group">
             <label class="form-label" for="reg-store-category">Category *</label>
             <select id="reg-store-category" class="form-control" required>
-              <option value="Provision & Mini-Mart">🛒 Provision &amp; Mini-Mart</option>
-              <option value="Biscuits & Snacks">🍪 Biscuits &amp; Snacks</option>
-              <option value="Beverages & Drinks">☕ Beverages &amp; Drinks</option>
-              <option value="Milk & Dairy">🥛 Milk &amp; Dairy</option>
-              <option value="Canned & Tin Foods">🥫 Canned &amp; Tin Foods</option>
-              <option value="Cooking Oil & Paste">🛢️ Cooking Oil &amp; Paste</option>
-              <option value="Rice, Grains & Flour">🌾 Rice, Grains &amp; Flour</option>
-              <option value="Bread & Bakery">🍞 Bread &amp; Bakery</option>
-              <option value="Soaps & Detergents">🧼 Soaps &amp; Detergents</option>
-              <option value="Toiletries & Cosmetics">🧴 Toiletries &amp; Cosmetics</option>
-              <option value="Baby Products">👶 Baby Products</option>
-              <option value="OTC Medicine & First Aid">💊 OTC Medicine &amp; First Aid</option>
-              <option value="Phone Accessories">🔌 Phone Accessories</option>
-              <option value="Stationery">📚 Stationery</option>
-              <option value="Household & Plastics">🪣 Household &amp; Plastics</option>
-              <option value="Boutique & Fashion">👗 Boutique &amp; Fashion</option>
-              <option value="Food/Restaurant">🍲 Food / Restaurant</option>
-              <option value="Other">📦 Other</option>
+              <option value="Provision & Mini-Mart">Provision &amp; Mini-Mart</option>
+              <option value="Biscuits & Snacks">Biscuits &amp; Snacks</option>
+              <option value="Beverages & Drinks">Beverages &amp; Drinks</option>
+              <option value="Milk & Dairy">Milk &amp; Dairy</option>
+              <option value="Canned & Tin Foods">Canned &amp; Tin Foods</option>
+              <option value="Cooking Oil & Paste">Cooking Oil &amp; Paste</option>
+              <option value="Rice, Grains & Flour">Rice, Grains &amp; Flour</option>
+              <option value="Bread & Bakery">Bread &amp; Bakery</option>
+              <option value="Soaps & Detergents">Soaps &amp; Detergents</option>
+              <option value="Toiletries & Cosmetics">Toiletries &amp; Cosmetics</option>
+              <option value="Baby Products">Baby Products</option>
+              <option value="OTC Medicine & First Aid">OTC Medicine &amp; First Aid</option>
+              <option value="Phone Accessories">Phone Accessories</option>
+              <option value="Stationery">Stationery</option>
+              <option value="Household & Plastics">Household &amp; Plastics</option>
+              <option value="Boutique & Fashion">Boutique &amp; Fashion</option>
+              <option value="Food/Restaurant">Food / Restaurant</option>
+              <option value="Other">Other</option>
             </select>
           </div>
 
@@ -117,8 +124,8 @@
               <input type="text" id="reg-owner-name" class="form-control" placeholder="Grace Mensah" required />
             </div>
             <div class="form-group">
-              <label class="form-label" for="reg-owner-phone">Owner Phone *</label>
-              <input type="tel" id="reg-owner-phone" class="form-control" placeholder="0244123456" required />
+              <label class="form-label" for="reg-owner-phone">Owner Phone (10 Digits) *</label>
+              <input type="tel" id="reg-owner-phone" class="form-control" placeholder="0244123456" pattern="^\d{10}$" maxlength="10" minlength="10" inputmode="numeric" required />
             </div>
           </div>
 
@@ -139,30 +146,28 @@
         </form>
       </div>
 
-      <div style="padding:0.65rem 1.1rem; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; align-items:center; justify-content:space-between; font-size:0.74rem;">
-        <button type="button" id="btn-auth-force-reset" onclick="if(window.forceResetAppCache){window.forceResetAppCache();}" style="background:none; border:none; padding:0; color:#dc2626; font-size:0.73rem; font-weight:700; cursor:pointer; text-decoration:underline;">
-          🔄 Reset Cache
-        </button>
-        <a href="super-admin.html" id="link-platform-admin" style="color:#1e3a8a; text-decoration:none; font-weight:800;">
-          🛡️ Admin
-        </a>
+      <div style="padding:0.65rem 1.1rem; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; align-items:center; justify-content:center; font-size:0.75rem; color:#64748b;">
+        <span>Holy Star POS — Offline-First Retail System</span>
       </div>
     </div>
   </div>
 
   <!-- ====================================================================
-       TOP HEADER (HAMBURGER MENU + ACTIVE SECTION + STORE NAME + STATUS)
+       TOP HEADER (CLEAN BAR WITHOUT LOGOUT BUTTON)
+       Logout is cleanly inside the Navigation Menu
        ==================================================================== -->
   <header class="app-header">
     <div class="header-left-bar">
       <button type="button" id="btn-hamburger-menu" class="btn-hamburger" aria-label="Open Navigation Menu" title="Open Navigation Menu">
-        <span class="hamburger-icon">☰</span>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
       <div id="header-active-section-title" class="header-section-title">POS</div>
     </div>
 
     <div class="brand-group">
-      <div class="brand-logo" aria-hidden="true">★</div>
+      <div class="brand-logo" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="#fbbf24" stroke="#fbbf24" stroke-width="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      </div>
       <div class="header-store-title-wrap">
         <h1 id="header-shop-name">Holy Star POS</h1>
         <span id="header-conn-dot" class="conn-dot online" title="Online"></span>
@@ -171,11 +176,8 @@
 
     <div class="header-status">
       <button type="button" id="btn-install-pwa" class="btn btn-warning btn-sm hidden">
-        📲 Install
-      </button>
-      <button type="button" id="btn-logout-store" class="btn-icon-logout" title="Switch Store / Log Out">
-        <span>🚪</span>
-        <span class="btn-logout-text">Switch</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Install
       </button>
     </div>
   </header>
@@ -187,38 +189,51 @@
   <aside id="nav-drawer" class="nav-drawer">
     <div class="nav-drawer-header">
       <div class="nav-drawer-brand">
-        <div class="nav-drawer-star">★</div>
+        <div class="nav-drawer-star">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="#fbbf24" stroke="#fbbf24" stroke-width="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </div>
         <div>
           <div class="nav-drawer-title">Holy Star POS</div>
           <div id="drawer-store-name" class="nav-drawer-store-sub">Store</div>
         </div>
       </div>
-      <button type="button" id="btn-close-nav-drawer" class="btn-drawer-close" aria-label="Close menu">✕</button>
+      <button type="button" id="btn-close-nav-drawer" class="btn-drawer-close" aria-label="Close menu">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
     </div>
 
     <div class="nav-drawer-menu">
       <button type="button" class="drawer-nav-item active" data-tab="tab-pos">
-        <span class="drawer-item-icon">🛒</span>
+        <span class="drawer-item-icon">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>
+        </span>
         <span class="drawer-item-label">POS</span>
       </button>
       <button type="button" class="drawer-nav-item" data-tab="tab-inventory">
-        <span class="drawer-item-icon">📦</span>
+        <span class="drawer-item-icon">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+        </span>
         <span class="drawer-item-label">Inventory</span>
         <span id="drawer-badge-stock" class="badge badge-warning hidden">0</span>
       </button>
       <button type="button" class="drawer-nav-item" data-tab="tab-sales">
-        <span class="drawer-item-icon">📊</span>
+        <span class="drawer-item-icon">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+        </span>
         <span class="drawer-item-label">Sales</span>
       </button>
       <button type="button" class="drawer-nav-item" data-tab="tab-settings">
-        <span class="drawer-item-icon">⚙️</span>
+        <span class="drawer-item-icon">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </span>
         <span class="drawer-item-label">Settings</span>
       </button>
     </div>
 
     <div class="nav-drawer-footer">
       <button type="button" id="btn-drawer-logout" class="btn btn-outline btn-block btn-sm" style="color:#ef4444; border-color:#fca5a5; font-weight:700;">
-        🚪 Log Out / Switch Store
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px; vertical-align:-2px;"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Log Out / Switch Store
       </button>
     </div>
   </aside>
@@ -227,13 +242,22 @@
        SYSTEM LOCK BANNERS
        ==================================================================== -->
   <div id="clock-tamper-banner" class="system-banner banner-clock hidden">
-    <span id="clock-tamper-msg">⛔ Device clock rolled backward. Fix clock to unlock.</span>
+    <span id="clock-tamper-msg" style="display:flex; align-items:center; gap:0.4rem;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      Device clock rolled backward. Fix clock to unlock.
+    </span>
     <button type="button" id="btn-recheck-clock" class="btn btn-warning btn-sm">Re-Check</button>
   </div>
 
   <div id="expired-license-banner" class="system-banner banner-expired hidden">
-    <span>🔒 Subscription Expired (Read-Only)</span>
-    <button type="button" id="btn-banner-unlock" class="btn btn-danger btn-sm">🔑 Unlock</button>
+    <span style="display:flex; align-items:center; gap:0.4rem;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Subscription Expired (Read-Only)
+    </span>
+    <button type="button" id="btn-banner-unlock" class="btn btn-danger btn-sm">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2"/></svg>
+      Unlock
+    </button>
   </div>
 
   <!-- ====================================================================
@@ -242,7 +266,7 @@
   <main class="app-main">
 
     <!-- ==================================================================
-         TAB 1: POS (5-PER-ROW COMPACT GRID & SMART CHECKOUT)
+         TAB 1: POS (5-PER-ROW COMPACT GRID, CATEGORIES DROPDOWN & SMART CHECKOUT)
          ================================================================== -->
     <section id="tab-pos" class="tab-panel active">
       <div class="pos-grid">
@@ -251,28 +275,39 @@
         <div class="card">
           <div class="card-header">
             <h2 class="card-title">Products</h2>
-            <button type="button" id="btn-pos-add-stock" class="btn btn-primary btn-sm">➕ Add Product</button>
+            <button type="button" id="btn-pos-add-stock" class="btn btn-primary btn-sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="margin-right:4px; vertical-align:-2px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Product
+            </button>
           </div>
           <div class="card-body">
             <div class="pos-filter-bar">
               <div class="pos-search-wrap">
-                <input type="search" id="pos-search-input" class="form-control" placeholder="🔍 Search item or barcode..." autocomplete="off" />
+                <input type="search" id="pos-search-input" class="form-control" placeholder="Search item or barcode..." autocomplete="off" />
               </div>
+              <select id="pos-category-select" class="form-control pos-cat-select" aria-label="Filter category">
+                <option value="ALL">Categories ▾</option>
+              </select>
               <button type="button" id="btn-pos-scan-barcode" class="btn btn-warning btn-sm" title="Scan Barcode">
-                📷 Scan
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:3px; vertical-align:-2px;"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+                Scan
               </button>
             </div>
 
-            <div id="pos-category-chips" class="category-chips"></div>
+            <!-- Fallback hidden container for legacy references -->
+            <div id="pos-category-chips" class="hidden"></div>
 
             <div id="pos-product-grid" class="product-grid"></div>
           </div>
         </div>
 
-        <!-- Right: Active Cart & Checkout -->
-        <div class="card cart-panel">
+        <!-- Right: Active Cart & Checkout (Desktop Sticky / Mobile Bottom) -->
+        <div id="main-cart-panel" class="card cart-panel">
           <div class="card-header">
-            <h2 class="card-title">Cart</h2>
+            <h2 class="card-title" style="display:flex; align-items:center; gap:0.4rem;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>
+              Cart
+            </h2>
             <button type="button" id="btn-clear-cart" class="btn btn-outline btn-sm">Clear</button>
           </div>
           <div class="card-body">
@@ -280,14 +315,18 @@
             <!-- Non-Blocking Sale Completed Banner (Optional Receipt) -->
             <div id="sale-completed-banner" class="sale-done-banner hidden">
               <div>
-                <div style="font-weight:900; font-size:0.84rem;">✅ Sale Completed!</div>
+                <div style="font-weight:900; font-size:0.84rem; display:flex; align-items:center; gap:0.35rem;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  Sale Completed!
+                </div>
                 <div id="sale-completed-sub" style="font-size:0.74rem;">Saved to Sales</div>
               </div>
               <div style="display:flex; gap:0.35rem;">
                 <button type="button" id="btn-banner-view-receipt" class="btn btn-outline btn-sm" style="background:#fff;">
-                  🧾 Receipt
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:3px; vertical-align:-2px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>
+                  Receipt
                 </button>
-                <button type="button" id="btn-banner-dismiss-sale" class="btn btn-sm" style="background:transparent; color:#065f46;">✕</button>
+                <button type="button" id="btn-banner-dismiss-sale" class="btn btn-sm" style="background:transparent; color:#065f46; font-size:1.1rem; padding:0 6px;">&times;</button>
               </div>
             </div>
 
@@ -309,9 +348,18 @@
             <!-- Payment Method -->
             <div class="form-group">
               <div class="payment-methods-grid">
-                <button type="button" class="pay-method-option active" data-method="Cash">💵 Cash</button>
-                <button type="button" class="pay-method-option" data-method="MoMo">📱 MoMo</button>
-                <button type="button" class="pay-method-option credit-opt" data-method="Credit">📒 Credit</button>
+                <button type="button" class="pay-method-option active" data-method="Cash">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:-2px;"><rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/></svg>
+                  Cash
+                </button>
+                <button type="button" class="pay-method-option" data-method="MoMo">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:-2px;"><rect width="14" height="20" x="5" y="2" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                  MoMo
+                </button>
+                <button type="button" class="pay-method-option credit-opt" data-method="Credit">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:-2px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                  Credit
+                </button>
               </div>
             </div>
 
@@ -329,10 +377,10 @@
               </div>
             </div>
 
-            <!-- MoMo Customer Number Box (Compulsory for MoMo checkout) -->
+            <!-- MoMo Customer Number Box (Compulsory 10 digits for MoMo checkout) -->
             <div id="momo-payment-fields" class="form-group hidden" style="background:#eff6ff; padding:0.55rem 0.65rem; border-radius:8px; border:1px solid #bfdbfe;">
-              <label class="form-label" for="momo-phone-input">Customer MoMo Number *</label>
-              <input type="tel" id="momo-phone-input" class="form-control" placeholder="024XXXXXXX or 05XXXXXXXX" required />
+              <label class="form-label" for="momo-phone-input">Customer MoMo Number (10 Digits) *</label>
+              <input type="tel" id="momo-phone-input" class="form-control" placeholder="0244123456" pattern="^\d{10}$" maxlength="10" minlength="10" inputmode="numeric" />
             </div>
 
             <!-- Credit Fields -->
@@ -347,7 +395,7 @@
               </div>
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.45rem;">
                 <div class="form-group">
-                  <input type="tel" id="credit-customer-phone" class="form-control" placeholder="Phone *" />
+                  <input type="tel" id="credit-customer-phone" class="form-control" placeholder="Phone (10 Digits) *" pattern="^\d{10}$" maxlength="10" minlength="10" inputmode="numeric" />
                 </div>
                 <div class="form-group">
                   <input type="text" id="credit-customer-location" class="form-control" placeholder="Location *" />
@@ -380,6 +428,18 @@
         </div>
 
       </div>
+
+      <!-- Floating Draggable Basket Button on Mobile -->
+      <div id="floating-cart-basket" class="floating-basket-btn" aria-label="Open Cart" title="Cart Checkout">
+        <div class="floating-basket-icon-wrap">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>
+          <span id="floating-basket-badge" class="floating-basket-badge">0</span>
+        </div>
+        <div class="floating-basket-content">
+          <span class="floating-basket-label">Cart</span>
+          <span id="floating-basket-total" class="floating-basket-total">GHS 0.00</span>
+        </div>
+      </div>
     </section>
 
     <!-- ==================================================================
@@ -410,16 +470,20 @@
         <div class="card-header">
           <h2 class="card-title">Stock</h2>
           <button type="button" id="btn-open-product-modal" class="btn btn-primary btn-sm">
-            ➕ Add Product
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="margin-right:4px; vertical-align:-2px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Product
           </button>
         </div>
         <div class="card-body">
           <div class="pos-filter-bar">
             <div class="pos-search-wrap">
-              <input type="search" id="inv-search-input" class="form-control" placeholder="🔍 Search stock..." />
+              <input type="search" id="inv-search-input" class="form-control" placeholder="Search stock..." />
             </div>
-            <select id="inv-stock-filter" class="form-control" style="max-width:160px;">
-              <option value="ALL">All</option>
+            <select id="inv-category-select" class="form-control pos-cat-select" style="max-width:180px;" aria-label="Filter category">
+              <option value="ALL">Categories ▾</option>
+            </select>
+            <select id="inv-stock-filter" class="form-control" style="max-width:140px;">
+              <option value="ALL">All Stock</option>
               <option value="LOW">Low Stock</option>
               <option value="OUT">Out of Stock</option>
             </select>
@@ -453,9 +517,13 @@
         <button type="button" id="btn-back-to-sales" class="btn btn-outline btn-sm" style="font-weight:800;">
           ← Back to Sales
         </button>
-        <span style="font-size:0.9rem; font-weight:800; color:var(--text-primary);">📒 Debtors Book</span>
+        <span style="font-size:0.9rem; font-weight:800; color:var(--text-primary); display:flex; align-items:center; gap:0.35rem;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Debtors Book
+        </span>
         <button type="button" id="btn-open-manual-debtor-modal" class="btn btn-primary btn-sm">
-          ➕ Add Debtor
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="margin-right:3px; vertical-align:-2px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Debtor
         </button>
       </div>
 
@@ -481,10 +549,10 @@
         <div class="card-body">
           <div class="pos-filter-bar">
             <div class="pos-search-wrap">
-              <input type="search" id="debtors-search-input" class="form-control" placeholder="🔍 Search name, phone, location..." />
+              <input type="search" id="debtors-search-input" class="form-control" placeholder="Search name, phone, location..." />
             </div>
             <select id="debtors-status-filter" class="form-control" style="max-width:150px;">
-              <option value="ALL">All</option>
+              <option value="ALL">All Status</option>
               <option value="Unpaid">Unpaid</option>
               <option value="Cleared">Cleared</option>
             </select>
@@ -510,26 +578,34 @@
     </section>
 
     <!-- ==================================================================
-         TAB 3: SALES (PERIOD FILTERS, DEBTORS BUTTON & CLOSE DAY)
+         TAB 3: SALES (PERIOD DROPDOWN, VISUAL CHART, DEBTORS BUTTON & CLOSE DAY)
          ================================================================== -->
     <section id="tab-sales" class="tab-panel">
       <div class="card" style="margin-bottom:0.85rem;">
-        <div class="card-header" style="flex-wrap:wrap; gap:0.5rem; justify-content:space-between;">
-          <div class="period-pills-bar">
-            <button type="button" class="period-pill-btn active" data-period="TODAY" id="btn-sales-today">Today</button>
-            <button type="button" class="period-pill-btn" data-period="DATE" id="btn-sales-pick-date">Pick Date</button>
+        <div class="card-header" style="flex-wrap:wrap; gap:0.5rem; justify-content:space-between; align-items:center;">
+          <!-- Dropdown Period Filter -->
+          <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+            <div style="position:relative;">
+              <select id="sales-period-select" class="form-control" style="font-weight:800; font-size:0.82rem; padding:0.38rem 0.75rem; min-width:160px; background:#f8fafc; border:1.5px solid var(--border); border-radius:8px; cursor:pointer;" aria-label="Filter Period">
+                <option value="TODAY">Filter Period ▾ Today</option>
+                <option value="YESTERDAY">Filter Period ▾ Yesterday</option>
+                <option value="WEEK">Filter Period ▾ This Week</option>
+                <option value="MONTH">Filter Period ▾ This Month</option>
+                <option value="ALL">Filter Period ▾ All-Time</option>
+                <option value="DATE">Pick Specific Date...</option>
+              </select>
+            </div>
             <input type="date" id="sales-date-picker" class="form-control hidden" style="width:auto; padding:0.28rem 0.5rem; font-size:0.78rem; font-weight:700;" />
-            <button type="button" class="period-pill-btn" data-period="WEEK">This Week</button>
-            <button type="button" class="period-pill-btn" data-period="MONTH">This Month</button>
-            <button type="button" class="period-pill-btn" data-period="ALL">All-Time</button>
           </div>
 
           <div style="display:flex; align-items:center; gap:0.45rem;">
             <button type="button" id="btn-sales-open-debtors" class="btn btn-outline btn-sm" style="font-weight:800; background:#f8fafc; border-color:#cbd5e1;">
-              👥 Debtors (<span id="sales-badge-debtors">0</span>)
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:-2px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              Debtors (<span id="sales-badge-debtors">0</span>)
             </button>
             <button type="button" id="btn-open-close-day-modal" class="btn btn-warning btn-sm">
-              🔒 Close Day
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:-2px;"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              Close Day
             </button>
           </div>
         </div>
@@ -558,20 +634,40 @@
         </div>
       </div>
 
+      <!-- Interactive Visual Sales & Profit Chart (Revenue vs. Profit) -->
+      <div class="card" style="margin-bottom:0.85rem;">
+        <div class="card-header" style="justify-content:space-between; align-items:center;">
+          <h3 class="card-title" style="display:flex; align-items:center; gap:0.4rem;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+            Sales &amp; Profit Performance
+          </h3>
+          <div id="sales-chart-legend" style="display:flex; align-items:center; gap:0.85rem; font-size:0.75rem; font-weight:800;">
+            <span style="display:inline-flex; align-items:center; gap:0.35rem;"><span style="width:10px; height:10px; background:#4f46e5; border-radius:2px;"></span> Revenue</span>
+            <span style="display:inline-flex; align-items:center; gap:0.35rem;"><span style="width:10px; height:10px; background:#10b981; border-radius:2px;"></span> Profit</span>
+          </div>
+        </div>
+        <div class="card-body" style="padding:0.75rem 1rem;">
+          <canvas id="sales-profit-chart" height="190" style="width:100%; height:190px; display:block;"></canvas>
+        </div>
+      </div>
+
       <!-- Archived Closed Days List (Click any date to view Daily Close Receipt) -->
       <div id="closed-days-archive-card" class="card hidden" style="margin-bottom:0.85rem;">
         <div class="card-header">
-          <h3 class="card-title">📁 Archived Daily Close Receipts</h3>
+          <h3 class="card-title" style="display:flex; align-items:center; gap:0.4rem;">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            Archived Daily Close Receipts
+          </h3>
         </div>
         <div class="card-body" style="padding:0.6rem 1rem;">
           <div id="closed-days-chips-list" style="display:flex; gap:0.45rem; flex-wrap:wrap;"></div>
         </div>
       </div>
 
-      <!-- Sales Table -->
+      <!-- Sales Table with Inline Payment Details -->
       <div class="card" style="margin-bottom:0.85rem;">
         <div class="card-header">
-          <h3 class="card-title">Sales</h3>
+          <h3 class="card-title">Sales History</h3>
         </div>
         <div class="card-body" style="padding:0;">
           <div class="table-responsive">
@@ -580,7 +676,7 @@
                 <tr>
                   <th>Time</th>
                   <th>Items</th>
-                  <th>Method</th>
+                  <th>Payment Details</th>
                   <th>Total</th>
                   <th>Profit</th>
                   <th>Receipt</th>
@@ -617,7 +713,7 @@
     </section>
 
     <!-- ==================================================================
-         TAB 5: SETTINGS (CLOUD SYNC, STORE INFO, LICENSE & BACKUP)
+         TAB 4: SETTINGS (CLOUD SYNC, STORE INFO, LICENSE, BACKUP & VERSION)
          ================================================================== -->
     <section id="tab-settings" class="tab-panel">
       <div class="settings-grid">
@@ -625,7 +721,10 @@
         <!-- Card 1: Cloud Sync & Store Profile -->
         <div class="card">
           <div class="card-header">
-            <h2 class="card-title">☁️ Cloud Sync &amp; Store Info</h2>
+            <h2 class="card-title" style="display:flex; align-items:center; gap:0.4rem;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>
+              Cloud Sync &amp; Store Info
+            </h2>
             <span id="license-status-pill" class="badge badge-success">
               <span id="license-pill-text">Active</span>
             </span>
@@ -638,7 +737,8 @@
                 <span id="settings-last-synced-text" style="font-size:0.74rem; color:#475569;">Not synced yet</span>
               </div>
               <button type="button" id="btn-sync-online-settings" class="btn btn-primary btn-block">
-                🔄 Update Store
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px; vertical-align:-2px;"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+                Update Store
               </button>
             </div>
 
@@ -659,15 +759,18 @@
               </div>
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.55rem;">
                 <div class="form-group">
-                  <label class="form-label" for="setting-owner-phone">Owner Phone *</label>
-                  <input type="tel" id="setting-owner-phone" class="form-control" required />
+                  <label class="form-label" for="setting-owner-phone">Owner Phone (10 Digits) *</label>
+                  <input type="tel" id="setting-owner-phone" class="form-control" pattern="^\d{10}$" maxlength="10" minlength="10" inputmode="numeric" required />
                 </div>
                 <div class="form-group">
                   <label class="form-label" for="setting-shop-location">Location</label>
                   <input type="text" id="setting-shop-location" class="form-control" />
                 </div>
               </div>
-              <button type="submit" class="btn btn-success btn-block">💾 Save Profile</button>
+              <button type="submit" class="btn btn-success btn-block">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:-2px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                Save Profile
+              </button>
             </form>
           </div>
         </div>
@@ -675,7 +778,10 @@
         <!-- Card 2: Subscription Token & Local Backup -->
         <div class="card">
           <div class="card-header">
-            <h2 class="card-title">🔑 Subscription &amp; Backup</h2>
+            <h2 class="card-title" style="display:flex; align-items:center; gap:0.4rem;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2"/></svg>
+              Subscription &amp; Backup
+            </h2>
           </div>
           <div class="card-body">
             <div style="background:var(--bg-muted); border:1px solid var(--border); border-radius:8px; padding:0.7rem; margin-bottom:0.85rem;">
@@ -710,14 +816,44 @@
             </form>
 
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:0.75rem;">
-              <button type="button" id="btn-export-backup" class="btn btn-outline btn-sm">⬇️ Export File</button>
-              <label class="btn btn-outline btn-sm" style="cursor:pointer; margin:0;">
-                ⬆️ Restore File
+              <button type="button" id="btn-export-backup" class="btn btn-outline btn-sm">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export File
+              </button>
+              <label class="btn btn-outline btn-sm" style="cursor:pointer; margin:0; display:flex; align-items:center; justify-content:center;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Restore File
                 <input type="file" id="restore-file-input" accept=".json,application/json" style="display:none;" />
               </label>
             </div>
 
             <div id="used-tokens-list" class="hidden"></div>
+          </div>
+        </div>
+
+        <!-- Card 3: App Version & Maintenance (Explains "Reset Cache") -->
+        <div class="card" style="grid-column: 1 / -1;">
+          <div class="card-header">
+            <h2 class="card-title" style="display:flex; align-items:center; gap:0.4rem;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+              App Version &amp; Maintenance
+            </h2>
+          </div>
+          <div class="card-body">
+            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:0.9rem; display:flex; flex-direction:column; gap:0.6rem;">
+              <div style="font-size:0.86rem; font-weight:800; color:#0f172a;">
+                Experiencing a visual issue or want to load the newest update immediately?
+              </div>
+              <p style="font-size:0.8rem; color:#64748b; margin:0; line-height:1.45;">
+                Tapping <strong>Refresh App Version</strong> clears stale offline Service Worker caches (cached HTML, CSS, and script files) and re-fetches the latest version from the cloud. <strong>Your store inventory, sales history, and debtors book are stored safely in local IndexedDB and are NEVER erased by this action.</strong>
+              </p>
+              <div>
+                <button type="button" id="btn-settings-refresh-version" onclick="if(window.forceResetAppCache){window.forceResetAppCache();}" class="btn btn-outline btn-block" style="font-weight:800; color:#dc2626; border-color:#fca5a5; background:#ffffff;">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px; vertical-align:-2px;"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+                  Refresh App Version
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -732,7 +868,10 @@
   <div id="modal-product" class="modal-backdrop hidden">
     <div class="modal-box">
       <div class="modal-header">
-        <h3 id="modal-product-title">➕ Add Product</h3>
+        <h3 id="modal-product-title" style="display:flex; align-items:center; gap:0.35rem;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Product
+        </h3>
         <button type="button" class="modal-close" data-close="modal-product">&times;</button>
       </div>
       <form id="form-product" autocomplete="off">
@@ -772,7 +911,9 @@
               <label class="form-label" for="prod-barcode">Barcode</label>
               <div style="display:flex; gap:0.35rem;">
                 <input type="text" id="prod-barcode" class="form-control" placeholder="Optional" />
-                <button type="button" id="btn-modal-scan-barcode" class="btn btn-warning btn-sm">📷</button>
+                <button type="button" id="btn-modal-scan-barcode" class="btn btn-warning btn-sm">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+                </button>
               </div>
             </div>
           </div>
@@ -825,7 +966,10 @@
   <div id="modal-cash-shortfall" class="modal-backdrop hidden">
     <div class="modal-box" style="max-width:420px;">
       <div class="modal-header">
-        <h3>💵 Partial Cash Payment</h3>
+        <h3 style="display:flex; align-items:center; gap:0.35rem;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/></svg>
+          Partial Cash Payment
+        </h3>
         <button type="button" class="modal-close" data-close="modal-cash-shortfall">&times;</button>
       </div>
       <div class="modal-body">
@@ -835,10 +979,12 @@
 
         <div id="shortfall-choice-buttons" style="display:flex; flex-direction:column; gap:0.55rem;">
           <button type="button" id="btn-shortfall-choose-debtor" class="btn btn-primary btn-lg btn-block">
-            📒 Add Remainder (<span id="shortfall-btn-rem-amount">GHS 0.00</span>) to Debtors
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px; vertical-align:-2px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Add Remainder (<span id="shortfall-btn-rem-amount">GHS 0.00</span>) to Debtors
           </button>
           <button type="button" id="btn-shortfall-adjust-items" class="btn btn-outline btn-lg btn-block">
-            🛒 Remove / Adjust Items
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px; vertical-align:-2px;"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>
+            Remove / Adjust Items
           </button>
         </div>
 
@@ -850,8 +996,8 @@
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
             <div class="form-group">
-              <label class="form-label" for="shortfall-cust-phone">Phone *</label>
-              <input type="tel" id="shortfall-cust-phone" class="form-control" placeholder="024XXXXXXX" required />
+              <label class="form-label" for="shortfall-cust-phone">Phone (10 Digits) *</label>
+              <input type="tel" id="shortfall-cust-phone" class="form-control" placeholder="0244123456" pattern="^\d{10}$" maxlength="10" minlength="10" inputmode="numeric" required />
             </div>
             <div class="form-group">
               <label class="form-label" for="shortfall-cust-location">Location *</label>
@@ -859,7 +1005,8 @@
             </div>
           </div>
           <button type="submit" class="btn btn-success btn-lg btn-block">
-            ✅ Save Sale &amp; Record Remainder in Debtors
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:-2px;"><polyline points="20 6 9 17 4 12"/></svg>
+            Save Sale &amp; Record Remainder in Debtors
           </button>
         </form>
       </div>
@@ -872,7 +1019,10 @@
   <div id="modal-restock" class="modal-backdrop hidden">
     <div class="modal-box" style="max-width:380px;">
       <div class="modal-header">
-        <h3>📦 Restock</h3>
+        <h3 style="display:flex; align-items:center; gap:0.35rem;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
+          Restock Item
+        </h3>
         <button type="button" class="modal-close" data-close="modal-restock">&times;</button>
       </div>
       <form id="form-restock">
@@ -901,7 +1051,10 @@
   <div id="modal-manual-debtor" class="modal-backdrop hidden">
     <div class="modal-box" style="max-width:420px;">
       <div class="modal-header">
-        <h3>📒 Add Debtor</h3>
+        <h3 style="display:flex; align-items:center; gap:0.35rem;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Add Debtor
+        </h3>
         <button type="button" class="modal-close" data-close="modal-manual-debtor">&times;</button>
       </div>
       <form id="form-manual-debtor">
@@ -912,8 +1065,8 @@
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
             <div class="form-group">
-              <label class="form-label" for="mdebtor-phone">Phone *</label>
-              <input type="tel" id="mdebtor-phone" class="form-control" required />
+              <label class="form-label" for="mdebtor-phone">Phone (10 Digits) *</label>
+              <input type="tel" id="mdebtor-phone" class="form-control" pattern="^\d{10}$" maxlength="10" minlength="10" inputmode="numeric" required />
             </div>
             <div class="form-group">
               <label class="form-label" for="mdebtor-location">Location *</label>
@@ -944,7 +1097,10 @@
   <div id="modal-debtor-payment" class="modal-backdrop hidden">
     <div class="modal-box" style="max-width:400px;">
       <div class="modal-header">
-        <h3>💵 Debt Payment</h3>
+        <h3 style="display:flex; align-items:center; gap:0.35rem;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/></svg>
+          Debt Payment
+        </h3>
         <button type="button" class="modal-close" data-close="modal-debtor-payment">&times;</button>
       </div>
       <form id="form-debtor-payment">
@@ -967,8 +1123,8 @@
           <div class="form-group">
             <label class="form-label" for="pay-method-select">Method</label>
             <select id="pay-method-select" class="form-control">
-              <option value="Cash">💵 Cash</option>
-              <option value="MoMo">📱 MoMo</option>
+              <option value="Cash">Cash</option>
+              <option value="MoMo">MoMo</option>
             </select>
           </div>
           <input type="hidden" id="pay-note-input" value="" />
@@ -987,7 +1143,7 @@
   <div id="modal-debtor-history" class="modal-backdrop hidden">
     <div class="modal-box" style="max-width:500px;">
       <div class="modal-header">
-        <h3 id="history-debtor-title">📜 History</h3>
+        <h3 id="history-debtor-title">History</h3>
         <button type="button" class="modal-close" data-close="modal-debtor-history">&times;</button>
       </div>
       <div class="modal-body">
@@ -1006,7 +1162,10 @@
   <div id="modal-receipt" class="modal-backdrop hidden">
     <div class="modal-box" style="max-width:380px;">
       <div class="modal-header">
-        <h3>🧾 Receipt</h3>
+        <h3 style="display:flex; align-items:center; gap:0.35rem;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>
+          Receipt
+        </h3>
         <button type="button" class="modal-close" data-close="modal-receipt">&times;</button>
       </div>
       <div class="modal-body">
@@ -1014,7 +1173,10 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline" data-close="modal-receipt">Close</button>
-        <button type="button" id="btn-print-receipt" class="btn btn-primary">🖨️ Print</button>
+        <button type="button" id="btn-print-receipt" class="btn btn-primary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:-2px;"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
+          Print
+        </button>
       </div>
     </div>
   </div>
@@ -1025,7 +1187,10 @@
   <div id="modal-close-day" class="modal-backdrop hidden">
     <div class="modal-box" style="max-width:430px;">
       <div class="modal-header">
-        <h3>🔒 Daily Close Receipt</h3>
+        <h3 style="display:flex; align-items:center; gap:0.35rem;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Daily Close Receipt
+        </h3>
         <button type="button" class="modal-close" data-close="modal-close-day">&times;</button>
       </div>
       <div class="modal-body">
@@ -1035,7 +1200,10 @@
             Day Closed! Would you like to Update Store online now?
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.45rem;">
-            <button type="button" id="btn-close-day-sync-now" class="btn btn-primary btn-sm">🔄 Update Store</button>
+            <button type="button" id="btn-close-day-sync-now" class="btn btn-primary btn-sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+              Update Store
+            </button>
             <button type="button" id="btn-close-day-skip-sync" class="btn btn-outline btn-sm">Skip (Stay Offline)</button>
           </div>
         </div>
@@ -1043,9 +1211,18 @@
         <div id="close-day-report-text" class="close-day-box" style="margin-bottom:0.75rem;"></div>
 
         <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.4rem;">
-          <a id="btn-close-day-whatsapp" href="#" target="_blank" rel="noopener" class="btn btn-whatsapp btn-sm">💬 WhatsApp</a>
-          <a id="btn-close-day-sms" href="#" class="btn btn-sms btn-sm">📩 SMS</a>
-          <button type="button" id="btn-close-day-copy" class="btn btn-outline btn-sm">📋 Copy</button>
+          <a id="btn-close-day-whatsapp" href="#" target="_blank" rel="noopener" class="btn btn-whatsapp btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:3px; vertical-align:-2px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            WhatsApp
+          </a>
+          <a id="btn-close-day-sms" href="#" class="btn btn-sms btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:3px; vertical-align:-2px;"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            SMS
+          </a>
+          <button type="button" id="btn-close-day-copy" class="btn btn-outline btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:3px; vertical-align:-2px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy
+          </button>
         </div>
       </div>
       <div class="modal-footer">
@@ -1060,7 +1237,10 @@
   <div id="modal-barcode-scanner" class="modal-backdrop hidden">
     <div class="modal-box" style="max-width:420px;">
       <div class="modal-header">
-        <h3>📷 Scan Barcode</h3>
+        <h3 style="display:flex; align-items:center; gap:0.35rem;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+          Scan Barcode
+        </h3>
         <button type="button" class="modal-close" id="btn-close-scanner">&times;</button>
       </div>
       <div class="modal-body">
@@ -1088,7 +1268,11 @@
        ==================================================================== -->
   <div id="modal-update-store-dialog" class="modal-backdrop hidden" style="z-index: 10000;">
     <div class="modal-box" style="max-width:390px; text-align:center; padding:1.75rem 1.4rem; border-radius:16px;">
-      <div id="update-dialog-icon" style="font-size:3.5rem; line-height:1; margin-bottom:0.85rem;">✅</div>
+      <div id="update-dialog-icon" style="display:flex; justify-content:center; margin-bottom:0.85rem;">
+        <div style="width:60px; height:60px; border-radius:50%; background:#dcfce7; color:#15803d; display:flex; align-items:center; justify-content:center;">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+      </div>
       <h3 id="update-dialog-title" style="font-size:1.2rem; font-weight:900; margin-bottom:0.5rem; color:var(--text-primary);">Store Updated Successfully!</h3>
       <p id="update-dialog-message" style="font-size:0.9rem; color:var(--text-secondary); line-height:1.45; margin-bottom:1.4rem;">
         Your latest sales and inventory are safely backed up online.
@@ -1099,15 +1283,10 @@
     </div>
   </div>
 
-  <!-- Minimal Bottom Footer -->
-  <footer style="max-width:1400px; margin:1rem auto 0.5rem; padding:0.6rem 1rem; display:flex; align-items:center; justify-content:space-between; font-size:0.74rem; color:#64748b;">
-    <span>Holy Star POS v3.0</span>
-    <div style="display:flex; align-items:center; gap:0.85rem;">
-      <a href="super-admin.html" style="color:#1e3a8a; font-weight:700; text-decoration:none;">🛡️ Admin</a>
-      <button type="button" id="btn-footer-force-reset" onclick="if(window.forceResetAppCache){window.forceResetAppCache();}" style="background:none; border:none; padding:0; color:#dc2626; font-size:0.74rem; font-weight:700; cursor:pointer; text-decoration:underline;">
-        🔄 Reset Cache
-      </button>
-    </div>
+  <!-- Minimal Bottom Footer (Clean, No Admin Link) -->
+  <footer style="max-width:1400px; margin:1.5rem auto 0.75rem; padding:0.6rem 1rem; display:flex; align-items:center; justify-content:space-between; font-size:0.74rem; color:#64748b;">
+    <span>Holy Star POS v3.4</span>
+    <span>Production Retail System</span>
   </footer>
 
   <!-- Toast Container -->
@@ -1131,8 +1310,8 @@
   </script>
 
   <!-- Scripts -->
-  <script src="catalog.js?v=3.3"></script>
-  <script src="db.js?v=3.3"></script>
-  <script src="app.js?v=3.3"></script>
+  <script src="catalog.js?v=3.4"></script>
+  <script src="db.js?v=3.4"></script>
+  <script src="app.js?v=3.4"></script>
 </body>
 </html>

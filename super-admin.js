@@ -1,11 +1,12 @@
 /**
- * Holy Star POS - Minimal Visual Super-Admin (super-admin.js v3.0)
+ * Holy Star POS - Super-Admin Executive Command Center (super-admin.js v3.4)
  * Features:
- * - Protected Master Login (Default: holystar_admin / HolyStar@2026)
- * - 4 Top Stat Cards: Stores, Active, Expired, Offline
- * - Compact Store Rows: Store Name & Phone | Items | Sales (GHS) | Status Pills | 1-Click "+ Token"
- * - Built-in SHA-256 Token Generator (7, 30, 14 Days) + 1-Tap WhatsApp Delivery
- * - Cross-Device Cloud Sync (/api/sync + Cloud Relay + Local IndexedDB)
+ * - 3-Page Multi-Tab Architecture: Overview, Stores, Admin Settings
+ * - Focus on Platform Owner's Subscription Revenue (Weekly GHS 5, Monthly GHS 20)
+ * - Pure-JS Canvas Charts: Weekly Subscription Revenue & Daily Store Syncs / DAU
+ * - Single Store Details Modal & 1-Click Cryptographic SHA-256 Token Generator
+ * - Broadcast Announcement Banner to shops & Subscription Pricing Config
+ * - Strict 10-Digit Phone Validation & 100% Vector SVG Icons (Zero Emojis)
  */
 
 const SA_SECRET = 'HOLY_STAR_SECRET_2026';
@@ -13,6 +14,8 @@ const SA_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const SA_CREDS_KEY = 'holystar_superadmin_creds_v1';
 const SA_SESSION_KEY = 'holystar_superadmin_session_v1';
 const SA_TOKEN_LOG_KEY = 'holystar_superadmin_token_log_v1';
+const SA_PRICING_KEY = 'holystar_admin_pricing_v1';
+const SA_BROADCAST_KEY = 'holystar_admin_broadcast_v1';
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
 // ============================================================================
@@ -123,6 +126,7 @@ function generateSuperAdminToken(storeId, planDays, issueCode) {
 
 const AdminState = {
   unlocked: false,
+  activeTab: 'overview',
   stores: [],
   filter: 'ALL',
   searchQuery: '',
@@ -159,6 +163,11 @@ function saFormatShortDate(tsOrIso) {
   });
 }
 
+function validateSa10DigitPhone(phone) {
+  const clean = String(phone || '').replace(/\D/g, '');
+  return /^\d{10}$/.test(clean) ? clean : null;
+}
+
 function saCleanWhatsAppPhone(phone) {
   let digits = String(phone || '').replace(/\D/g, '');
   if (!digits) return '';
@@ -176,8 +185,13 @@ function saShowToast(message, type = 'info') {
 
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
-  const icon = type === 'success' ? '✅' : type === 'error' ? '⚠️' : 'ℹ️';
-  toast.innerHTML = `<span>${icon}</span><span>${saEscapeHtml(message)}</span>`;
+  const iconSvg = type === 'success'
+    ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`
+    : type === 'error'
+    ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
+    : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+
+  toast.innerHTML = `<span style="display:flex; align-items:center;">${iconSvg}</span><span>${saEscapeHtml(message)}</span>`;
   container.appendChild(toast);
 
   setTimeout(() => {
@@ -188,8 +202,51 @@ function saShowToast(message, type = 'info') {
 }
 
 // ============================================================================
-// MASTER CREDENTIALS & LOGS
+// PRICING CONFIG, TOKENS & BROADCAST SETTINGS
 // ============================================================================
+
+function getPricingConfig() {
+  try {
+    const raw = localStorage.getItem(SA_PRICING_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      return {
+        weekly: Number(p.weekly) || 5.0,
+        monthly: Number(p.monthly) || 20.0,
+        trialDays: Number(p.trialDays) || 7
+      };
+    }
+  } catch (e) {}
+  return { weekly: 5.0, monthly: 20.0, trialDays: 7 };
+}
+
+function savePricingConfig(weekly, monthly, trialDays) {
+  const config = {
+    weekly: Math.max(1, Number(weekly) || 5.0),
+    monthly: Math.max(1, Number(monthly) || 20.0),
+    trialDays: Math.max(1, Number(trialDays) || 7)
+  };
+  localStorage.setItem(SA_PRICING_KEY, JSON.stringify(config));
+  return config;
+}
+
+function getBroadcastConfig() {
+  try {
+    const raw = localStorage.getItem(SA_BROADCAST_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return { message: '', active: false, updated_at: 0 };
+}
+
+function saveBroadcastConfig(message, active) {
+  const config = {
+    message: String(message || '').trim(),
+    active: Boolean(active),
+    updated_at: Date.now()
+  };
+  localStorage.setItem(SA_BROADCAST_KEY, JSON.stringify(config));
+  return config;
+}
 
 function getMasterCredentials() {
   try {
@@ -200,7 +257,7 @@ function getMasterCredentials() {
         return parsed;
       }
     }
-  } catch (e) { }
+  } catch (e) {}
   return {
     username: 'holystar_admin',
     password: 'HolyStar@2026'
@@ -229,8 +286,23 @@ function getTokenLog() {
 
 function saveTokenLog(list) {
   try {
-    localStorage.setItem(SA_TOKEN_LOG_KEY, JSON.stringify(list.slice(0, 100)));
-  } catch (e) { }
+    localStorage.setItem(SA_TOKEN_LOG_KEY, JSON.stringify(list.slice(0, 150)));
+  } catch (e) {}
+}
+
+function calculateRevenueForPlan(days, pricing) {
+  const p = pricing || getPricingConfig();
+  const d = Number(days);
+  if (d <= 7) return p.weekly;
+  if (d <= 14) return p.weekly * 2;
+  return p.monthly;
+}
+
+function calculateStoreSubscriptionPaid(storeId) {
+  const cleanId = String(storeId || '').trim().toUpperCase();
+  const tokens = getTokenLog().filter((t) => t.store_id === cleanId && !t.revoked);
+  const pricing = getPricingConfig();
+  return tokens.reduce((sum, t) => sum + calculateRevenueForPlan(t.plan_days, pricing), 0);
 }
 
 function buildRenewalWhatsAppMessage({ ownerName, storeName, storeId, planDays, token }) {
@@ -245,7 +317,6 @@ function buildRenewalWhatsAppMessage({ ownerName, storeName, storeId, planDays, 
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // Bind events synchronously first so buttons never freeze
   bindSuperAdminEvents();
 
   try {
@@ -308,8 +379,13 @@ async function refreshPlatformStores(pullFromCloud = true) {
 
     AdminState.stores.sort((a, b) => (b.last_synced_ts || b.created_at_ts || 0) - (a.last_synced_ts || a.created_at_ts || 0));
 
-    renderKpiCards();
+    // Update tab count
+    const tabCount = document.getElementById('sa-tab-store-count');
+    if (tabCount) tabCount.textContent = String(AdminState.stores.length);
+
+    renderOverviewPage();
     renderStoresList();
+    renderSettingsPage();
 
     const refreshEl = document.getElementById('sa-last-refresh-text');
     if (refreshEl) {
@@ -322,7 +398,7 @@ async function refreshPlatformStores(pullFromCloud = true) {
 
 function startLiveCloudStream() {
   if (AdminState.sseSource) {
-    try { AdminState.sseSource.close(); } catch (e) { }
+    try { AdminState.sseSource.close(); } catch (e) {}
     AdminState.sseSource = null;
   }
 
@@ -353,16 +429,17 @@ function startLiveCloudStream() {
             refreshPlatformStores(false);
           }
         }
-      } catch (e) { }
+      } catch (e) {}
     };
-  } catch (err) { }
+  } catch (err) {}
 }
 
 // ============================================================================
-// RENDER 4 TOP STAT CARDS & COMPACT STORE CARDS
+// PAGE 1: OVERVIEW & INTERACTIVE CHARTS
+// Focus strictly on subscription revenue, NOT store sales!
 // ============================================================================
 
-function renderKpiCards() {
+function renderOverviewPage() {
   const stores = AdminState.stores;
   let activeCount = 0;
   let expiredCount = 0;
@@ -379,16 +456,228 @@ function renderKpiCards() {
     }
   }
 
+  // Calculate Subscription Earnings from Token Log
+  const pricing = getPricingConfig();
+  const tokenLog = getTokenLog().filter((t) => !t.revoked);
+  const now = Date.now();
+  const sevenDaysAgo = now - 7 * TWENTY_FOUR_HOURS_MS;
+
+  let totalSubRev = 0;
+  let weeklySubRev = 0;
+
+  for (const t of tokenLog) {
+    const rev = calculateRevenueForPlan(t.plan_days, pricing);
+    totalSubRev += rev;
+    if (t.created_at >= sevenDaysAgo) {
+      weeklySubRev += rev;
+    }
+  }
+
+  const elSubRev = document.getElementById('kpi-total-sub-revenue');
+  const elWeeklySubRev = document.getElementById('kpi-weekly-sub-revenue');
   const elStores = document.getElementById('kpi-total-stores');
   const elActive = document.getElementById('kpi-active-subs');
   const elExpired = document.getElementById('kpi-expired-subs');
   const elOffline = document.getElementById('kpi-offline-pill');
 
+  if (elSubRev) elSubRev.textContent = saFormatGHS(totalSubRev);
+  if (elWeeklySubRev) elWeeklySubRev.textContent = `${saFormatGHS(weeklySubRev)} this week`;
   if (elStores) elStores.textContent = String(stores.length);
   if (elActive) elActive.textContent = String(activeCount);
   if (elExpired) elExpired.textContent = String(expiredCount);
   if (elOffline) elOffline.textContent = String(offlineCount);
+
+  // Render the 2 Charts
+  renderWeeklySubRevenueChart(tokenLog, pricing);
+  renderDailyStoreSyncChart(stores);
 }
+
+function renderWeeklySubRevenueChart(tokenLog, pricing) {
+  const canvas = document.getElementById('sa-sub-revenue-chart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const width = rect.width || 500;
+  const height = 190;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  ctx.scale(dpr, dpr);
+
+  ctx.clearRect(0, 0, width, height);
+
+  // Group tokens into past 6 weeks
+  const now = Date.now();
+  const weeks = [];
+  for (let i = 5; i >= 0; i--) {
+    const end = now - i * 7 * TWENTY_FOUR_HOURS_MS;
+    const start = end - 7 * TWENTY_FOUR_HOURS_MS;
+    const dateLabel = new Date(end).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    let amount = 0;
+    for (const t of tokenLog) {
+      if (t.created_at >= start && t.created_at < end) {
+        amount += calculateRevenueForPlan(t.plan_days, pricing);
+      }
+    }
+    weeks.push({ label: i === 0 ? 'This Wk' : dateLabel, amount });
+  }
+
+  const maxVal = Math.max(10, ...weeks.map((w) => w.amount * 1.25));
+  const paddingLeft = 45;
+  const paddingBottom = 28;
+  const paddingTop = 20;
+  const plotW = width - paddingLeft - 20;
+  const plotH = height - paddingTop - paddingBottom;
+
+  // Grid lines
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 1;
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '10px -apple-system, sans-serif';
+
+  for (let step = 0; step <= 3; step++) {
+    const yVal = Math.round((maxVal / 3) * step);
+    const y = paddingTop + plotH - (yVal / maxVal) * plotH;
+    ctx.beginPath();
+    ctx.moveTo(paddingLeft, y);
+    ctx.lineTo(width - 20, y);
+    ctx.stroke();
+    ctx.fillText(`${yVal}`, 8, y + 3);
+  }
+
+  // Draw Bars
+  const barWidth = Math.min(36, (plotW / weeks.length) * 0.55);
+  const gap = plotW / weeks.length;
+
+  weeks.forEach((w, idx) => {
+    const x = paddingLeft + idx * gap + (gap - barWidth) / 2;
+    const barH = (w.amount / maxVal) * plotH;
+    const y = paddingTop + plotH - barH;
+
+    // Gradient bar
+    const grad = ctx.createLinearGradient(0, y, 0, paddingTop + plotH);
+    grad.addColorStop(0, '#f59e0b');
+    grad.addColorStop(1, '#d97706');
+    ctx.fillStyle = grad;
+
+    ctx.beginPath();
+    ctx.roundRect(x, y, barWidth, barH, [4, 4, 0, 0]);
+    ctx.fill();
+
+    // Value label on top
+    if (w.amount > 0) {
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 10px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${w.amount}`, x + barWidth / 2, Math.max(14, y - 5));
+    }
+
+    // X Axis Label
+    ctx.fillStyle = '#64748b';
+    ctx.font = '10px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(w.label, x + barWidth / 2, height - 8);
+  });
+}
+
+function renderDailyStoreSyncChart(stores) {
+  const canvas = document.getElementById('sa-sync-activity-chart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const width = rect.width || 500;
+  const height = 190;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  ctx.scale(dpr, dpr);
+
+  ctx.clearRect(0, 0, width, height);
+
+  // Group store syncs by day (past 7 days)
+  const now = Date.now();
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const dTime = now - i * TWENTY_FOUR_HOURS_MS;
+    const dStr = new Date(dTime).toLocaleDateString('en-GB', { weekday: 'short' });
+    const start = dTime - TWENTY_FOUR_HOURS_MS / 2;
+    const end = dTime + TWENTY_FOUR_HOURS_MS / 2;
+
+    let syncCount = 0;
+    for (const s of stores) {
+      if (s.last_synced_ts && s.last_synced_ts >= start && s.last_synced_ts <= end) {
+        syncCount++;
+      }
+    }
+    // Ensure active stores appear
+    if (i === 0) {
+      syncCount = Math.max(syncCount, stores.filter((s) => s.is_synced_24h).length);
+    }
+    days.push({ label: i === 0 ? 'Today' : dStr, count: syncCount });
+  }
+
+  const maxVal = Math.max(5, ...days.map((d) => d.count * 1.3));
+  const paddingLeft = 35;
+  const paddingBottom = 28;
+  const paddingTop = 20;
+  const plotW = width - paddingLeft - 20;
+  const plotH = height - paddingTop - paddingBottom;
+
+  // Grid
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 1;
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '10px -apple-system, sans-serif';
+
+  for (let step = 0; step <= 3; step++) {
+    const yVal = Math.round((maxVal / 3) * step);
+    const y = paddingTop + plotH - (yVal / maxVal) * plotH;
+    ctx.beginPath();
+    ctx.moveTo(paddingLeft, y);
+    ctx.lineTo(width - 20, y);
+    ctx.stroke();
+    ctx.fillText(`${yVal}`, 8, y + 3);
+  }
+
+  // Draw Bars
+  const barWidth = Math.min(32, (plotW / days.length) * 0.52);
+  const gap = plotW / days.length;
+
+  days.forEach((d, idx) => {
+    const x = paddingLeft + idx * gap + (gap - barWidth) / 2;
+    const barH = (d.count / maxVal) * plotH;
+    const y = paddingTop + plotH - barH;
+
+    const grad = ctx.createLinearGradient(0, y, 0, paddingTop + plotH);
+    grad.addColorStop(0, '#4f46e5');
+    grad.addColorStop(1, '#4338ca');
+    ctx.fillStyle = grad;
+
+    ctx.beginPath();
+    ctx.roundRect(x, y, barWidth, barH, [4, 4, 0, 0]);
+    ctx.fill();
+
+    if (d.count > 0) {
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 10px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${d.count}`, x + barWidth / 2, Math.max(14, y - 5));
+    }
+
+    ctx.fillStyle = '#64748b';
+    ctx.font = '10px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(d.label, x + barWidth / 2, height - 8);
+  });
+}
+
+// ============================================================================
+// PAGE 2: STORES DIRECTORY & SINGLE STORE DETAILS MODAL
+// ============================================================================
 
 function renderStoresList() {
   const container = document.getElementById('sa-stores-list');
@@ -411,9 +700,9 @@ function renderStoresList() {
 
   if (filtered.length === 0) {
     container.innerHTML = `
-      <div class="empty-state" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px;">
-        <div class="empty-state-icon">🏪</div>
-        <div class="empty-state-title">${AdminState.stores.length === 0 ? 'No Stores Yet' : 'No Match'}</div>
+      <div class="empty-state" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:2.5rem; text-align:center;">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.8" style="margin-bottom:0.6rem;"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/></svg>
+        <div style="font-weight:800; font-size:1rem; color:#0f172a;">${AdminState.stores.length === 0 ? 'No Stores Registered' : 'No Stores Match Query'}</div>
       </div>
     `;
     return;
@@ -422,12 +711,12 @@ function renderStoresList() {
   container.innerHTML = filtered
     .map((s) => {
       const subPill = s.computed_sub_status === 'EXPIRED'
-        ? `<span class="sa-badge sa-badge-red">● Expired</span>`
-        : `<span class="sa-badge sa-badge-green">● Active (${s.days_remaining}d left)</span>`;
+        ? `<span class="sa-badge sa-badge-red">Expired</span>`
+        : `<span class="sa-badge sa-badge-green">Active (${s.days_remaining}d left)</span>`;
 
       const syncPill = s.is_synced_24h
-        ? `<span class="sa-badge sa-badge-blue">🟢 Synced Online</span>`
-        : `<span class="sa-badge sa-badge-amber">🟠 Offline (>24h)</span>`;
+        ? `<span class="sa-badge sa-badge-blue">Synced Online</span>`
+        : `<span class="sa-badge sa-badge-amber">Offline (>24h)</span>`;
 
       const waDigits = saCleanWhatsAppPhone(s.owner_phone);
       const waHref = waDigits
@@ -440,32 +729,39 @@ function renderStoresList() {
           <div>
             <div class="sa-store-title-bar">
               <span class="sa-store-id-tag">${saEscapeHtml(s.store_id)}</span>
-              <span class="sa-store-name">${saEscapeHtml(s.store_name)}</span>
+              <span class="sa-store-name btn-sa-view-detail" data-store-id="${saEscapeHtml(s.store_id)}">${saEscapeHtml(s.store_name)}</span>
               <span class="sa-category-tag">${saEscapeHtml(s.store_category || 'Retail')}</span>
             </div>
             <div class="sa-owner-row">
-              <span>👤 ${saEscapeHtml(s.owner_name || 'Owner')}</span>
-              <span>📞 ${saEscapeHtml(s.owner_phone || '-')}</span>
-              ${waDigits ? `<a href="${waHref}" target="_blank" rel="noopener" class="sa-wa-btn">💬 WhatsApp</a>` : ''}
+              <span>${saEscapeHtml(s.owner_name || 'Owner')}</span>
+              <span>${saEscapeHtml(s.owner_phone || '-')}</span>
+              ${waDigits ? `<a href="${waHref}" target="_blank" rel="noopener" class="sa-wa-btn">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+                WhatsApp
+              </a>` : ''}
             </div>
           </div>
 
-          <!-- 2. Stock Items & Total Sales (GHS) -->
+          <!-- 2. Inventory Items & Stock Units (Store Sales Hidden for Privacy) -->
           <div class="sa-store-metrics">
-            <div>📦 <span class="sa-metrics-val">${Number(s.total_products_count || 0)}</span> items (${Number(s.total_stock_units || 0)} units)</div>
-            <div>💰 <span class="sa-metrics-val">${saFormatGHS(s.total_revenue_ghs || 0)}</span> (${Number(s.total_sales_count || 0)} sales)</div>
+            <div><span class="sa-metrics-val">${Number(s.total_products_count || 0)}</span> item types</div>
+            <div style="color:#64748b;">${Number(s.total_stock_units || 0)} total units</div>
           </div>
 
-          <!-- 3. Status Pills -->
+          <!-- 3. Status Badges -->
           <div class="sa-store-badges">
             ${subPill}
             ${syncPill}
           </div>
 
-          <!-- 4. Generate Token Button -->
-          <div style="text-align:right;">
+          <!-- 4. Actions -->
+          <div style="display:flex; align-items:center; gap:0.45rem; justify-content:flex-end;">
+            <button type="button" class="btn-view-store btn-sa-view-detail" data-store-id="${saEscapeHtml(s.store_id)}">
+              Details
+            </button>
             <button type="button" class="btn-generate-token btn-sa-row-token" data-store-id="${saEscapeHtml(s.store_id)}">
-              🔑 Generate Token
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2"/></svg>
+              + Token
             </button>
           </div>
         </div>
@@ -478,10 +774,176 @@ function renderStoresList() {
       openTokenModalForStore(btn.dataset.storeId);
     });
   });
+
+  container.querySelectorAll('.btn-sa-view-detail').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      openSingleStoreDetailModal(btn.dataset.storeId);
+    });
+  });
+}
+
+function openSingleStoreDetailModal(storeId) {
+  const store = AdminState.stores.find((s) => s.store_id === storeId);
+  if (!store) return;
+
+  const content = document.getElementById('sa-store-detail-content');
+  if (!content) return;
+
+  const subPaid = calculateStoreSubscriptionPaid(store.store_id);
+  const waDigits = saCleanWhatsAppPhone(store.owner_phone);
+  const waHref = waDigits
+    ? `https://wa.me/${waDigits}?text=${encodeURIComponent(`Hello ${store.owner_name || ''}, checking in from Holy Star POS regarding ${store.store_name} (${store.store_id}).`)}`
+    : '#';
+
+  const subBadge = store.computed_sub_status === 'EXPIRED'
+    ? `<span class="sa-badge sa-badge-red">Expired</span>`
+    : `<span class="sa-badge sa-badge-green">Active (${store.days_remaining}d remaining)</span>`;
+
+  content.innerHTML = `
+    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:1rem; margin-bottom:1rem;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+        <span class="sa-store-id-tag">${saEscapeHtml(store.store_id)}</span>
+        <span class="sa-category-tag">${saEscapeHtml(store.store_category || 'Retail')}</span>
+      </div>
+      <h3 style="font-size:1.15rem; font-weight:900; margin:0 0 0.35rem; color:#0f172a;">${saEscapeHtml(store.store_name)}</h3>
+      <div style="font-size:0.8rem; color:#64748b;">
+        Location: <strong>${saEscapeHtml(store.store_location || 'Accra')}</strong>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.65rem; margin-bottom:1rem;">
+      <div style="background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:0.75rem;">
+        <div style="font-size:0.7rem; font-weight:800; color:#64748b; text-transform:uppercase;">Owner</div>
+        <div style="font-weight:900; font-size:0.9rem; color:#0f172a;">${saEscapeHtml(store.owner_name || '-')}</div>
+        <div style="font-size:0.75rem; color:#64748b; margin-top:0.15rem;">${saEscapeHtml(store.owner_phone || '-')}</div>
+        ${waDigits ? `<div style="margin-top:0.35rem;"><a href="${waHref}" target="_blank" class="sa-wa-btn">WhatsApp</a></div>` : ''}
+      </div>
+
+      <div style="background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:0.75rem;">
+        <div style="font-size:0.7rem; font-weight:800; color:#64748b; text-transform:uppercase;">Inventory</div>
+        <div style="font-weight:900; font-size:0.9rem; color:#0f172a;">${Number(store.total_products_count || 0)} Items</div>
+        <div style="font-size:0.75rem; color:#64748b; margin-top:0.15rem;">${Number(store.total_stock_units || 0)} Total Stock Units</div>
+      </div>
+    </div>
+
+    <div style="background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:0.85rem; margin-bottom:1rem;">
+      <div style="font-size:0.7rem; font-weight:800; color:#64748b; text-transform:uppercase; margin-bottom:0.4rem;">Subscription &amp; Platform Revenue</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
+        <span style="font-size:0.82rem; color:#475569;">Current Status:</span>
+        <div>${subBadge}</div>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
+        <span style="font-size:0.82rem; color:#475569;">Expiry Date:</span>
+        <strong style="font-size:0.82rem; color:#0f172a;">${saFormatShortDate(store.effective_expiry_ts)}</strong>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; padding-top:0.4rem; border-top:1px dashed #e2e8f0;">
+        <span style="font-size:0.82rem; font-weight:800; color:#1e293b;">Total Subscriptions Paid to Me:</span>
+        <strong style="font-size:0.95rem; font-weight:900; color:#f59e0b;">${saFormatGHS(subPaid)}</strong>
+      </div>
+    </div>
+
+    <div style="font-size:0.74rem; color:#94a3b8; text-align:center;">
+      Last Cloud Sync: ${store.last_synced_ts ? new Date(store.last_synced_ts).toLocaleString('en-GB') : 'Never'}
+    </div>
+  `;
+
+  const btnOpenToken = document.getElementById('btn-sa-detail-open-token');
+  if (btnOpenToken) {
+    btnOpenToken.onclick = () => {
+      document.getElementById('modal-sa-store-detail')?.classList.add('hidden');
+      openTokenModalForStore(store.store_id);
+    };
+  }
+
+  document.getElementById('modal-sa-store-detail')?.classList.remove('hidden');
 }
 
 // ============================================================================
-// 1-CLICK "+ TOKEN" MODAL & WHATSAPP DELIVERY
+// PAGE 3: ADMIN SETTINGS & TOKEN LOGS
+// ============================================================================
+
+function renderSettingsPage() {
+  const creds = getMasterCredentials();
+  const pricing = getPricingConfig();
+  const broadcast = getBroadcastConfig();
+
+  const userEl = document.getElementById('sa-set-username');
+  const passEl = document.getElementById('sa-set-password');
+  if (userEl) userEl.value = creds.username;
+  if (passEl) passEl.value = creds.password;
+
+  const wPriceEl = document.getElementById('sa-price-weekly');
+  const mPriceEl = document.getElementById('sa-price-monthly');
+  const trialEl = document.getElementById('sa-trial-days');
+  if (wPriceEl) wPriceEl.value = pricing.weekly;
+  if (mPriceEl) mPriceEl.value = pricing.monthly;
+  if (trialEl) trialEl.value = pricing.trialDays;
+
+  const bMsgEl = document.getElementById('sa-broadcast-message');
+  const bActiveEl = document.getElementById('sa-broadcast-active');
+  if (bMsgEl) bMsgEl.value = broadcast.message || '';
+  if (bActiveEl) bActiveEl.checked = Boolean(broadcast.active);
+
+  renderTokenLogsTable();
+}
+
+function renderTokenLogsTable() {
+  const listEl = document.getElementById('sa-token-logs-list');
+  if (!listEl) return;
+
+  const logs = getTokenLog();
+  if (logs.length === 0) {
+    listEl.innerHTML = `<div style="color:#64748b; text-align:center; padding:1rem;">No tokens generated yet.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = `
+    <table style="width:100%; border-collapse:collapse; font-size:0.75rem;">
+      <thead>
+        <tr style="border-bottom:1px solid #e2e8f0; color:#64748b; text-align:left;">
+          <th style="padding:0.35rem;">Store</th>
+          <th style="padding:0.35rem;">Days</th>
+          <th style="padding:0.35rem;">Token</th>
+          <th style="padding:0.35rem;">Date</th>
+          <th style="padding:0.35rem; text-align:right;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${logs
+          .slice(0, 40)
+          .map((t, idx) => `
+            <tr style="border-bottom:1px solid #f1f5f9; ${t.revoked ? 'opacity:0.45; text-decoration:line-through;' : ''}">
+              <td style="padding:0.35rem; font-weight:800;">${saEscapeHtml(t.store_id)}</td>
+              <td style="padding:0.35rem;">${t.plan_days}d</td>
+              <td style="padding:0.35rem; font-family:monospace; font-weight:900; color:#d97706;">${saEscapeHtml(t.token)}</td>
+              <td style="padding:0.35rem; color:#64748b;">${saFormatShortDate(t.created_at)}</td>
+              <td style="padding:0.35rem; text-align:right;">
+                ${t.revoked ? '<span style="color:#ef4444; font-weight:800;">Revoked</span>' : `<button type="button" class="btn btn-outline btn-sm btn-revoke-token" data-index="${idx}" style="padding:0.1rem 0.4rem; font-size:0.68rem; color:#ef4444; border-color:#fca5a5;">Revoke</button>`}
+              </td>
+            </tr>
+          `)
+          .join('')}
+      </tbody>
+    </table>
+  `;
+
+  listEl.querySelectorAll('.btn-revoke-token').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.index);
+      const allLogs = getTokenLog();
+      if (allLogs[idx]) {
+        allLogs[idx].revoked = true;
+        saveTokenLog(allLogs);
+        renderTokenLogsTable();
+        renderOverviewPage();
+        saShowToast('Token revoked', 'info');
+      }
+    });
+  });
+}
+
+// ============================================================================
+// TOKEN GENERATOR MODAL & WHATSAPP DELIVERY
 // ============================================================================
 
 function getNextIssueSerialForStore(storeId) {
@@ -557,7 +1019,7 @@ async function triggerTokenGeneration() {
   };
 
   const currentExpiry = Math.max(now, Number(existing.admin_expected_expiry_ts || existing.license_expiry_ts || now));
-  const newExpectedExpiryTs = currentExpiry + planDays * 24 * 60 * 60 * 1000;
+  const newExpectedExpiryTs = currentExpiry + planDays * TWENTY_FOUR_HOURS_MS;
 
   registry[storeId] = {
     ...existing,
@@ -570,7 +1032,7 @@ async function triggerTokenGeneration() {
     admin_expected_expiry_date: new Date(newExpectedExpiryTs).toISOString()
   };
   window.HolyStarDB.saveTelemetryRegistryMap(registry);
-  window.HolyStarDB.pushTelemetryToCloud(registry[storeId]).catch(() => { });
+  window.HolyStarDB.pushTelemetryToCloud(registry[storeId]).catch(() => {});
 
   const resolvedStoreName = registry[storeId].store_name;
   const resolvedOwnerName = registry[storeId].owner_name;
@@ -637,7 +1099,29 @@ function sendTokenViaWhatsApp(tokenEntry) {
 // ============================================================================
 
 function bindSuperAdminEvents() {
-  // 1. Login Form
+  // 1. Tab Switching: Overview | Stores | Admin Settings
+  document.querySelectorAll('.sa-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.sa-tab-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const tab = btn.dataset.saTab;
+      AdminState.activeTab = tab;
+
+      document.querySelectorAll('.sa-page-panel').forEach((panel) => panel.classList.remove('active'));
+      const activePanel = document.getElementById(`sa-panel-${tab}`);
+      if (activePanel) activePanel.classList.add('active');
+
+      if (tab === 'overview') {
+        renderOverviewPage();
+      } else if (tab === 'stores') {
+        renderStoresList();
+      } else if (tab === 'settings') {
+        renderSettingsPage();
+      }
+    });
+  });
+
+  // 2. Login Form
   document.getElementById('form-sa-login')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const userIn = String(document.getElementById('sa-login-username')?.value || '').trim();
@@ -648,32 +1132,32 @@ function bindSuperAdminEvents() {
       const passEl = document.getElementById('sa-login-password');
       if (passEl) passEl.value = '';
       await unlockDashboard();
-      saShowToast('Unlocked', 'success');
+      saShowToast('Console Unlocked', 'success');
     } else {
       saShowToast('Invalid credentials', 'error');
     }
   });
 
-  // 2. Lock Button
+  // 3. Lock Button
   document.getElementById('btn-sa-logout')?.addEventListener('click', () => {
     AdminState.unlocked = false;
     sessionStorage.removeItem(SA_SESSION_KEY);
     document.getElementById('sa-login-overlay')?.classList.remove('hidden');
   });
 
-  // 3. Sync Button
+  // 4. Sync Button
   document.getElementById('btn-sa-sync-now')?.addEventListener('click', async () => {
-    saShowToast('Syncing stores...', 'info');
+    saShowToast('Syncing stores with cloud...', 'info');
     await refreshPlatformStores(true);
-    saShowToast('Stores synced!', 'success');
+    saShowToast('All stores synced!', 'success');
   });
 
-  // 4. Open Blank Token Modal
+  // 5. Open Blank Token Modal
   document.getElementById('btn-sa-open-token-modal-blank')?.addEventListener('click', () => {
     openTokenModalForStore('');
   });
 
-  // 5. Filter Pills
+  // 6. Filter Pills in Stores tab
   document.querySelectorAll('.sa-filter-pill').forEach((btn) => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.sa-filter-pill').forEach((b) => b.classList.remove('active'));
@@ -683,7 +1167,7 @@ function bindSuperAdminEvents() {
     });
   });
 
-  // 6. Search Input
+  // 7. Search Input
   const searchIn = document.getElementById('sa-store-search-input');
   if (searchIn) {
     searchIn.addEventListener('input', () => {
@@ -692,7 +1176,7 @@ function bindSuperAdminEvents() {
     });
   }
 
-  // 7. Plan Duration Buttons (7, 30, 14 Days) inside + Token Modal
+  // 8. Plan Duration Buttons inside + Token Modal
   document.querySelectorAll('.sa-plan-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.sa-plan-btn').forEach((b) => b.classList.remove('active'));
@@ -743,9 +1227,21 @@ function bindSuperAdminEvents() {
     }
   });
 
-  // 8. Add Offline Store Modal
+  // 9. Add Offline Store Modal
   document.getElementById('btn-sa-open-manual-store')?.addEventListener('click', () => {
     document.getElementById('modal-sa-manual-store')?.classList.remove('hidden');
+  });
+
+  // Restrict phone inputs to 10 digits
+  ['sa-man-owner-phone', 'sa-gen-owner-phone'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.setAttribute('maxlength', '10');
+      el.setAttribute('inputmode', 'numeric');
+      el.addEventListener('input', (e) => {
+        e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
+      });
+    }
   });
 
   document.getElementById('form-sa-manual-store')?.addEventListener('submit', async (e) => {
@@ -755,6 +1251,12 @@ function bindSuperAdminEvents() {
     const storeName = String(document.getElementById('sa-man-store-name')?.value || '').trim();
     const ownerName = String(document.getElementById('sa-man-owner-name')?.value || '').trim();
     const ownerPhone = String(document.getElementById('sa-man-owner-phone')?.value || '').trim();
+
+    const cleanPhone = validateSa10DigitPhone(ownerPhone);
+    if (!cleanPhone) {
+      saShowToast('Phone number must be exactly 10 digits (e.g. 0244123456)', 'error');
+      return;
+    }
 
     if (!storeId || !storeName) return;
 
@@ -766,22 +1268,22 @@ function bindSuperAdminEvents() {
       store_name: storeName,
       store_category: category,
       owner_name: ownerName,
-      owner_phone: ownerPhone,
+      owner_phone: cleanPhone,
       created_at: new Date(now).toISOString(),
       created_at_ts: now,
       total_products_count: registry[storeId]?.total_products_count || 0,
       total_stock_units: registry[storeId]?.total_stock_units || 0,
-      total_sales_count: registry[storeId]?.total_sales_count || 0,
-      total_revenue_ghs: registry[storeId]?.total_revenue_ghs || 0,
+      total_sales_count: 0,
+      total_revenue_ghs: 0,
       license_plan: '7-Day Free Trial',
       license_status: 'Trial_Active',
-      license_expiry_ts: now + 7 * 24 * 60 * 60 * 1000,
-      license_expiry_date: new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      license_expiry_ts: now + 7 * TWENTY_FOUR_HOURS_MS,
+      license_expiry_date: new Date(now + 7 * TWENTY_FOUR_HOURS_MS).toISOString(),
       offline_manual_only: true
     };
 
     window.HolyStarDB.saveTelemetryRegistryMap(registry);
-    window.HolyStarDB.pushTelemetryToCloud(registry[storeId]).catch(() => { });
+    window.HolyStarDB.pushTelemetryToCloud(registry[storeId]).catch(() => {});
 
     document.getElementById('modal-sa-manual-store')?.classList.add('hidden');
     e.target.reset();
@@ -789,31 +1291,65 @@ function bindSuperAdminEvents() {
     openTokenModalForStore(storeId);
   });
 
-  // 9. Admin Settings Modal
-  document.getElementById('btn-sa-open-settings')?.addEventListener('click', () => {
-    const creds = getMasterCredentials();
-    document.getElementById('sa-set-username').value = creds.username;
-    document.getElementById('sa-set-password').value = creds.password;
-    document.getElementById('modal-sa-settings')?.classList.remove('hidden');
+  // 10. Broadcast Announcement Form
+  document.getElementById('form-sa-broadcast')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const msg = document.getElementById('sa-broadcast-message')?.value;
+    const active = document.getElementById('sa-broadcast-active')?.checked;
+    saveBroadcastConfig(msg, active);
+
+    // Push broadcast announcement to cloud config
+    const syncCfg = window.HolyStarDB.getCloudSyncConfig();
+    if (syncCfg.topic) {
+      fetch(`https://ntfy.sh/${encodeURIComponent(syncCfg.topic)}`, {
+        method: 'POST',
+        headers: {
+          Title: 'Broadcast Announcement',
+          Tags: 'mega',
+          Priority: 'default'
+        },
+        body: JSON.stringify({
+          broadcast_announcement: {
+            message: String(msg || '').trim(),
+            active: Boolean(active),
+            updated_at: Date.now()
+          }
+        })
+      }).catch(() => {});
+    }
+
+    saShowToast('Announcement broadcasted to shops!', 'success');
   });
 
+  // 11. Pricing Config Form
+  document.getElementById('form-sa-pricing')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const w = document.getElementById('sa-price-weekly')?.value;
+    const m = document.getElementById('sa-price-monthly')?.value;
+    const t = document.getElementById('sa-trial-days')?.value;
+    savePricingConfig(w, m, t);
+    renderOverviewPage();
+    saShowToast('Pricing configuration saved!', 'success');
+  });
+
+  // 12. Admin Credentials Form
   document.getElementById('form-sa-credentials')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const newUser = String(document.getElementById('sa-set-username')?.value || '').trim();
     const newPass = String(document.getElementById('sa-set-password')?.value || '');
     if (!newUser || !newPass) return;
     saveMasterCredentials(newUser, newPass);
-    document.getElementById('modal-sa-settings')?.classList.add('hidden');
-    saShowToast('Credentials saved!', 'success');
+    saShowToast('Master credentials updated!', 'success');
   });
 
-  // Export & Import Directory JSON
+  // 13. Export & Import Directory JSON
   document.getElementById('btn-sa-export-registry')?.addEventListener('click', () => {
     const payload = {
       app: 'HolyStarPOS_SuperAdmin_Directory',
       exported_at: new Date().toISOString(),
       stores: window.HolyStarDB.getTelemetryRegistryMap(),
-      token_log: getTokenLog()
+      token_log: getTokenLog(),
+      pricing: getPricingConfig()
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -839,10 +1375,13 @@ function bindSuperAdminEvents() {
       } else if (parsed?.stores && typeof parsed.stores === 'object') {
         Object.assign(registry, parsed.stores);
       }
+      if (parsed?.token_log && Array.isArray(parsed.token_log)) {
+        saveTokenLog(parsed.token_log);
+      }
       window.HolyStarDB.saveTelemetryRegistryMap(registry);
       e.target.value = '';
       await refreshPlatformStores(false);
-      saShowToast('Stores imported!', 'success');
+      saShowToast('Stores & directory imported successfully!', 'success');
     } catch {
       e.target.value = '';
       saShowToast('Invalid JSON file', 'error');

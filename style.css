@@ -618,12 +618,134 @@ body {
 }
 
 /* ==========================================================================
-   CART & CHECKOUT PANEL
+   CART & CHECKOUT PANEL (STICKY ON DESKTOP & DRAGGABLE FLOATING ON MOBILE)
    ========================================================================== */
 
 .cart-panel {
   position: sticky;
-  top: 106px;
+  top: 76px;
+  align-self: start;
+}
+
+@media (max-width: 1024px) {
+  .cart-panel {
+    position: static;
+    top: auto;
+  }
+}
+
+/* Floating Draggable Basket Button on Mobile */
+.floating-basket-btn {
+  display: none;
+  position: fixed;
+  bottom: 24px;
+  right: 20px;
+  z-index: 990;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #ffffff;
+  border-radius: 999px;
+  padding: 0.55rem 0.95rem;
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.45);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  align-items: center;
+  gap: 0.65rem;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  transition: box-shadow 0.15s ease, transform 0.08s ease;
+}
+
+.floating-basket-btn:active {
+  cursor: grabbing;
+  transform: scale(0.96);
+}
+
+@media (max-width: 1024px) {
+  .floating-basket-btn {
+    display: flex;
+  }
+}
+
+.floating-basket-icon-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.floating-basket-badge {
+  position: absolute;
+  top: -9px;
+  right: -10px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 900;
+  min-width: 19px;
+  height: 19px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #ffffff;
+  padding: 0 4px;
+}
+
+.floating-basket-content {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.floating-basket-label {
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.92;
+}
+
+.floating-basket-total {
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+
+/* Category Dropdown Select */
+.pos-cat-select {
+  font-weight: 800;
+  font-size: 0.82rem;
+  padding: 0.42rem 0.65rem;
+  background-color: #f8fafc;
+  border: 1.5px solid var(--border);
+  border-radius: 9px;
+  color: #1e293b;
+  cursor: pointer;
+  min-width: 135px;
+  max-width: 175px;
+}
+
+.pos-cat-select:focus {
+  border-color: var(--primary);
+}
+
+/* Inline Payment Details in Sales Table */
+.pay-detail-badge {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.pay-badge-method {
+  font-weight: 800;
+  font-size: 0.78rem;
+  color: var(--text-primary);
+}
+
+.pay-badge-sub {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #64748b;
+  line-height: 1.2;
 }
 
 .cart-items-list {
@@ -1306,4 +1428,18 @@ body {
 
 .toast-info {
   border-left: 4px solid #3b82f6;
+}
+
+/* Mobile Orientation Portrait Safeguard */
+@media screen and (orientation: landscape) and (max-height: 500px) and (max-width: 900px) {
+  body {
+    overflow-x: hidden;
+  }
+  .app-header {
+    height: 52px;
+  }
+  .pos-grid {
+    grid-template-columns: 1fr 320px !important;
+  }
+}
 }

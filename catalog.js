@@ -5,27 +5,27 @@
  */
 
 const CATEGORY_VISUALS = {
-  'Biscuits & Snacks': { bg1: '#f59e0b', bg2: '#b45309', emoji: '🍪' },
-  'Beverages & Drinks': { bg1: '#15803d', bg2: '#14532d', emoji: '☕' },
-  'Milk & Dairy': { bg1: '#0284c7', bg2: '#0369a1', emoji: '🥛' },
-  'Canned & Tin Foods': { bg1: '#dc2626', bg2: '#991b1b', emoji: '🥫' },
-  'Cooking Oil & Paste': { bg1: '#ea580c', bg2: '#c2410c', emoji: '🛢️' },
-  'Rice, Grains & Flour': { bg1: '#ca8a04', bg2: '#854d0e', emoji: '🌾' },
-  'Bread & Bakery': { bg1: '#d97706', bg2: '#92400e', emoji: '🍞' },
-  'Soaps & Detergents': { bg1: '#0d9488', bg2: '#115e59', emoji: '🧼' },
-  'Toiletries & Cosmetics': { bg1: '#db2777', bg2: '#9d174d', emoji: '🧴' },
-  'Baby Products': { bg1: '#ec4899', bg2: '#be185d', emoji: '👶' },
-  'OTC Medicine & First Aid': { bg1: '#2563eb', bg2: '#1e40af', emoji: '💊' },
-  'Phone Accessories': { bg1: '#4f46e5', bg2: '#3730a3', emoji: '🔌' },
-  'Stationery': { bg1: '#6366f1', bg2: '#4338ca', emoji: '📚' },
-  'Household & Plastics': { bg1: '#0891b2', bg2: '#0e7490', emoji: '🪣' }
+  'Biscuits & Snacks': { bg1: '#f59e0b', bg2: '#b45309', code: 'SNK' },
+  'Beverages & Drinks': { bg1: '#15803d', bg2: '#14532d', code: 'DRK' },
+  'Milk & Dairy': { bg1: '#0284c7', bg2: '#0369a1', code: 'MLK' },
+  'Canned & Tin Foods': { bg1: '#dc2626', bg2: '#991b1b', code: 'CAN' },
+  'Cooking Oil & Paste': { bg1: '#ea580c', bg2: '#c2410c', code: 'OIL' },
+  'Rice, Grains & Flour': { bg1: '#ca8a04', bg2: '#854d0e', code: 'GRN' },
+  'Bread & Bakery': { bg1: '#d97706', bg2: '#92400e', code: 'BRD' },
+  'Soaps & Detergents': { bg1: '#0d9488', bg2: '#115e59', code: 'SOP' },
+  'Toiletries & Cosmetics': { bg1: '#db2777', bg2: '#9d174d', code: 'TLT' },
+  'Baby Products': { bg1: '#ec4899', bg2: '#be185d', code: 'BBY' },
+  'OTC Medicine & First Aid': { bg1: '#2563eb', bg2: '#1e40af', code: 'MED' },
+  'Phone Accessories': { bg1: '#4f46e5', bg2: '#3730a3', code: 'PHN' },
+  'Stationery': { bg1: '#6366f1', bg2: '#4338ca', code: 'STN' },
+  'Household & Plastics': { bg1: '#0891b2', bg2: '#0e7490', code: 'HSD' }
 };
 
 /**
  * Generates a crisp SVG data-URI thumbnail for any catalog or custom product
  */
 function generateProductSvgThumbnail(name, category) {
-  const style = CATEGORY_VISUALS[category] || { bg1: '#334155', bg2: '#0f172a', emoji: '📦' };
+  const style = CATEGORY_VISUALS[category] || { bg1: '#334155', bg2: '#0f172a', code: 'ITM' };
   const cleanName = String(name || 'Item').trim();
   const initials = cleanName
     .split(/\s+/)
@@ -45,11 +45,15 @@ function generateProductSvgThumbnail(name, category) {
       </linearGradient>
     </defs>
     <rect width="120" height="120" rx="20" fill="url(#g)"/>
-    <circle cx="60" cy="46" r="26" fill="rgba(255,255,255,0.16)"/>
-    <text x="60" y="55" font-family="Segoe UI Emoji, Arial, sans-serif" font-size="28" text-anchor="middle" fill="#fff">${style.emoji}</text>
-    <text x="98" y="24" font-family="Arial, sans-serif" font-size="11" font-weight="800" text-anchor="end" fill="rgba(255,255,255,0.75)">${safeInitials}</text>
-    <rect x="8" y="82" width="104" height="28" rx="8" fill="rgba(15,23,42,0.55)"/>
-    <text x="60" y="100" font-family="Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle" fill="#ffffff">${safeTitle}</text>
+    <circle cx="60" cy="46" r="26" fill="rgba(255,255,255,0.18)"/>
+    <g transform="translate(46, 32)" stroke="#ffffff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2 2 9l12 7 12-7-12-7z"/>
+      <path d="m2 16 12 7 12-7"/>
+      <path d="m2 9.5 12 7 12-7"/>
+    </g>
+    <text x="100" y="24" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="11" font-weight="900" text-anchor="end" fill="rgba(255,255,255,0.85)">${safeInitials}</text>
+    <rect x="8" y="82" width="104" height="28" rx="8" fill="rgba(15,23,42,0.65)"/>
+    <text x="60" y="100" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="11" font-weight="800" text-anchor="middle" fill="#ffffff">${safeTitle}</text>
   </svg>`;
 
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
