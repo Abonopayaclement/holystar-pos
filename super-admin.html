@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -99,8 +100,17 @@
     }
 
     @keyframes saPulse {
-      0%, 100% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.3); opacity: 0.7; }
+
+      0%,
+      100% {
+        transform: scale(1);
+        opacity: 1;
+      }
+
+      50% {
+        transform: scale(1.3);
+        opacity: 0.7;
+      }
     }
 
     /* 3 Portal Navigation Tabs */
@@ -207,6 +217,7 @@
       .sa-stats-row {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+
       .sa-revenue-card {
         grid-column: 1 / -1;
       }
@@ -400,6 +411,7 @@
         grid-template-columns: 1fr auto;
         gap: 0.75rem;
       }
+
       .sa-store-metrics,
       .sa-store-badges {
         grid-column: 1 / -1;
@@ -504,10 +516,25 @@
       width: fit-content;
     }
 
-    .sa-badge-green { background: #dcfce7; color: #15803d; }
-    .sa-badge-red { background: #fee2e2; color: #b91c1c; }
-    .sa-badge-amber { background: #fef3c7; color: #b45309; }
-    .sa-badge-blue { background: #eff6ff; color: #1d4ed8; }
+    .sa-badge-green {
+      background: #dcfce7;
+      color: #15803d;
+    }
+
+    .sa-badge-red {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+
+    .sa-badge-amber {
+      background: #fef3c7;
+      color: #b45309;
+    }
+
+    .sa-badge-blue {
+      background: #eff6ff;
+      color: #1d4ed8;
+    }
 
     .btn-generate-token {
       background: linear-gradient(135deg, #f59e0b, #d97706);
@@ -628,6 +655,7 @@
     }
   </style>
 </head>
+
 <body class="sa-body">
 
   <!-- 1. SUPER-ADMIN LOGIN GATE -->
@@ -635,7 +663,10 @@
     <div class="auth-card" style="max-width:390px; border-radius:18px; box-shadow:0 12px 36px rgba(15,23,42,0.25);">
       <div class="auth-brand-header" style="padding:1.4rem; background:#0f172a; color:#fff;">
         <div class="auth-logo-circle" style="background:#f59e0b; color:#0f172a;">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          </svg>
         </div>
         <h2 style="font-size:1.2rem; font-weight:900; color:#fff; margin-top:0.4rem;">Holy Star Super-Admin</h2>
         <div style="font-size:0.75rem; color:#94a3b8;">Platform Owner Executive Console</div>
@@ -644,18 +675,21 @@
         <form id="form-sa-login">
           <div class="form-group">
             <label class="form-label" for="sa-login-username">Admin Username</label>
-            <input type="text" id="sa-login-username" class="form-control" placeholder="holystar_admin" required autocomplete="username" />
+            <input type="text" id="sa-login-username" class="form-control" placeholder="holystar_admin" required
+              autocomplete="username" />
           </div>
           <div class="form-group">
             <label class="form-label" for="sa-login-password">Admin Password</label>
-            <input type="password" id="sa-login-password" class="form-control" placeholder="••••••••" required autocomplete="current-password" />
+            <input type="password" id="sa-login-password" class="form-control" placeholder="••••••••" required
+              autocomplete="current-password" />
           </div>
           <button type="submit" class="btn btn-primary btn-lg btn-block" style="background:#0f172a; font-weight:800;">
             Unlock Console
           </button>
         </form>
       </div>
-      <div style="padding:0.75rem 1.4rem; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; font-size:0.75rem;">
+      <div
+        style="padding:0.75rem 1.4rem; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; font-size:0.75rem;">
         <a href="index.html" style="color:#4f46e5; font-weight:800; text-decoration:none;">← Open Store POS</a>
         <span style="color:#94a3b8;">Holy Star POS v3.4</span>
       </div>
@@ -665,11 +699,20 @@
   <!-- 2. EXECUTIVE TOP HEADER (HAMBURGER MENU + BRAND + QUICK ACTIONS) -->
   <header class="sa-header">
     <div class="sa-brand">
-      <button type="button" id="btn-sa-hamburger" class="sa-icon-btn" aria-label="Open Menu" style="padding:0.42rem 0.6rem;">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      <button type="button" id="btn-sa-hamburger" class="sa-icon-btn" aria-label="Open Menu"
+        style="padding:0.42rem 0.6rem;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+          stroke-linecap="round">
+          <line x1="3" y1="6" x2="21" y2="6" />
+          <line x1="3" y1="12" x2="21" y2="12" />
+          <line x1="3" y1="18" x2="21" y2="18" />
+        </svg>
       </button>
       <div class="sa-shield">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        </svg>
       </div>
       <div>
         <div class="sa-title-text">Holy Star Super-Admin</div>
@@ -684,23 +727,42 @@
     <!-- Right Quick Actions -->
     <div class="sa-actions">
       <button type="button" id="btn-sa-sync-now" class="sa-icon-btn primary" title="Sync Global Stores">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 2v6h-6" />
+          <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+          <path d="M3 22v-6h6" />
+          <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+        </svg>
         Sync
       </button>
       <button type="button" id="btn-sa-open-token-modal-blank" class="sa-icon-btn gold" title="Generate Token">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2"/></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2" />
+        </svg>
         + Token
       </button>
       <button type="button" id="btn-sa-open-manual-store" class="sa-icon-btn" title="Add Offline Store">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round">
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
         + Store
       </button>
       <a href="index.html" class="sa-icon-btn" title="Open Store POS">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" />
+          <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+        </svg>
         POS
       </a>
       <button type="button" id="btn-sa-logout" class="sa-icon-btn" style="color:#fca5a5;" title="Lock Console">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </svg>
       </button>
     </div>
   </header>
@@ -711,7 +773,10 @@
     <div class="nav-drawer-header">
       <div class="nav-drawer-brand">
         <div class="nav-drawer-star">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="#fbbf24" stroke="#fbbf24" stroke-width="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="#fbbf24" stroke="#fbbf24" stroke-width="1">
+            <polygon
+              points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+          </svg>
         </div>
         <div>
           <div class="nav-drawer-title">Super-Admin</div>
@@ -719,28 +784,54 @@
         </div>
       </div>
       <button type="button" id="btn-sa-close-drawer" class="btn-drawer-close" aria-label="Close menu">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
       </button>
     </div>
     <div class="nav-drawer-menu">
       <button type="button" class="drawer-nav-item sa-tab-btn active" data-sa-tab="overview">
-        <span class="drawer-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg></span>
+        <span class="drawer-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2">
+            <rect width="7" height="9" x="3" y="3" rx="1" />
+            <rect width="7" height="5" x="14" y="3" rx="1" />
+            <rect width="7" height="9" x="14" y="12" rx="1" />
+            <rect width="7" height="5" x="3" y="16" rx="1" />
+          </svg></span>
         <span class="drawer-item-label">Overview</span>
       </button>
       <button type="button" class="drawer-nav-item sa-tab-btn" data-sa-tab="stores">
-        <span class="drawer-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/></svg></span>
+        <span class="drawer-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2">
+            <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" />
+            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+          </svg></span>
         <span class="drawer-item-label">Stores (<span id="sa-tab-store-count">0</span>)</span>
       </button>
       <button type="button" class="drawer-nav-item sa-tab-btn" data-sa-tab="notifications">
-        <span class="drawer-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg></span>
+        <span class="drawer-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2">
+            <path d="M3 11l18-5v12L3 14v-3z" />
+            <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
+          </svg></span>
         <span class="drawer-item-label">Notifications</span>
       </button>
       <button type="button" class="drawer-nav-item sa-tab-btn" data-sa-tab="tokens">
-        <span class="drawer-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2"/></svg></span>
+        <span class="drawer-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2">
+            <path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2" />
+          </svg></span>
         <span class="drawer-item-label">Tokens &amp; Sync</span>
       </button>
       <button type="button" class="drawer-nav-item sa-tab-btn" data-sa-tab="settings">
-        <span class="drawer-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+        <span class="drawer-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2">
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg></span>
         <span class="drawer-item-label">Super Admin Settings</span>
       </button>
     </div>
@@ -766,7 +857,12 @@
             <div id="kpi-weekly-sub-revenue" class="sa-stat-sub">GHS 0.00 this week</div>
           </div>
           <div class="sa-stat-icon-wrap" style="background:rgba(251,191,36,0.15); color:#fbbf24;">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 6v12"/></svg>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"
+              stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" />
+              <path d="M12 6v12" />
+            </svg>
           </div>
         </div>
 
@@ -777,7 +873,11 @@
             <div class="sa-stat-sub">Registered stores</div>
           </div>
           <div class="sa-stat-icon-wrap" style="background:#f1f5f9; color:#0f172a;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" />
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+            </svg>
           </div>
         </div>
 
@@ -788,7 +888,10 @@
             <div class="sa-stat-sub">Paid / Trial</div>
           </div>
           <div class="sa-stat-icon-wrap" style="background:#dcfce7; color:#15803d;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
           </div>
         </div>
 
@@ -799,7 +902,11 @@
             <div class="sa-stat-sub">Need token</div>
           </div>
           <div class="sa-stat-icon-wrap" style="background:#fee2e2; color:#b91c1c;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
           </div>
         </div>
 
@@ -810,7 +917,13 @@
             <div class="sa-stat-sub">Pending sync</div>
           </div>
           <div class="sa-stat-icon-wrap" style="background:#fef3c7; color:#b45309;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+              <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+              <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+              <line x1="12" y1="20" x2="12.01" y2="20" />
+            </svg>
           </div>
         </div>
       </div>
@@ -821,7 +934,11 @@
         <div class="sa-chart-card">
           <div class="sa-chart-header">
             <div class="sa-chart-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.3"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 3v18h18" />
+                <path d="m19 9-5 5-4-4-3 3" />
+              </svg>
               Weekly Subscription Revenue (GHS)
             </div>
             <span style="font-size:0.75rem; font-weight:700; color:#64748b;">Past 6 Weeks</span>
@@ -833,7 +950,10 @@
         <div class="sa-chart-card">
           <div class="sa-chart-header">
             <div class="sa-chart-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2.3"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+              </svg>
               Daily Store Activity &amp; Syncs
             </div>
             <span style="font-size:0.75rem; font-weight:700; color:#64748b;">Active Stores</span>
@@ -859,7 +979,8 @@
         </div>
 
         <div style="flex:1; min-width:220px; max-width:320px;">
-          <input type="search" id="sa-store-search-input" class="sa-search-input" placeholder="Search store, phone or ID..." />
+          <input type="search" id="sa-store-search-input" class="sa-search-input"
+            placeholder="Search store, phone or ID..." />
         </div>
       </div>
 
@@ -877,7 +998,11 @@
     <div id="sa-panel-notifications" class="sa-page-panel">
       <div class="sa-settings-card" style="max-width:640px;">
         <div class="sa-settings-title">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 11l18-5v12L3 14v-3z" />
+            <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
+          </svg>
           Send Notification to All POS Stores
         </div>
         <p style="font-size:0.78rem; color:#64748b; margin-top:0; margin-bottom:0.85rem;">
@@ -893,10 +1018,12 @@
           </div>
           <div class="form-group">
             <label class="form-label" for="sa-broadcast-message">Notification Message *</label>
-            <textarea id="sa-broadcast-message" class="form-control" rows="3" placeholder="e.g. System upgrade scheduled tonight at 11 PM GMT. All features remain operational offline."></textarea>
+            <textarea id="sa-broadcast-message" class="form-control" rows="3"
+              placeholder="e.g. System upgrade scheduled tonight at 11 PM GMT. All features remain operational offline."></textarea>
           </div>
           <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.85rem;">
-            <label style="font-size:0.8rem; font-weight:700; color:#0f172a; display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+            <label
+              style="font-size:0.8rem; font-weight:700; color:#0f172a; display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
               <input type="checkbox" id="sa-broadcast-active" checked />
               Active (Show in Stores)
             </label>
@@ -913,15 +1040,21 @@
       <div class="sa-settings-card">
         <div class="sa-settings-title" style="justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
           <span style="display:flex; align-items:center; gap:0.45rem;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2" />
+            </svg>
             Tokens &amp; Sync Log
           </span>
           <div style="display:flex; gap:0.45rem;">
-            <button type="button" onclick="document.getElementById('btn-sa-open-token-modal-blank')?.click();" class="btn btn-primary btn-sm">+ Generate Token</button>
-            <button type="button" onclick="document.getElementById('btn-sa-sync-now')?.click();" class="btn btn-outline btn-sm">Sync Cloud</button>
+            <button type="button" onclick="document.getElementById('btn-sa-open-token-modal-blank')?.click();"
+              class="btn btn-primary btn-sm">+ Generate Token</button>
+            <button type="button" onclick="document.getElementById('btn-sa-sync-now')?.click();"
+              class="btn btn-outline btn-sm">Sync Cloud</button>
           </div>
         </div>
-        <div id="sa-token-logs-list" style="max-height:420px; overflow-y:auto; font-size:0.78rem; border:1px solid var(--sa-border); border-radius:8px; padding:0.5rem;">
+        <div id="sa-token-logs-list"
+          style="max-height:420px; overflow-y:auto; font-size:0.78rem; border:1px solid var(--sa-border); border-radius:8px; padding:0.5rem;">
           <div style="color:#64748b; text-align:center; padding:1rem;">No tokens generated yet.</div>
         </div>
       </div>
@@ -936,7 +1069,12 @@
         <!-- Setting Card 2: Subscription Pricing Configuration -->
         <div class="sa-settings-card">
           <div class="sa-settings-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 6v12"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" />
+              <path d="M12 6v12" />
+            </svg>
             Subscription Pricing Config
           </div>
           <p style="font-size:0.78rem; color:#64748b; margin-top:0; margin-bottom:0.75rem;">
@@ -946,11 +1084,13 @@
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem;">
               <div class="form-group">
                 <label class="form-label" for="sa-price-weekly">Weekly Fee (GHS)</label>
-                <input type="number" id="sa-price-weekly" class="form-control" value="5.00" min="1" step="0.5" required />
+                <input type="number" id="sa-price-weekly" class="form-control" value="5.00" min="1" step="0.5"
+                  required />
               </div>
               <div class="form-group">
                 <label class="form-label" for="sa-price-monthly">Monthly Fee (GHS)</label>
-                <input type="number" id="sa-price-monthly" class="form-control" value="20.00" min="1" step="0.5" required />
+                <input type="number" id="sa-price-monthly" class="form-control" value="20.00" min="1" step="0.5"
+                  required />
               </div>
             </div>
             <div class="form-group">
@@ -964,10 +1104,14 @@
         <!-- Setting Card 3: Master Admin Credentials & Backup -->
         <div class="sa-settings-card">
           <div class="sa-settings-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
             Admin Credentials &amp; Registry
           </div>
-          <form id="form-sa-credentials" style="margin-bottom:1rem; padding-bottom:1rem; border-bottom:1px solid var(--sa-border);">
+          <form id="form-sa-credentials"
+            style="margin-bottom:1rem; padding-bottom:1rem; border-bottom:1px solid var(--sa-border);">
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.55rem;">
               <div class="form-group">
                 <label class="form-label" for="sa-set-username">Username</label>
@@ -983,11 +1127,21 @@
 
           <div style="display:flex; gap:0.55rem; flex-wrap:wrap;">
             <button type="button" id="btn-sa-export-registry" class="btn btn-outline btn-sm">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                style="margin-right:4px;">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
               Export Directory JSON
             </button>
             <label class="btn btn-outline btn-sm" style="cursor:pointer; margin:0; display:flex; align-items:center;">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                style="margin-right:4px;">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
               Import Directory JSON
               <input type="file" id="input-sa-import-registry" accept=".json,application/json" style="display:none;" />
             </label>
@@ -1006,7 +1160,10 @@
     <div class="modal-card" style="max-width:480px; border-radius:18px;">
       <div class="modal-header">
         <h3 class="modal-title" style="display:flex; align-items:center; gap:0.4rem;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" />
+            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+          </svg>
           Store Details
         </h3>
         <button type="button" class="modal-close" data-close-sa-modal="modal-sa-store-detail">&times;</button>
@@ -1030,7 +1187,10 @@
     <div class="modal-card" style="max-width:420px; border-radius:18px;">
       <div class="modal-header">
         <h3 class="modal-title" style="display:flex; align-items:center; gap:0.4rem;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2" />
+          </svg>
           Generate Store Token
         </h3>
         <button type="button" class="modal-close" data-close-sa-modal="modal-sa-token">&times;</button>
@@ -1040,11 +1200,13 @@
           <div style="display:grid; grid-template-columns: 2fr 1fr; gap:0.55rem;">
             <div class="form-group">
               <label class="form-label" for="sa-gen-store-id">Store ID *</label>
-              <input type="text" id="sa-gen-store-id" class="form-control" placeholder="HS-4821" required style="text-transform:uppercase; font-family:monospace; font-weight:900;" />
+              <input type="text" id="sa-gen-store-id" class="form-control" placeholder="HS-4821" required
+                style="text-transform:uppercase; font-family:monospace; font-weight:900;" />
             </div>
             <div class="form-group">
               <label class="form-label" for="sa-gen-issue-code">Issue #</label>
-              <input type="text" id="sa-gen-issue-code" class="form-control" value="001" required style="font-family:monospace; font-weight:800;" />
+              <input type="text" id="sa-gen-issue-code" class="form-control" value="001" required
+                style="font-family:monospace; font-weight:800;" />
             </div>
           </div>
 
@@ -1055,7 +1217,8 @@
             </div>
             <div class="form-group">
               <label class="form-label" for="sa-gen-owner-phone">WhatsApp Phone (10 Digits)</label>
-              <input type="tel" id="sa-gen-owner-phone" class="form-control" placeholder="0244123456" pattern="^\d{10}$" maxlength="10" minlength="10" inputmode="numeric" />
+              <input type="tel" id="sa-gen-owner-phone" class="form-control" placeholder="0244123456" pattern="^\d{10}$"
+                maxlength="10" minlength="10" inputmode="numeric" />
             </div>
           </div>
           <input type="hidden" id="sa-gen-owner-name" value="" />
@@ -1078,17 +1241,30 @@
           </div>
 
           <div style="display:flex; flex-direction:column; gap:0.5rem;">
-            <button type="button" id="btn-sa-send-token-whatsapp" class="btn btn-whatsapp btn-block" style="font-weight:900; font-size:0.92rem; padding:0.65rem;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            <button type="button" id="btn-sa-send-token-whatsapp" class="btn btn-whatsapp btn-block"
+              style="font-weight:900; font-size:0.92rem; padding:0.65rem;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                style="margin-right:5px; vertical-align:-2px;">
+                <path
+                  d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+              </svg>
               Send via WhatsApp
             </button>
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem;">
               <button type="button" id="btn-sa-copy-token" class="btn btn-outline btn-sm" style="font-weight:800;">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  style="margin-right:4px;">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
                 Copy Code
               </button>
               <button type="submit" class="btn btn-primary btn-sm" style="font-weight:800;">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  style="margin-right:4px;">
+                  <path d="M21 2v6h-6" />
+                  <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+                </svg>
                 Regenerate
               </button>
             </div>
@@ -1105,7 +1281,11 @@
     <div class="modal-card" style="max-width:420px; border-radius:18px;">
       <div class="modal-header">
         <h3 class="modal-title" style="display:flex; align-items:center; gap:0.4rem;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
           Register Offline Store
         </h3>
         <button type="button" class="modal-close" data-close-sa-modal="modal-sa-manual-store">&times;</button>
@@ -1115,7 +1295,8 @@
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.55rem;">
             <div class="form-group">
               <label class="form-label" for="sa-man-store-id">Store ID *</label>
-              <input type="text" id="sa-man-store-id" class="form-control" placeholder="HS-4821" required style="text-transform:uppercase; font-family:monospace; font-weight:800;" />
+              <input type="text" id="sa-man-store-id" class="form-control" placeholder="HS-4821" required
+                style="text-transform:uppercase; font-family:monospace; font-weight:800;" />
             </div>
             <div class="form-group">
               <label class="form-label" for="sa-man-category">Category</label>
@@ -1141,12 +1322,14 @@
             </div>
             <div class="form-group">
               <label class="form-label" for="sa-man-owner-phone">Owner Phone (10 Digits) *</label>
-              <input type="tel" id="sa-man-owner-phone" class="form-control" placeholder="0244123456" pattern="^\d{10}$" maxlength="10" minlength="10" inputmode="numeric" required />
+              <input type="tel" id="sa-man-owner-phone" class="form-control" placeholder="0244123456" pattern="^\d{10}$"
+                maxlength="10" minlength="10" inputmode="numeric" required />
             </div>
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline btn-sm" data-close-sa-modal="modal-sa-manual-store">Cancel</button>
+          <button type="button" class="btn btn-outline btn-sm"
+            data-close-sa-modal="modal-sa-manual-store">Cancel</button>
           <button type="submit" class="btn btn-primary btn-sm">Save Store</button>
         </div>
       </form>
@@ -1160,4 +1343,5 @@
   <script src="db.js?v=3.4"></script>
   <script src="super-admin.js?v=3.4"></script>
 </body>
+
 </html>

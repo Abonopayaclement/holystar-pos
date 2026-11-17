@@ -394,7 +394,7 @@ function registerServiceWorkerSafe() {
       refreshing = true;
       window.location.reload();
     });
-    navigator.serviceWorker.register('./sw.js?v=3.7', { updateViaCache: 'none' }).then((reg) => {
+    navigator.serviceWorker.register('./sw.js?v=3.8', { updateViaCache: 'none' }).then((reg) => {
       reg.update().catch(() => {});
       window.addEventListener('online', () => {
         reg.update().catch(() => {});
@@ -593,7 +593,20 @@ async function verifyClockAndLicenseState() {
   AppState.settings = store;
 
   const now = Date.now();
-  const expiry = Number(store.license_expiry || 0);
+  const normMs = (v) => {
+    const n = Number(v || 0);
+    return n > 0 && n < 1e12 ? n * 1000 : n;
+  };
+  let lsExpiry = 0;
+  try {
+    lsExpiry = normMs(localStorage.getItem('holystar_license_expiry_' + store.store_id));
+  } catch (e) {}
+  const storeExp = normMs(store.license_expiry);
+  const expiry = Math.max(storeExp, lsExpiry);
+  if (expiry > storeExp) {
+    store.license_expiry = expiry;
+    window.HolyStarDB.saveActiveStoreRecord(store).catch(() => {});
+  }
   const msRemaining = expiry - now;
   const isExpired = msRemaining <= 0;
   const isTampered = !clockResult.valid || Boolean(store.clock_tampered);
@@ -1029,6 +1042,31 @@ function handleDetectedBarcode(code) {
       }
     }
     showToast(`Barcode ${cleanCode} captured!`, 'success');
+    return;
+  }
+
+  if (mode === 'INVENTORY') {
+    const matched = AppState.products.find(
+      (p) => String(p.barcode || '').trim().toLowerCase() === cleanCode.toLowerCase()
+    );
+    if (matched) {
+      const invSearch = document.getElementById('inv-search-input');
+      if (invSearch) invSearch.value = cleanCode;
+      AppState.inventorySearchQuery = cleanCode;
+      renderInventoryView();
+      showToast(`Found "${matched.name}" in inventory.`, 'success');
+    } else {
+      openProductModal(null);
+      const barcodeInput = document.getElementById('prod-barcode');
+      if (barcodeInput) barcodeInput.value = cleanCode;
+      if (Array.isArray(window.MASTER_CATALOG)) {
+        const catMatch = window.MASTER_CATALOG.find(
+          (m) => String(m.suggested_barcode || m.barcode) === cleanCode
+        );
+        if (catMatch) applyCatalogItemToForm(catMatch);
+      }
+      showToast(`New barcode ${cleanCode} ready to add.`, 'info');
+    }
     return;
   }
 
@@ -2943,22 +2981,18 @@ function openRenewSubscriptionModal() {
   const modal = document.getElementById('modal-renew-subscription');
   if (!modal) return;
 
-  const isConfigured = window.HolyStarPaymentAPI && window.HolyStarPaymentAPI.isConfigured();
+  const isTest = window.HolyStarPaymentAPI && window.HolyStarPaymentAPI.isTestMode && window.HolyStarPaymentAPI.isTestMode();
   const statusBadge = document.getElementById('hubtel-api-status-badge');
-  const pendingNotice = document.getElementById('hubtel-pending-notice');
   const payBtn = document.getElementById('btn-hubtel-pay-unlock');
   const phoneInput = document.getElementById('renew-momo-phone');
 
   if (statusBadge) {
-    statusBadge.textContent = isConfigured ? 'Hubtel Live' : 'API Keys Pending';
-    statusBadge.className = isConfigured ? 'badge badge-success' : 'badge badge-warning';
-  }
-  if (pendingNotice) {
-    pendingNotice.classList.toggle('hidden', Boolean(isConfigured));
+    statusBadge.textContent = isTest ? 'Instant MoMo' : 'Hubtel Live';
+    statusBadge.className = 'badge badge-success';
   }
   if (payBtn) {
     payBtn.disabled = false;
-    payBtn.textContent = 'Pay & Auto-Unlock';
+    payBtn.textContent = 'Pay & Unlock Now';
   }
   if (phoneInput && !phoneInput.value && AppState.store?.owner_phone) {
     phoneInput.value = String(AppState.store.owner_phone).replace(/\D/g, '').slice(0, 10);
@@ -2980,7 +3014,7 @@ async function handleHubtelMoMoRenew(e) {
 
   if (payBtn) {
     payBtn.disabled = true;
-    payBtn.textContent = 'Processing MoMo...';
+    payBtn.textContent = 'Activating...';
   }
 
   try {
@@ -2996,14 +3030,14 @@ async function handleHubtelMoMoRenew(e) {
       await refreshAllData();
       window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'license_renewed');
       triggerSilentBackgroundSync();
-      showToast(res.message, 'success');
+      showUpdateStoreDialog('success', 'Subscription Activated!', `Subscription Activated for ${planDays} Days!`);
     } else {
-      showToast(res.message || 'Use Alternative Code Below.', res.keysPending ? 'info' : 'error');
+      showToast(res.message || 'Payment failed. Try Alternative Code.', 'error');
     }
   } finally {
     if (payBtn) {
       payBtn.disabled = false;
-      payBtn.textContent = 'Pay & Auto-Unlock';
+      payBtn.textContent = 'Pay & Unlock Now';
     }
   }
 }
@@ -3234,9 +3268,9 @@ function bindUIEvents() {
     });
   }
 
-  document.getElementById('btn-pos-scan-barcode')?.addEventListener('click', () => {
+  document.getElementById('btn-inv-scan-barcode')?.addEventListener('click', () => {
     if (!requireActiveLicense()) return;
-    openBarcodeScanner('POS');
+    openBarcodeScanner('INVENTORY');
   });
 
   document.getElementById('btn-modal-scan-barcode')?.addEventListener('click', () => {

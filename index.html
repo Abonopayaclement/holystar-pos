@@ -462,6 +462,10 @@
               <option value="LOW">Low Stock</option>
               <option value="OUT">Out of Stock</option>
             </select>
+            <button type="button" id="btn-inv-scan-barcode" class="btn btn-warning btn-sm" title="Scan Barcode">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:3px; vertical-align:-2px;"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+              Scan
+            </button>
             <button type="button" id="btn-open-product-modal" class="btn btn-primary btn-sm">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="margin-right:4px; vertical-align:-2px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Product
@@ -1332,14 +1336,11 @@
         <button type="button" class="modal-close" data-close="modal-renew-subscription">&times;</button>
       </div>
       <div class="modal-body" style="display:flex; flex-direction:column; gap:1rem;">
-        <!-- Option 1: Automated Hubtel MoMo Payment -->
+        <!-- Option 1: Instant / Hubtel MoMo Payment -->
         <div style="background:#f0fdf4; border:1.5px solid #86efac; border-radius:12px; padding:0.9rem;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.55rem; gap:0.5rem;">
             <strong style="font-size:0.88rem; color:#166534;">1. Pay Instantly with MoMo</strong>
-            <span id="hubtel-api-status-badge" class="badge badge-warning" style="font-size:0.68rem;">API Keys Pending</span>
-          </div>
-          <div id="hubtel-pending-notice" style="font-size:0.75rem; color:#92400e; background:#fef3c7; border:1px solid #fcd34d; border-radius:6px; padding:0.4rem 0.55rem; margin-bottom:0.65rem; font-weight:700;">
-            API Keys Pending — Use Alternative Code Below
+            <span id="hubtel-api-status-badge" class="badge badge-success" style="font-size:0.68rem;">Instant MoMo</span>
           </div>
           <form id="form-hubtel-momo-renew">
             <div class="form-group" style="margin-bottom:0.55rem;">
@@ -1355,7 +1356,7 @@
               <input type="tel" id="renew-momo-phone" class="form-control" placeholder="e.g. 0244123456" pattern="^\d{10}$" maxlength="10" minlength="10" inputmode="numeric" required />
             </div>
             <button type="submit" id="btn-hubtel-pay-unlock" class="btn btn-success btn-block" style="font-weight:800;">
-              Pay &amp; Auto-Unlock
+              Pay &amp; Unlock Now
             </button>
           </form>
         </div>
@@ -1409,10 +1410,10 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Scripts -->
-  <script src="catalog.js?v=3.7"></script>
-  <script src="db.js?v=3.7"></script>
-  <script src="payment-api.js?v=3.7"></script>
-  <script src="printer.js?v=3.7"></script>
-  <script src="app.js?v=3.7"></script>
+  <script src="catalog.js?v=3.8"></script>
+  <script src="db.js?v=3.8"></script>
+  <script src="payment-api.js?v=3.8"></script>
+  <script src="printer.js?v=3.8"></script>
+  <script src="app.js?v=3.8"></script>
 </body>
 </html>

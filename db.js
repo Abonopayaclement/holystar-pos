@@ -455,6 +455,23 @@ class HolyStarDatabase {
       ? { ...(baseBundle.store || {}), ...(incomingBundle.store || {}) }
       : { ...(incomingBundle.store || {}), ...(baseBundle.store || {}) };
 
+    // ALWAYS preserve the maximum (latest) license_expiry in milliseconds
+    const normMs = (v) => {
+      const n = Number(v || 0);
+      return n > 0 && n < 1e12 ? n * 1000 : n;
+    };
+    const baseExp = normMs(baseBundle.store?.license_expiry);
+    const incExp = normMs(incomingBundle.store?.license_expiry);
+    const maxExp = Math.max(baseExp, incExp);
+    if (maxExp > 0) {
+      mergedStore.license_expiry = maxExp;
+      if (baseExp > incExp && baseBundle.store?.license_plan) {
+        mergedStore.license_plan = baseBundle.store.license_plan;
+      } else if (incExp >= baseExp && incomingBundle.store?.license_plan) {
+        mergedStore.license_plan = incomingBundle.store.license_plan;
+      }
+    }
+
     const deletedIds = Array.from(new Set([
       ...(baseBundle.store?.deleted_product_ids || []),
       ...(incomingBundle.store?.deleted_product_ids || [])
@@ -679,10 +696,34 @@ class HolyStarDatabase {
     const closedDays = Array.isArray(bundle.closed_days) ? bundle.closed_days : [];
     const license = Array.isArray(bundle.license) ? bundle.license : [];
 
-    const [existingProducts, existingDebtors] = await Promise.all([
+    const [localStore, existingProducts, existingDebtors] = await Promise.all([
+      this.getStoreById(storeId),
       this.getAllProducts(storeId),
       this.getAllDebtors(storeId)
     ]);
+
+    // ALWAYS keep the maximum (latest) license_expiry in milliseconds across local, cloud, and localStorage
+    const normMs = (v) => {
+      const n = Number(v || 0);
+      return n > 0 && n < 1e12 ? n * 1000 : n;
+    };
+    let lsExpiry = 0;
+    try {
+      lsExpiry = normMs(localStorage.getItem('holystar_license_expiry_' + storeId));
+    } catch (e) {}
+    const localExp = normMs(localStore?.license_expiry);
+    const incomingExp = normMs(targetStore.license_expiry);
+    const maxExp = Math.max(localExp, incomingExp, lsExpiry);
+    if (maxExp > 0) {
+      targetStore.license_expiry = maxExp;
+      if (localExp >= incomingExp && localStore?.license_plan) {
+        targetStore.license_plan = localStore.license_plan;
+      }
+      try {
+        localStorage.setItem('holystar_license_expiry_' + storeId, String(maxExp));
+      } catch (e) {}
+    }
+
     const existingMap = new Map();
     for (const ep of existingProducts) {
       if (ep && ep.id) existingMap.set(ep.id, ep);
@@ -910,7 +951,9 @@ class HolyStarDatabase {
     if (!store) throw new Error('No active store.');
     const now = Date.now();
 
-    return new Promise((resolve, reject) => {
+    let newExpiryApplied = 0;
+
+    await new Promise((resolve, reject) => {
       const tx = this.db.transaction(['license', 'stores'], 'readwrite');
       const licenseStore = tx.objectStore('license');
       const storesStore = tx.objectStore('stores');
@@ -923,10 +966,19 @@ class HolyStarDatabase {
           return;
         }
 
-        const currentExpiry = Number(store.license_expiry || 0);
-        const baseTime = currentExpiry > now ? currentExpiry : now;
+        const normMs = (v) => {
+          const n = Number(v || 0);
+          return n > 0 && n < 1e12 ? n * 1000 : n;
+        };
+        let lsExpiry = 0;
+        try {
+          lsExpiry = normMs(localStorage.getItem('holystar_license_expiry_' + store.store_id));
+        } catch (e) {}
+        const currentExpiry = Math.max(normMs(store.license_expiry), lsExpiry);
+        const baseTime = Math.max(now, currentExpiry);
         const addedMs = Number(planDays) * 24 * 60 * 60 * 1000;
         const newExpiry = baseTime + addedMs;
+        newExpiryApplied = newExpiry;
 
         licenseStore.put({
           token_id: tokenKey,
@@ -949,6 +1001,19 @@ class HolyStarDatabase {
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => reject(tx.error || new Error('Failed to apply license token.'));
     });
+
+    if (newExpiryApplied > 0) {
+      try {
+        localStorage.setItem('holystar_license_expiry_' + store.store_id, String(newExpiryApplied));
+      } catch (e) {}
+      // Priority cloud sync & heartbeat so server immediately records new expiry
+      this.syncTelemetryHeartbeat(store.store_id, 'license_renewed').catch(() => {});
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        this.syncFullStoreOnline(store.store_id).catch(() => {});
+      }
+    }
+
+    return true;
   }
 
   // =========================================================================
