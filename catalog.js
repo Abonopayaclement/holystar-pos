@@ -68,10 +68,10 @@ const STORE_CATEGORY_MAP = {
     'Earphones & Audio',
     'Power Banks',
     'Screen Protectors & Cases',
-    'Batteries & Adapters',
-    'TV & Home Appliances',
     'Electrical Gadgets',
-    'Repairs & Parts'
+    'Adapters & Extensions',
+    'Home Appliances',
+    'Accessories'
   ],
   'Food & Restaurant': [
     'Local Dishes',
@@ -79,9 +79,9 @@ const STORE_CATEGORY_MAP = {
     'Rice & Grills',
     'Fast Food & Snacks',
     'Soups & Stews',
-    'Drinks & Smoothies',
-    'Pastries & Breakfast',
-    'Extras & Sides'
+    'Soft Drinks & Water',
+    'Fresh Juices',
+    'Sides & Extras'
   ],
   'Food/Restaurant': [
     'Local Dishes',
@@ -89,26 +89,26 @@ const STORE_CATEGORY_MAP = {
     'Rice & Grills',
     'Fast Food & Snacks',
     'Soups & Stews',
-    'Drinks & Smoothies',
-    'Pastries & Breakfast',
-    'Extras & Sides'
+    'Soft Drinks & Water',
+    'Fresh Juices',
+    'Sides & Extras'
   ],
   'Boutique & Fashion': [
-    'Men Wear',
-    'Women Wear',
-    'Kids & Baby',
-    'Shoes & Sandals',
-    'Bags & Accessories',
-    'Jewelry & Watches',
-    'Fabrics & Laces'
+    "Men's Wear",
+    "Women's Wear",
+    "Kids' Wear",
+    'Shoes & Footwear',
+    'Bags & Wallets',
+    'Watches & Jewelry',
+    'Perfumes & Cosmetics'
   ],
   'Pharmacy & Health': [
-    'Pain Relief',
+    'Pain & Fever',
     'Cold & Flu',
+    'Antibiotics',
     'Vitamins & Supplements',
     'First Aid',
-    'Antibiotics & Rx',
-    'Baby & Maternal',
+    'Mother & Baby',
     'Personal Care'
   ],
   'Cosmetics & Beauty': [
@@ -126,6 +126,15 @@ const STORE_CATEGORY_MAP = {
     'Paints & Brushes',
     'Tools & Fasteners',
     'Roofing & Wood'
+  ],
+  'Other': [
+    'General',
+    'Snacks & Drinks',
+    'Household',
+    'Electronics',
+    'Fashion',
+    'Personal Care',
+    'Services'
   ]
 };
 
@@ -135,12 +144,13 @@ function getCategoriesForStore(storeCategory) {
     return STORE_CATEGORY_MAP[key];
   }
   const lower = key.toLowerCase();
-  if (lower.includes('electr') || lower.includes('phone')) return STORE_CATEGORY_MAP['Electronics & Phone Shop'];
+  if (lower.includes('electr') || lower.includes('phone') || lower.includes('gadget')) return STORE_CATEGORY_MAP['Electronics & Phone Shop'];
   if (lower.includes('food') || lower.includes('restaur')) return STORE_CATEGORY_MAP['Food & Restaurant'];
   if (lower.includes('boutiq') || lower.includes('fashion')) return STORE_CATEGORY_MAP['Boutique & Fashion'];
-  if (lower.includes('pharm') || lower.includes('health') || lower.includes('med')) return STORE_CATEGORY_MAP['Pharmacy & Health'];
+  if (lower.includes('pharm') || lower.includes('health') || lower.includes('chem') || lower.includes('med')) return STORE_CATEGORY_MAP['Pharmacy & Health'];
   if (lower.includes('cosmet') || lower.includes('beauty')) return STORE_CATEGORY_MAP['Cosmetics & Beauty'];
   if (lower.includes('hardw') || lower.includes('build')) return STORE_CATEGORY_MAP['Hardware & Building'];
+  if (lower.includes('other') || lower.includes('general')) return STORE_CATEGORY_MAP['Other'];
   return STORE_CATEGORY_MAP['Provision & Mini-Mart'];
 }
 

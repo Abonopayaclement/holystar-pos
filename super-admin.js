@@ -235,14 +235,17 @@ function getBroadcastConfig() {
     const raw = localStorage.getItem(SA_BROADCAST_KEY);
     if (raw) return JSON.parse(raw);
   } catch (e) {}
-  return { message: '', active: false, updated_at: 0 };
+  return { id: '', message: '', priority: 'normal', active: false, updated_at: 0 };
 }
 
-function saveBroadcastConfig(message, active) {
+function saveBroadcastConfig(message, active, priority = 'normal') {
+  const now = Date.now();
   const config = {
+    id: 'BRD-' + now,
     message: String(message || '').trim(),
+    priority: priority === 'urgent' ? 'urgent' : 'normal',
     active: Boolean(active),
-    updated_at: Date.now()
+    updated_at: now
   };
   localStorage.setItem(SA_BROADCAST_KEY, JSON.stringify(config));
   return config;
@@ -1081,6 +1084,22 @@ async function triggerTokenGeneration() {
   log.unshift(AdminState.lastGenerated);
   saveTokenLog(log);
 
+  // Also publish issued token record to Cloud Sync stream so POS can verify even custom issue codes
+  try {
+    fetch('https://ntfy.sh/holystar_pos_cloud_v3_sync_2026', {
+      method: 'POST',
+      headers: { 'Title': `Issued Token ${storeId}` },
+      body: JSON.stringify({
+        _type: 'HOLYSTAR_ISSUED_TOKEN_V1',
+        store_id: storeId,
+        token,
+        plan_days: planDays,
+        issue_code: issueCode,
+        created_at: now
+      })
+    }).catch(() => {});
+  } catch (e) {}
+
   document.getElementById('sa-out-store-label').textContent = `${resolvedStoreName} (${storeId})`;
   document.getElementById('sa-out-days-label').textContent = String(planDays);
   document.getElementById('sa-out-token-code').textContent = token;
@@ -1115,8 +1134,30 @@ function sendTokenViaWhatsApp(tokenEntry) {
 // UI EVENT BINDINGS
 // ============================================================================
 
+function openSaDrawer() {
+  document.getElementById('sa-nav-drawer')?.classList.add('open');
+  document.getElementById('sa-nav-drawer-backdrop')?.classList.remove('hidden');
+}
+
+function closeSaDrawer() {
+  document.getElementById('sa-nav-drawer')?.classList.remove('open');
+  document.getElementById('sa-nav-drawer-backdrop')?.classList.add('hidden');
+}
+
 function bindSuperAdminEvents() {
-  // 1. Tab Switching: Overview | Stores | Admin Settings
+  // 1. Menu Drawer & 5-Page Navigation: Overview | Stores | Notifications | Tokens & Sync | Super Admin Settings
+  document.getElementById('btn-sa-hamburger')?.addEventListener('click', openSaDrawer);
+  document.getElementById('btn-sa-close-drawer')?.addEventListener('click', closeSaDrawer);
+  document.getElementById('sa-nav-drawer-backdrop')?.addEventListener('click', closeSaDrawer);
+
+  const pageTitles = {
+    overview: 'Overview',
+    stores: 'Stores',
+    notifications: 'Notifications',
+    tokens: 'Tokens & Sync',
+    settings: 'Super Admin Settings'
+  };
+
   document.querySelectorAll('.sa-tab-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.sa-tab-btn').forEach((b) => b.classList.remove('active'));
@@ -1124,15 +1165,20 @@ function bindSuperAdminEvents() {
       const tab = btn.dataset.saTab;
       AdminState.activeTab = tab;
 
+      const titleEl = document.getElementById('sa-active-page-title');
+      if (titleEl) titleEl.textContent = pageTitles[tab] || 'Overview';
+
       document.querySelectorAll('.sa-page-panel').forEach((panel) => panel.classList.remove('active'));
       const activePanel = document.getElementById(`sa-panel-${tab}`);
       if (activePanel) activePanel.classList.add('active');
+
+      closeSaDrawer();
 
       if (tab === 'overview') {
         renderOverviewPage();
       } else if (tab === 'stores') {
         renderStoresList();
-      } else if (tab === 'settings') {
+      } else if (tab === 'notifications' || tab === 'tokens' || tab === 'settings') {
         renderSettingsPage();
       }
     });
@@ -1308,34 +1354,41 @@ function bindSuperAdminEvents() {
     openTokenModalForStore(storeId);
   });
 
-  // 10. Broadcast Announcement Form
-  document.getElementById('form-sa-broadcast')?.addEventListener('submit', (e) => {
+  // 10. Broadcast Announcement Form (Normal Banner vs Urgent Pop-up)
+  document.getElementById('form-sa-broadcast')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const msg = document.getElementById('sa-broadcast-message')?.value;
+    const priority = document.getElementById('sa-broadcast-priority')?.value || 'normal';
     const active = document.getElementById('sa-broadcast-active')?.checked;
-    saveBroadcastConfig(msg, active);
+    const config = saveBroadcastConfig(msg, active, priority);
 
-    // Push broadcast announcement to cloud config
+    const payload = {
+      _type: 'HOLYSTAR_BROADCAST_V1',
+      id: config.id,
+      message: config.message,
+      priority: config.priority,
+      active: config.active,
+      updated_at: config.updated_at
+    };
+
+    try {
+      await fetch('https://ntfy.sh/holystar_pos_cloud_v3_sync_2026', {
+        method: 'POST',
+        headers: { 'Title': 'HolyStar Admin Broadcast' },
+        body: JSON.stringify(payload)
+      });
+    } catch (err) {}
+
     const syncCfg = window.HolyStarDB.getCloudSyncConfig();
     if (syncCfg.topic) {
       fetch(`https://ntfy.sh/${encodeURIComponent(syncCfg.topic)}`, {
         method: 'POST',
-        headers: {
-          Title: 'Broadcast Announcement',
-          Tags: 'mega',
-          Priority: 'default'
-        },
-        body: JSON.stringify({
-          broadcast_announcement: {
-            message: String(msg || '').trim(),
-            active: Boolean(active),
-            updated_at: Date.now()
-          }
-        })
+        headers: { Title: 'Broadcast Announcement' },
+        body: JSON.stringify({ broadcast_announcement: payload })
       }).catch(() => {});
     }
 
-    saShowToast('Announcement broadcasted to shops!', 'success');
+    saShowToast(`Notification published (${config.priority.toUpperCase()})!`, 'success');
   });
 
   // 11. Pricing Config Form

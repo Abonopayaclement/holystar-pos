@@ -662,35 +662,23 @@
     </div>
   </div>
 
-  <!-- 2. EXECUTIVE TOP HEADER (BRAND + 3 PORTAL TABS + GLOBAL ACTIONS) -->
+  <!-- 2. EXECUTIVE TOP HEADER (HAMBURGER MENU + BRAND + QUICK ACTIONS) -->
   <header class="sa-header">
     <div class="sa-brand">
+      <button type="button" id="btn-sa-hamburger" class="sa-icon-btn" aria-label="Open Menu" style="padding:0.42rem 0.6rem;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
       <div class="sa-shield">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
       </div>
       <div>
         <div class="sa-title-text">Holy Star Super-Admin</div>
+        <div id="sa-active-page-title" style="font-size:0.72rem; color:#fbbf24; font-weight:800;">Overview</div>
       </div>
       <div class="sa-sync-dot-wrap">
         <span class="sa-live-pulse"></span>
         <span id="sa-last-refresh-text">Synced</span>
       </div>
-    </div>
-
-    <!-- 3 Core Navigation Tabs -->
-    <div class="sa-portal-tabs">
-      <button type="button" class="sa-tab-btn active" data-sa-tab="overview">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
-        Overview
-      </button>
-      <button type="button" class="sa-tab-btn" data-sa-tab="stores">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/></svg>
-        Stores (<span id="sa-tab-store-count">0</span>)
-      </button>
-      <button type="button" class="sa-tab-btn" data-sa-tab="settings">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        Admin Settings
-      </button>
     </div>
 
     <!-- Right Quick Actions -->
@@ -716,6 +704,47 @@
       </button>
     </div>
   </header>
+
+  <!-- SLIDE-OUT MENU DRAWER -->
+  <div id="sa-nav-drawer-backdrop" class="nav-drawer-backdrop hidden" style="z-index:450;"></div>
+  <aside id="sa-nav-drawer" class="nav-drawer" style="z-index:460;">
+    <div class="nav-drawer-header">
+      <div class="nav-drawer-brand">
+        <div class="nav-drawer-star">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="#fbbf24" stroke="#fbbf24" stroke-width="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </div>
+        <div>
+          <div class="nav-drawer-title">Super-Admin</div>
+          <div class="nav-drawer-store-sub">Platform Console</div>
+        </div>
+      </div>
+      <button type="button" id="btn-sa-close-drawer" class="btn-drawer-close" aria-label="Close menu">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="nav-drawer-menu">
+      <button type="button" class="drawer-nav-item sa-tab-btn active" data-sa-tab="overview">
+        <span class="drawer-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg></span>
+        <span class="drawer-item-label">Overview</span>
+      </button>
+      <button type="button" class="drawer-nav-item sa-tab-btn" data-sa-tab="stores">
+        <span class="drawer-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/></svg></span>
+        <span class="drawer-item-label">Stores (<span id="sa-tab-store-count">0</span>)</span>
+      </button>
+      <button type="button" class="drawer-nav-item sa-tab-btn" data-sa-tab="notifications">
+        <span class="drawer-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg></span>
+        <span class="drawer-item-label">Notifications</span>
+      </button>
+      <button type="button" class="drawer-nav-item sa-tab-btn" data-sa-tab="tokens">
+        <span class="drawer-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2"/></svg></span>
+        <span class="drawer-item-label">Tokens &amp; Sync</span>
+      </button>
+      <button type="button" class="drawer-nav-item sa-tab-btn" data-sa-tab="settings">
+        <span class="drawer-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+        <span class="drawer-item-label">Super Admin Settings</span>
+      </button>
+    </div>
+  </aside>
 
   <!-- ====================================================================
        MAIN DASHBOARD CONTAINER (3 DISTINCT TAB PAGES)
@@ -842,32 +871,67 @@
     <!-- ================================================================
          PAGE 3: ADMIN SETTINGS (BROADCAST BANNER, PRICING, LOGS, CATALOG)
          ================================================================ -->
+    <!-- ================================================================
+         PAGE 3: NOTIFICATIONS (URGENT POP-UP OR NORMAL TOP BANNER)
+         ================================================================ -->
+    <div id="sa-panel-notifications" class="sa-page-panel">
+      <div class="sa-settings-card" style="max-width:640px;">
+        <div class="sa-settings-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+          Send Notification to All POS Stores
+        </div>
+        <p style="font-size:0.78rem; color:#64748b; margin-top:0; margin-bottom:0.85rem;">
+          Published messages deliver automatically to all POS terminals when they open online or click Update Store.
+        </p>
+        <form id="form-sa-broadcast">
+          <div class="form-group">
+            <label class="form-label" for="sa-broadcast-priority">Notification Style *</label>
+            <select id="sa-broadcast-priority" class="form-control" style="font-weight:700;">
+              <option value="normal">Normal Notification (Top Banner Bar)</option>
+              <option value="urgent">Urgent Notification (Pop-Up Modal on Screen)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="sa-broadcast-message">Notification Message *</label>
+            <textarea id="sa-broadcast-message" class="form-control" rows="3" placeholder="e.g. System upgrade scheduled tonight at 11 PM GMT. All features remain operational offline."></textarea>
+          </div>
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.85rem;">
+            <label style="font-size:0.8rem; font-weight:700; color:#0f172a; display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+              <input type="checkbox" id="sa-broadcast-active" checked />
+              Active (Show in Stores)
+            </label>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm" style="font-weight:800;">Publish Notification</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         PAGE 4: TOKENS & SYNC
+         ================================================================ -->
+    <div id="sa-panel-tokens" class="sa-page-panel">
+      <div class="sa-settings-card">
+        <div class="sa-settings-title" style="justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
+          <span style="display:flex; align-items:center; gap:0.45rem;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2"/></svg>
+            Tokens &amp; Sync Log
+          </span>
+          <div style="display:flex; gap:0.45rem;">
+            <button type="button" onclick="document.getElementById('btn-sa-open-token-modal-blank')?.click();" class="btn btn-primary btn-sm">+ Generate Token</button>
+            <button type="button" onclick="document.getElementById('btn-sa-sync-now')?.click();" class="btn btn-outline btn-sm">Sync Cloud</button>
+          </div>
+        </div>
+        <div id="sa-token-logs-list" style="max-height:420px; overflow-y:auto; font-size:0.78rem; border:1px solid var(--sa-border); border-radius:8px; padding:0.5rem;">
+          <div style="color:#64748b; text-align:center; padding:1rem;">No tokens generated yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         PAGE 5: SUPER ADMIN SETTINGS (PRICING + CREDENTIALS + REGISTRY)
+         ================================================================ -->
     <div id="sa-panel-settings" class="sa-page-panel">
       <div class="sa-settings-layout">
-
-        <!-- Setting Card 1: Broadcast Announcement Banner to Shops -->
-        <div class="sa-settings-card">
-          <div class="sa-settings-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
-            Broadcast Announcement to Shops
-          </div>
-          <p style="font-size:0.78rem; color:#64748b; margin-top:0; margin-bottom:0.75rem;">
-            Display a live banner across all registered retail shop POS terminals on their next sync.
-          </p>
-          <form id="form-sa-broadcast">
-            <div class="form-group">
-              <label class="form-label" for="sa-broadcast-message">Announcement Message</label>
-              <textarea id="sa-broadcast-message" class="form-control" rows="3" placeholder="e.g. System upgrade scheduled tonight at 11 PM GMT. All features remain operational offline."></textarea>
-            </div>
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.85rem;">
-              <label style="font-size:0.8rem; font-weight:700; color:#0f172a; display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
-                <input type="checkbox" id="sa-broadcast-active" />
-                Enable Banner in Shops
-              </label>
-            </div>
-            <button type="submit" class="btn btn-primary btn-sm">Save &amp; Broadcast</button>
-          </form>
-        </div>
 
         <!-- Setting Card 2: Subscription Pricing Configuration -->
         <div class="sa-settings-card">
@@ -927,17 +991,6 @@
               Import Directory JSON
               <input type="file" id="input-sa-import-registry" accept=".json,application/json" style="display:none;" />
             </label>
-          </div>
-        </div>
-
-        <!-- Setting Card 4: Token Log History & Revocation -->
-        <div class="sa-settings-card">
-          <div class="sa-settings-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2"/></svg>
-            Recent Generated Tokens &amp; Log
-          </div>
-          <div id="sa-token-logs-list" style="max-height:200px; overflow-y:auto; font-size:0.75rem; border:1px solid var(--sa-border); border-radius:8px; padding:0.4rem;">
-            <div style="color:#64748b; text-align:center; padding:1rem;">No tokens generated yet.</div>
           </div>
         </div>
 

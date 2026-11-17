@@ -1,10 +1,10 @@
 /**
- * Holy Star POS - Offline Service Worker (sw.js v3.6)
+ * Holy Star POS - Offline Service Worker (sw.js v3.7)
  * Uses Network-First with 100% Offline Cache Fallback so new deployments
  * load immediately when online while still working 100% offline without internet.
  */
 
-const CACHE_NAME = 'holystar-pos-cache-v16';
+const CACHE_NAME = 'holystar-pos-cache-v17';
 const OFFLINE_ASSETS = [
   './',
   './index.html',

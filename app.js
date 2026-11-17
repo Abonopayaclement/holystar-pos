@@ -394,8 +394,11 @@ function registerServiceWorkerSafe() {
       refreshing = true;
       window.location.reload();
     });
-    navigator.serviceWorker.register('./sw.js?v=3.6').then((reg) => {
+    navigator.serviceWorker.register('./sw.js?v=3.7', { updateViaCache: 'none' }).then((reg) => {
       reg.update().catch(() => {});
+      window.addEventListener('online', () => {
+        reg.update().catch(() => {});
+      });
     }).catch(() => {});
   }
 }
@@ -498,6 +501,72 @@ async function refreshAllData() {
   renderDebtorsView();
   renderReportsView();
   await renderSettingsView();
+  checkAndRenderAdminBroadcasts().catch(() => {});
+}
+
+async function checkAndRenderAdminBroadcasts() {
+  let latest = null;
+
+  // Check local fallback first (same-device testing)
+  try {
+    const rawLocal = localStorage.getItem('holystar_admin_broadcast_v1');
+    if (rawLocal) {
+      const parsed = JSON.parse(rawLocal);
+      if (parsed && parsed.updated_at) latest = parsed;
+    }
+  } catch (e) {}
+
+  // Poll cloud broadcast stream when online
+  if (typeof navigator !== 'undefined' && navigator.onLine) {
+    try {
+      const res = await fetch('https://ntfy.sh/holystar_pos_cloud_v3_sync_2026/json?poll=1&since=all', {
+        cache: 'no-store'
+      });
+      if (res.ok) {
+        const text = await res.text();
+        const lines = text.split('\n').filter((l) => l.trim().length > 0);
+        for (const line of lines) {
+          try {
+            const env = JSON.parse(line);
+            if (env && env.event === 'message' && env.message && env.message.startsWith('{')) {
+              const msg = JSON.parse(env.message);
+              if (msg && msg._type === 'HOLYSTAR_BROADCAST_V1') {
+                if (!latest || Number(msg.updated_at || 0) >= Number(latest.updated_at || 0)) {
+                  latest = msg;
+                }
+              }
+            }
+          } catch (e) {}
+        }
+      }
+    } catch (e) {}
+  }
+
+  const normalBanner = document.getElementById('admin-normal-banner');
+  const normalText = document.getElementById('admin-normal-banner-text');
+  const urgentModal = document.getElementById('modal-admin-urgent-notice');
+  const urgentText = document.getElementById('admin-urgent-notice-text');
+
+  if (!latest || !latest.active || !latest.message) {
+    if (normalBanner) normalBanner.classList.add('hidden');
+    return;
+  }
+
+  const bId = String(latest.id || latest.updated_at || 'BRD');
+  if (latest.priority === 'urgent') {
+    if (normalBanner) normalBanner.classList.add('hidden');
+    if (localStorage.getItem('holystar_dismissed_urgent_id') !== bId && urgentModal && urgentText) {
+      urgentText.textContent = latest.message;
+      urgentModal.dataset.broadcastId = bId;
+      urgentModal.classList.remove('hidden');
+    }
+  } else {
+    if (sessionStorage.getItem('holystar_dismissed_normal_id') !== bId && normalBanner && normalText) {
+      normalText.textContent = latest.message;
+      normalBanner.dataset.broadcastId = bId;
+      normalBanner.classList.remove('hidden');
+    }
+  }
 }
 
 function requireActiveLicense() {
@@ -2744,9 +2813,10 @@ function matchSubscriptionToken(shopId, enteredToken, optionalIssueCode, selecte
   if (optionalIssueCode) {
     candidateIssueCodes.push(optionalIssueCode);
   } else {
-    for (let i = 1; i <= 200; i++) {
+    candidateIssueCodes.push('000');
+    for (let i = 1; i <= 999; i++) {
       candidateIssueCodes.push(String(i).padStart(3, '0'));
-      candidateIssueCodes.push(String(i));
+      if (i < 100) candidateIssueCodes.push(String(i));
     }
     const now = new Date();
     const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
@@ -2754,7 +2824,7 @@ function matchSubscriptionToken(shopId, enteredToken, optionalIssueCode, selecte
     for (const m of months) {
       candidateIssueCodes.push(`${m}${yr}`);
     }
-    candidateIssueCodes.push('ADMIN', 'RENEW', 'SAAS', 'POS');
+    candidateIssueCodes.push('ADMIN', 'RENEW', 'SAAS', 'POS', 'HUB');
   }
 
   const candidateDays = [];
@@ -2767,9 +2837,6 @@ function matchSubscriptionToken(shopId, enteredToken, optionalIssueCode, selecte
     pushUniqueDay(selectedPlanOption);
   }
   [7, 14, 30, 60, 90, 180, 365].forEach(pushUniqueDay);
-  for (let d = 1; d <= 365; d++) {
-    pushUniqueDay(d);
-  }
 
   for (const issueCode of candidateIssueCodes) {
     for (const d of candidateDays) {
@@ -2780,6 +2847,39 @@ function matchSubscriptionToken(shopId, enteredToken, optionalIssueCode, selecte
     }
   }
 
+  return null;
+}
+
+async function verifyTokenFromCloudStream(shopId, enteredToken) {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return null;
+  const cleanId = String(shopId || '').trim().toUpperCase();
+  try {
+    const res = await fetch('https://ntfy.sh/holystar_pos_cloud_v3_sync_2026/json?poll=1&since=all', {
+      cache: 'no-store'
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    const lines = text.split('\n').filter((l) => l.trim().length > 0);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const env = JSON.parse(lines[i]);
+        if (env && env.event === 'message' && env.message && env.message.startsWith('{')) {
+          const msg = JSON.parse(env.message);
+          if (
+            msg &&
+            msg._type === 'HOLYSTAR_ISSUED_TOKEN_V1' &&
+            String(msg.store_id || '').trim().toUpperCase() === cleanId &&
+            String(msg.token || '').trim().toUpperCase() === enteredToken
+          ) {
+            return {
+              matchedDays: Number(msg.plan_days || 30),
+              matchedIssueCode: String(msg.issue_code || 'ADMIN')
+            };
+          }
+        }
+      } catch (e) {}
+    }
+  } catch (e) {}
   return null;
 }
 
@@ -2794,6 +2894,9 @@ async function activateTokenCodeValue(rawTokenValue, rawIssue = '', selectedPlan
   let matchResult = matchSubscriptionToken(shopId, enteredToken, rawIssue, selectedPlan);
   if (!matchResult && rawIssue) {
     matchResult = matchSubscriptionToken(shopId, enteredToken, '', selectedPlan);
+  }
+  if (!matchResult) {
+    matchResult = await verifyTokenFromCloudStream(shopId, enteredToken);
   }
 
   if (!matchResult) {
@@ -3449,6 +3552,24 @@ function bindUIEvents() {
       }
     } catch (err) {
       showToast(err.message || 'Test print failed.', 'error');
+    }
+  });
+
+  document.getElementById('btn-admin-urgent-ok')?.addEventListener('click', () => {
+    const modal = document.getElementById('modal-admin-urgent-notice');
+    if (modal) {
+      const bId = modal.dataset.broadcastId || '';
+      if (bId) localStorage.setItem('holystar_dismissed_urgent_id', bId);
+      modal.classList.add('hidden');
+    }
+  });
+
+  document.getElementById('btn-dismiss-normal-notice')?.addEventListener('click', () => {
+    const banner = document.getElementById('admin-normal-banner');
+    if (banner) {
+      const bId = banner.dataset.broadcastId || '';
+      if (bId) sessionStorage.setItem('holystar_dismissed_normal_id', bId);
+      banner.classList.add('hidden');
     }
   });
 
