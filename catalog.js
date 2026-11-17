@@ -18,8 +18,131 @@ const CATEGORY_VISUALS = {
   'OTC Medicine & First Aid': { bg1: '#2563eb', bg2: '#1e40af', code: 'MED' },
   'Phone Accessories': { bg1: '#4f46e5', bg2: '#3730a3', code: 'PHN' },
   'Stationery': { bg1: '#6366f1', bg2: '#4338ca', code: 'STN' },
-  'Household & Plastics': { bg1: '#0891b2', bg2: '#0e7490', code: 'HSD' }
+  'Household & Plastics': { bg1: '#0891b2', bg2: '#0e7490', code: 'HSD' },
+  'Toiletries': { bg1: '#db2777', bg2: '#9d174d', code: 'TLT' },
+  'Household': { bg1: '#0891b2', bg2: '#0e7490', code: 'HSD' },
+  // Electronics & Phone Shop
+  'Smartphones': { bg1: '#4f46e5', bg2: '#312e81', code: 'PHN' },
+  'Chargers & Cables': { bg1: '#0284c7', bg2: '#075985', code: 'CHG' },
+  'Earphones & Audio': { bg1: '#7c3aed', bg2: '#4c1d95', code: 'AUD' },
+  'Power Banks': { bg1: '#0d9488', bg2: '#134e4a', code: 'PWB' },
+  'Screen Protectors & Cases': { bg1: '#6366f1', bg2: '#3730a3', code: 'CAS' },
+  'Batteries & Adapters': { bg1: '#d97706', bg2: '#92400e', code: 'BAT' },
+  'TV & Home Appliances': { bg1: '#1e293b', bg2: '#0f172a', code: 'APP' },
+  'Electrical Gadgets': { bg1: '#ea580c', bg2: '#9a3412', code: 'ELC' },
+  'Repairs & Parts': { bg1: '#475569', bg2: '#1e293b', code: 'REP' },
+  // Food & Restaurant
+  'Local Dishes': { bg1: '#b45309', bg2: '#78350f', code: 'LOC' },
+  'Continental Dishes': { bg1: '#dc2626', bg2: '#7f1d1d', code: 'CNT' },
+  'Rice & Grills': { bg1: '#d97706', bg2: '#92400e', code: 'GRL' },
+  'Fast Food & Snacks': { bg1: '#ea580c', bg2: '#9a3412', code: 'FST' },
+  'Soups & Stews': { bg1: '#c2410c', bg2: '#7c2d12', code: 'SUP' },
+  'Drinks & Smoothies': { bg1: '#15803d', bg2: '#14532d', code: 'DRK' },
+  'Pastries & Breakfast': { bg1: '#ca8a04', bg2: '#854d0e', code: 'PST' },
+  'Extras & Sides': { bg1: '#0891b2', bg2: '#155e75', code: 'EXT' },
+  // Boutique & Fashion
+  'Men Wear': { bg1: '#1d4ed8', bg2: '#1e3a8a', code: 'MEN' },
+  'Women Wear': { bg1: '#db2777', bg2: '#831843', code: 'WMN' },
+  'Kids & Baby': { bg1: '#ec4899', bg2: '#9d174d', code: 'KID' },
+  'Shoes & Sandals': { bg1: '#0f766e', bg2: '#134e4a', code: 'SHU' },
+  'Bags & Accessories': { bg1: '#7c3aed', bg2: '#4c1d95', code: 'BAG' },
+  'Jewelry & Watches': { bg1: '#b45309', bg2: '#78350f', code: 'JWL' },
+  'Fabrics & Laces': { bg1: '#0284c7', bg2: '#0c4a6e', code: 'FAB' }
 };
+
+const STORE_CATEGORY_MAP = {
+  'Provision & Mini-Mart': [
+    'Biscuits & Snacks',
+    'Beverages & Drinks',
+    'Milk & Dairy',
+    'Canned & Tin Foods',
+    'Cooking Oil & Paste',
+    'Rice, Grains & Flour',
+    'Soaps & Detergents',
+    'Toiletries',
+    'Household'
+  ],
+  'Electronics & Phone Shop': [
+    'Smartphones',
+    'Chargers & Cables',
+    'Earphones & Audio',
+    'Power Banks',
+    'Screen Protectors & Cases',
+    'Batteries & Adapters',
+    'TV & Home Appliances',
+    'Electrical Gadgets',
+    'Repairs & Parts'
+  ],
+  'Food & Restaurant': [
+    'Local Dishes',
+    'Continental Dishes',
+    'Rice & Grills',
+    'Fast Food & Snacks',
+    'Soups & Stews',
+    'Drinks & Smoothies',
+    'Pastries & Breakfast',
+    'Extras & Sides'
+  ],
+  'Food/Restaurant': [
+    'Local Dishes',
+    'Continental Dishes',
+    'Rice & Grills',
+    'Fast Food & Snacks',
+    'Soups & Stews',
+    'Drinks & Smoothies',
+    'Pastries & Breakfast',
+    'Extras & Sides'
+  ],
+  'Boutique & Fashion': [
+    'Men Wear',
+    'Women Wear',
+    'Kids & Baby',
+    'Shoes & Sandals',
+    'Bags & Accessories',
+    'Jewelry & Watches',
+    'Fabrics & Laces'
+  ],
+  'Pharmacy & Health': [
+    'Pain Relief',
+    'Cold & Flu',
+    'Vitamins & Supplements',
+    'First Aid',
+    'Antibiotics & Rx',
+    'Baby & Maternal',
+    'Personal Care'
+  ],
+  'Cosmetics & Beauty': [
+    'Skincare & Lotions',
+    'Hair & Wigs',
+    'Perfumes & Body Mist',
+    'Makeup',
+    'Soaps & Scrubs',
+    'Salon Supplies'
+  ],
+  'Hardware & Building': [
+    'Cement & Blocks',
+    'Plumbing',
+    'Electricals',
+    'Paints & Brushes',
+    'Tools & Fasteners',
+    'Roofing & Wood'
+  ]
+};
+
+function getCategoriesForStore(storeCategory) {
+  const key = String(storeCategory || '').trim();
+  if (STORE_CATEGORY_MAP[key]) {
+    return STORE_CATEGORY_MAP[key];
+  }
+  const lower = key.toLowerCase();
+  if (lower.includes('electr') || lower.includes('phone')) return STORE_CATEGORY_MAP['Electronics & Phone Shop'];
+  if (lower.includes('food') || lower.includes('restaur')) return STORE_CATEGORY_MAP['Food & Restaurant'];
+  if (lower.includes('boutiq') || lower.includes('fashion')) return STORE_CATEGORY_MAP['Boutique & Fashion'];
+  if (lower.includes('pharm') || lower.includes('health') || lower.includes('med')) return STORE_CATEGORY_MAP['Pharmacy & Health'];
+  if (lower.includes('cosmet') || lower.includes('beauty')) return STORE_CATEGORY_MAP['Cosmetics & Beauty'];
+  if (lower.includes('hardw') || lower.includes('build')) return STORE_CATEGORY_MAP['Hardware & Building'];
+  return STORE_CATEGORY_MAP['Provision & Mini-Mart'];
+}
 
 /**
  * Generates a crisp SVG data-URI thumbnail for any catalog or custom product
@@ -180,3 +303,5 @@ window.MASTER_CATALOG = RAW_MASTER_CATALOG.map((item, idx) => ({
 }));
 
 window.generateProductSvgThumbnail = generateProductSvgThumbnail;
+window.STORE_CATEGORY_MAP = STORE_CATEGORY_MAP;
+window.getCategoriesForStore = getCategoriesForStore;

@@ -305,11 +305,28 @@ function calculateStoreSubscriptionPaid(storeId) {
   return tokens.reduce((sum, t) => sum + calculateRevenueForPlan(t.plan_days, pricing), 0);
 }
 
-function buildRenewalWhatsAppMessage({ ownerName, storeName, storeId, planDays, token }) {
-  const cleanOwner = String(ownerName || 'Partner').trim() || 'Partner';
+function buildRenewalWhatsAppMessage({ storeName, storeId, planDays, amountPaid, expiryTs, token }) {
   const cleanStore = String(storeName || 'Your Store').trim() || 'Your Store';
   const cleanId = String(storeId || 'HS-0000').trim().toUpperCase();
-  return `Hello ${cleanOwner}, your Holy Star POS subscription for ${cleanStore} (${cleanId}) has been renewed for ${planDays} days. Enter Unlock Token: *${token}* in your POS Settings.`;
+  const days = Number(planDays || 30);
+  const pricing = getPricingConfig();
+  const amt = amountPaid !== undefined ? Number(amountPaid) : calculateRevenueForPlan(days, pricing);
+  const expDate = new Date(expiryTs || (Date.now() + days * TWENTY_FOUR_HOURS_MS));
+  const expFormatted = expDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  return [
+    `*HOLY STAR POS — SUBSCRIPTION RECEIPT*`,
+    `--------------------------------`,
+    `Store: ${cleanStore}`,
+    `Store ID: ${cleanId}`,
+    `Plan: ${days} Days`,
+    `Amount Paid: GHS ${amt.toFixed(2)}`,
+    `Expires On: ${expFormatted}`,
+    `--------------------------------`,
+    `*UNLOCK CODE: ${token}*`,
+    `--------------------------------`,
+    `Open Settings > Renew Subscription and enter the code above. Thank you!`
+  ].join('\n');
 }
 
 // ============================================================================
@@ -1018,8 +1035,8 @@ async function triggerTokenGeneration() {
     total_revenue_ghs: 0
   };
 
-  const currentExpiry = Math.max(now, Number(existing.admin_expected_expiry_ts || existing.license_expiry_ts || now));
-  const newExpectedExpiryTs = currentExpiry + planDays * TWENTY_FOUR_HOURS_MS;
+  const currentExpiry = Math.max(now, Number(existing.license_expiry_ts || 0));
+  const newExpectedExpiryTs = currentExpiry + (Number(planDays) * TWENTY_FOUR_HOURS_MS);
 
   registry[storeId] = {
     ...existing,
@@ -1039,10 +1056,10 @@ async function triggerTokenGeneration() {
   const resolvedOwnerPhone = registry[storeId].owner_phone;
 
   const waMessage = buildRenewalWhatsAppMessage({
-    ownerName: resolvedOwnerName,
     storeName: resolvedStoreName,
     storeId,
     planDays,
+    expiryTs: newExpectedExpiryTs,
     token
   });
 
@@ -1080,10 +1097,10 @@ function sendTokenViaWhatsApp(tokenEntry) {
   if (!tokenEntry) return;
 
   const msg = tokenEntry.wa_message || buildRenewalWhatsAppMessage({
-    ownerName: tokenEntry.owner_name,
     storeName: tokenEntry.store_name,
     storeId: tokenEntry.store_id,
     planDays: tokenEntry.plan_days,
+    expiryTs: tokenEntry.expected_expiry_ts,
     token: tokenEntry.token
   });
 

@@ -65,14 +65,9 @@
       <!-- TAB 1: LOGIN -->
       <div id="auth-panel-login" class="auth-body">
         <form id="form-auth-login">
-          <div id="login-saved-stores-wrap" class="form-group hidden">
-            <label class="form-label" for="login-saved-store-select">Saved Stores</label>
-            <select id="login-saved-store-select" class="form-control" style="font-weight:700;"></select>
-          </div>
-
           <div class="form-group">
             <label class="form-label" for="login-identifier">Store Name *</label>
-            <input type="text" id="login-identifier" class="form-control" placeholder="e.g. Test Account 1 or Mother's Grace" required />
+            <input type="text" id="login-identifier" class="form-control" placeholder="e.g. Mother's Grace Enterprise" required />
           </div>
 
           <div class="form-group">
@@ -95,25 +90,15 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="reg-store-category">Category *</label>
+            <label class="form-label" for="reg-store-category">Business Type / Category *</label>
             <select id="reg-store-category" class="form-control" required>
               <option value="Provision & Mini-Mart">Provision &amp; Mini-Mart</option>
-              <option value="Biscuits & Snacks">Biscuits &amp; Snacks</option>
-              <option value="Beverages & Drinks">Beverages &amp; Drinks</option>
-              <option value="Milk & Dairy">Milk &amp; Dairy</option>
-              <option value="Canned & Tin Foods">Canned &amp; Tin Foods</option>
-              <option value="Cooking Oil & Paste">Cooking Oil &amp; Paste</option>
-              <option value="Rice, Grains & Flour">Rice, Grains &amp; Flour</option>
-              <option value="Bread & Bakery">Bread &amp; Bakery</option>
-              <option value="Soaps & Detergents">Soaps &amp; Detergents</option>
-              <option value="Toiletries & Cosmetics">Toiletries &amp; Cosmetics</option>
-              <option value="Baby Products">Baby Products</option>
-              <option value="OTC Medicine & First Aid">OTC Medicine &amp; First Aid</option>
-              <option value="Phone Accessories">Phone Accessories</option>
-              <option value="Stationery">Stationery</option>
-              <option value="Household & Plastics">Household &amp; Plastics</option>
+              <option value="Electronics & Phone Shop">Electronics &amp; Phone Shop</option>
+              <option value="Food & Restaurant">Food &amp; Restaurant</option>
               <option value="Boutique & Fashion">Boutique &amp; Fashion</option>
-              <option value="Food/Restaurant">Food / Restaurant</option>
+              <option value="Pharmacy & Health">Pharmacy &amp; Health</option>
+              <option value="Cosmetics & Beauty">Cosmetics &amp; Beauty</option>
+              <option value="Hardware & Building">Hardware &amp; Building</option>
               <option value="Other">Other</option>
             </select>
           </div>
@@ -604,8 +589,8 @@
               Debtors (<span id="sales-badge-debtors">0</span>)
             </button>
             <button type="button" id="btn-open-close-day-modal" class="btn btn-warning btn-sm">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:-2px;"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              Close Day
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:-2px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>
+              Daily Close Receipt
             </button>
           </div>
         </div>
@@ -651,12 +636,12 @@
         </div>
       </div>
 
-      <!-- Archived Closed Days List (Click any date to view Daily Close Receipt) -->
+      <!-- Daily Close Receipts List (Click any date to view Daily Close Receipt) -->
       <div id="closed-days-archive-card" class="card hidden" style="margin-bottom:0.85rem;">
         <div class="card-header">
           <h3 class="card-title" style="display:flex; align-items:center; gap:0.4rem;">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            Archived Daily Close Receipts
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>
+            Daily Close Receipts
           </h3>
         </div>
         <div class="card-body" style="padding:0.6rem 1rem;">
@@ -664,22 +649,23 @@
         </div>
       </div>
 
-      <!-- Sales Table with Inline Payment Details -->
+      <!-- Compact 1-Line Sales History Rows -->
       <div class="card" style="margin-bottom:0.85rem;">
-        <div class="card-header">
+        <div class="card-header" style="justify-content:space-between;">
           <h3 class="card-title">Sales History</h3>
+          <span style="font-size:0.72rem; color:var(--text-secondary);">Tap any row for receipt</span>
         </div>
         <div class="card-body" style="padding:0;">
           <div class="table-responsive">
-            <table class="data-table">
+            <table class="data-table compact-sales-table">
               <thead>
                 <tr>
                   <th>Time</th>
+                  <th>Receipt #</th>
                   <th>Items</th>
-                  <th>Payment Details</th>
+                  <th>Payment</th>
                   <th>Total</th>
                   <th>Profit</th>
-                  <th>Receipt</th>
                 </tr>
               </thead>
               <tbody id="sales-table-body"></tbody>
@@ -749,8 +735,17 @@
                   <input type="text" id="setting-shop-id" class="form-control" readonly style="background:#f1f5f9; font-weight:900; font-family:monospace;" />
                 </div>
                 <div class="form-group">
-                  <label class="form-label" for="setting-shop-category">Category</label>
-                  <input type="text" id="setting-shop-category" class="form-control" />
+                  <label class="form-label" for="setting-shop-category">Business Type</label>
+                  <select id="setting-shop-category" class="form-control">
+                    <option value="Provision & Mini-Mart">Provision &amp; Mini-Mart</option>
+                    <option value="Electronics & Phone Shop">Electronics &amp; Phone Shop</option>
+                    <option value="Food & Restaurant">Food &amp; Restaurant</option>
+                    <option value="Boutique & Fashion">Boutique &amp; Fashion</option>
+                    <option value="Pharmacy & Health">Pharmacy &amp; Health</option>
+                    <option value="Cosmetics & Beauty">Cosmetics &amp; Beauty</option>
+                    <option value="Hardware & Building">Hardware &amp; Building</option>
+                    <option value="Other">Other</option>
+                  </select>
                 </div>
               </div>
               <div class="form-group">
@@ -803,14 +798,19 @@
               </div>
             </div>
 
+            <button type="button" id="btn-settings-open-renew" class="btn btn-primary btn-block" style="margin-bottom:0.85rem; font-weight:800;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px; vertical-align:-2px;"><path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2"/></svg>
+              Unlock / Renew Subscription
+            </button>
+
             <form id="form-activate-token" style="margin-bottom:0.9rem;">
               <input type="hidden" id="token-issue-code" value="" />
               <input type="hidden" id="token-plan-days" value="AUTO" />
               <div class="form-group">
-                <label class="form-label" for="token-code-input">Unlock Token</label>
+                <label class="form-label" for="token-code-input">Quick Unlock Code</label>
                 <div style="display:flex; gap:0.45rem;">
-                  <input type="text" id="token-code-input" class="form-control" placeholder="8-Char Token" maxlength="25" required style="text-transform:uppercase; font-family:monospace; font-weight:900; letter-spacing:0.1em; text-align:center;" />
-                  <button type="submit" class="btn btn-primary">Activate</button>
+                  <input type="text" id="token-code-input" class="form-control" placeholder="8-Char Code" maxlength="25" required style="text-transform:uppercase; font-family:monospace; font-weight:900; letter-spacing:0.1em; text-align:center;" />
+                  <button type="submit" class="btn btn-success">Activate</button>
                 </div>
               </div>
             </form>
@@ -1157,26 +1157,36 @@
   </div>
 
   <!-- ====================================================================
-       MODAL 7: OPTIONAL SALE RECEIPT
+       MODAL 7: COMPACT 80MM THERMAL CUSTOMER RECEIPT
        ==================================================================== -->
   <div id="modal-receipt" class="modal-backdrop hidden">
-    <div class="modal-box" style="max-width:380px;">
+    <div class="modal-box" style="max-width:345px;">
       <div class="modal-header">
         <h3 style="display:flex; align-items:center; gap:0.35rem;">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>
-          Receipt
+          Customer Receipt
         </h3>
         <button type="button" class="modal-close" data-close="modal-receipt">&times;</button>
       </div>
-      <div class="modal-body">
-        <div id="printable-receipt" class="receipt-paper"></div>
+      <div class="modal-body" style="padding:0.75rem;">
+        <div id="printable-receipt" class="receipt-paper receipt-80mm"></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.4rem; margin-top:0.75rem;">
+          <button type="button" id="btn-print-receipt" class="btn btn-primary btn-sm">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:3px; vertical-align:-2px;"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
+            Print
+          </button>
+          <a id="btn-receipt-whatsapp" href="#" target="_blank" rel="noopener" class="btn btn-whatsapp btn-sm">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:3px; vertical-align:-2px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            WhatsApp
+          </a>
+          <a id="btn-receipt-sms" href="#" class="btn btn-sms btn-sm">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:3px; vertical-align:-2px;"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            SMS
+          </a>
+        </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline" data-close="modal-receipt">Close</button>
-        <button type="button" id="btn-print-receipt" class="btn btn-primary">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:-2px;"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
-          Print
-        </button>
+        <button type="button" class="btn btn-outline btn-sm" data-close="modal-receipt">Close</button>
       </div>
     </div>
   </div>
@@ -1188,7 +1198,7 @@
     <div class="modal-box" style="max-width:430px;">
       <div class="modal-header">
         <h3 style="display:flex; align-items:center; gap:0.35rem;">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>
           Daily Close Receipt
         </h3>
         <button type="button" class="modal-close" data-close="modal-close-day">&times;</button>
@@ -1197,7 +1207,7 @@
         <!-- Sync Online Prompt Banner -->
         <div id="close-day-sync-prompt" style="background:#eff6ff; border:1.5px solid #3b82f6; border-radius:10px; padding:0.75rem; margin-bottom:0.85rem;">
           <div style="font-weight:800; font-size:0.85rem; color:#1e3a8a; margin-bottom:0.5rem;">
-            Day Closed! Would you like to Update Store online now?
+            Daily Close Receipt Ready! Back up latest data online now?
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.45rem;">
             <button type="button" id="btn-close-day-sync-now" class="btn btn-primary btn-sm">
@@ -1283,9 +1293,70 @@
     </div>
   </div>
 
+  <!-- ====================================================================
+       MODAL 11: DUAL SUBSCRIPTION RENEWAL (HUBTEL MOMO + SUPER-ADMIN CODE)
+       ==================================================================== -->
+  <div id="modal-renew-subscription" class="modal-backdrop hidden" style="z-index: 9999;">
+    <div class="modal-box" style="max-width:440px;">
+      <div class="modal-header">
+        <h3 style="display:flex; align-items:center; gap:0.4rem;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 2-2 2m-1.5 1.5L14 9l-2-2-4 4 2 2-3 3-2-2-3 3 5 5 8-8m2-2 2-2"/></svg>
+          Unlock / Renew Subscription
+        </h3>
+        <button type="button" class="modal-close" data-close="modal-renew-subscription">&times;</button>
+      </div>
+      <div class="modal-body" style="display:flex; flex-direction:column; gap:1rem;">
+        <!-- Option 1: Automated Hubtel MoMo Payment -->
+        <div style="background:#f0fdf4; border:1.5px solid #86efac; border-radius:12px; padding:0.9rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.55rem; gap:0.5rem;">
+            <strong style="font-size:0.88rem; color:#166534;">1. Pay Instantly with MoMo</strong>
+            <span id="hubtel-api-status-badge" class="badge badge-warning" style="font-size:0.68rem;">API Keys Pending</span>
+          </div>
+          <div id="hubtel-pending-notice" style="font-size:0.75rem; color:#92400e; background:#fef3c7; border:1px solid #fcd34d; border-radius:6px; padding:0.4rem 0.55rem; margin-bottom:0.65rem; font-weight:700;">
+            API Keys Pending — Use Alternative Code Below
+          </div>
+          <form id="form-hubtel-momo-renew">
+            <div class="form-group" style="margin-bottom:0.55rem;">
+              <label class="form-label" for="renew-plan-select">Select Plan *</label>
+              <select id="renew-plan-select" class="form-control" style="font-weight:700;">
+                <option value="7">7 Days — GHS 5.00</option>
+                <option value="14">14 Days — GHS 10.00</option>
+                <option value="30" selected>30 Days — GHS 20.00</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0.65rem;">
+              <label class="form-label" for="renew-momo-phone">MoMo Number (10 Digits) *</label>
+              <input type="tel" id="renew-momo-phone" class="form-control" placeholder="e.g. 0244123456" pattern="^\d{10}$" maxlength="10" minlength="10" inputmode="numeric" required />
+            </div>
+            <button type="submit" id="btn-hubtel-pay-unlock" class="btn btn-success btn-block" style="font-weight:800;">
+              Pay &amp; Auto-Unlock
+            </button>
+          </form>
+        </div>
+
+        <!-- Option 2: Alternative Code from Super-Admin -->
+        <div style="background:#f8fafc; border:1.5px solid #cbd5e1; border-radius:12px; padding:0.9rem;">
+          <strong style="display:block; font-size:0.88rem; color:#0f172a; margin-bottom:0.35rem;">2. Enter Alternative Payment Code</strong>
+          <p style="font-size:0.75rem; color:#64748b; margin:0 0 0.65rem 0;">
+            Enter the 8-character unlock code sent by the Platform Admin.
+          </p>
+          <form id="form-modal-activate-token">
+            <div style="display:flex; gap:0.45rem;">
+              <input type="text" id="modal-token-code-input" class="form-control" placeholder="8-CHAR CODE" maxlength="25" required style="text-transform:uppercase; font-family:monospace; font-weight:900; letter-spacing:0.1em; text-align:center;" />
+              <button type="submit" class="btn btn-primary" style="font-weight:800;">Activate</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline btn-sm" data-close="modal-renew-subscription">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Minimal Bottom Footer (Clean, No Admin Link) -->
   <footer style="max-width:1400px; margin:1.5rem auto 0.75rem; padding:0.6rem 1rem; display:flex; align-items:center; justify-content:space-between; font-size:0.74rem; color:#64748b;">
-    <span>Holy Star POS v3.4</span>
+    <span>Holy Star POS v3.5</span>
     <span>Production Retail System</span>
   </footer>
 
@@ -1310,8 +1381,9 @@
   </script>
 
   <!-- Scripts -->
-  <script src="catalog.js?v=3.4"></script>
-  <script src="db.js?v=3.4"></script>
-  <script src="app.js?v=3.4"></script>
+  <script src="catalog.js?v=3.5"></script>
+  <script src="db.js?v=3.5"></script>
+  <script src="payment-api.js?v=3.5"></script>
+  <script src="app.js?v=3.5"></script>
 </body>
 </html>

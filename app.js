@@ -434,52 +434,10 @@ async function checkAuthAndBoot() {
   }
 }
 
-function populateLoginStoreDropdown(storesList) {
-  const selectWrap = document.getElementById('login-saved-stores-wrap');
-  const selectEl = document.getElementById('login-saved-store-select');
-  const loginIdInput = document.getElementById('login-identifier');
-
-  if (storesList && storesList.length > 0 && selectWrap && selectEl) {
-    selectWrap.classList.remove('hidden');
-    selectEl.innerHTML = `<option value="">-- Select Store (${storesList.length}) --</option>` +
-      storesList.map((s) => `<option value="${escapeHtml(s.store_name || s.owner_phone || s.store_id)}">${escapeHtml(s.store_name)} (${escapeHtml(s.store_id)})</option>`).join('');
-    if (storesList.length === 1 && loginIdInput && !loginIdInput.value) {
-      loginIdInput.value = storesList[0].store_name || storesList[0].owner_phone || storesList[0].store_id;
-      selectEl.value = storesList[0].store_name || storesList[0].owner_phone || storesList[0].store_id;
-    }
-  } else if (selectWrap) {
-    selectWrap.classList.add('hidden');
-  }
-}
-
 async function showAuthOverlay() {
   const overlay = document.getElementById('auth-screen-overlay');
   if (overlay) overlay.classList.remove('hidden');
   switchAuthTab('login');
-
-  let storesMap = {};
-  try {
-    const localStores = await window.HolyStarDB.getAllStores();
-    for (const s of localStores) {
-      if (s && s.store_id) storesMap[s.store_id] = s;
-    }
-  } catch (e) {}
-
-  populateLoginStoreDropdown(Object.values(storesMap));
-
-  // Also pull cloud stores in background so any store registered on another device appears in the dropdown!
-  if (typeof navigator !== 'undefined' && navigator.onLine) {
-    window.HolyStarDB.pullCloudTelemetry().then((cloudStores) => {
-      if (Array.isArray(cloudStores)) {
-        for (const cs of cloudStores) {
-          if (cs && cs.store_id && !storesMap[cs.store_id]) {
-            storesMap[cs.store_id] = cs;
-          }
-        }
-        populateLoginStoreDropdown(Object.values(storesMap));
-      }
-    }).catch(() => {});
-  }
 }
 
 function hideAuthOverlay() {
@@ -508,6 +466,12 @@ async function refreshAllData() {
   AppState.settings = store;
 
   const storeId = store.store_id;
+
+  // Automatic Midnight Auto-Close for any previous unclosed dates
+  try {
+    await window.HolyStarDB.autoClosePastDays(storeId);
+  } catch (e) {}
+
   const [products, debtors, closedDays, periodReport] = await Promise.all([
     window.HolyStarDB.getAllProducts(storeId),
     window.HolyStarDB.getAllDebtors(storeId),
@@ -533,6 +497,17 @@ async function refreshAllData() {
   renderDebtorsView();
   renderReportsView();
   await renderSettingsView();
+}
+
+function requireActiveLicense() {
+  if (AppState.licenseStatus && AppState.licenseStatus.active) {
+    return true;
+  }
+  const msg = AppState.licenseStatus?.tampered
+    ? 'Clock tampered. Fix device clock to continue.'
+    : 'Subscription expired (Read-Only). Renew subscription to make changes.';
+  showToast(msg, 'error');
+  return false;
 }
 
 // ============================================================================
@@ -605,6 +580,8 @@ function renderLicenseBannerAndPill() {
   if (expiredBanner) {
     expiredBanner.classList.toggle('hidden', tampered || !expired);
   }
+
+  document.body.classList.toggle('license-locked', !active);
 
   if (checkoutBtn) {
     const { totalAmount } = getCartTotals();
@@ -866,14 +843,23 @@ function renderPosCategories() {
   const invSelect = document.getElementById('inv-category-select');
   const chipContainer = document.getElementById('pos-category-chips');
 
-  const standardCategories = [
-    'Provision & Mini-Mart', 'Biscuits & Snacks', 'Beverages & Drinks', 'Milk & Dairy',
-    'Canned & Tin Foods', 'Cooking Oil & Paste', 'Rice, Grains & Flour', 'Bread & Bakery',
-    'Soaps & Detergents', 'Toiletries & Cosmetics', 'Baby Products', 'OTC Medicine & First Aid',
-    'Phone Accessories', 'Stationery', 'Household & Plastics', 'Boutique & Fashion', 'Food/Restaurant'
-  ];
+  const storeCat = AppState.store?.store_category || 'Provision & Mini-Mart';
+  const standardCategories = typeof window.getCategoriesForStore === 'function'
+    ? window.getCategoriesForStore(storeCat)
+    : [
+      'Biscuits & Snacks', 'Beverages & Drinks', 'Milk & Dairy', 'Canned & Tin Foods',
+      'Cooking Oil & Paste', 'Rice, Grains & Flour', 'Soaps & Detergents', 'Toiletries', 'Household'
+    ];
   const present = new Set(AppState.products.map((p) => p.category).filter(Boolean));
-  const merged = ['All', ...new Set([...present, ...standardCategories])];
+  const merged = ['All', ...new Set([...standardCategories, ...present])];
+
+  // Also update product modal category datalist if present
+  const prodCatDatalist = document.getElementById('prod-category-suggestions');
+  if (prodCatDatalist) {
+    prodCatDatalist.innerHTML = standardCategories
+      .map((cat) => `<option value="${escapeHtml(cat)}">`)
+      .join('');
+  }
 
   if (select) {
     const curVal = AppState.selectedPosCategory || 'All';
@@ -985,6 +971,7 @@ function renderPosProductGrid() {
 }
 
 function addToCart(productId) {
+  if (!requireActiveLicense()) return;
   const product = AppState.products.find((p) => p.id === productId);
   if (!product) return;
 
@@ -1423,6 +1410,8 @@ function showSaleReceiptModal(sale) {
   AppState.activeSaleReceipt = sale;
   const modal = document.getElementById('modal-receipt');
   const content = document.getElementById('printable-receipt');
+  const waBtn = document.getElementById('btn-receipt-whatsapp');
+  const smsBtn = document.getElementById('btn-receipt-sms');
   if (!modal || !content) return;
 
   const s = AppState.store || {};
@@ -1436,28 +1425,29 @@ function showSaleReceiptModal(sale) {
     .join('');
 
   let extraHtml = '';
+  const chgVal = Number(sale.change_given ?? sale.change_due ?? 0);
   if (sale.payment_method === 'MoMo' && sale.momo_phone) {
     extraHtml = `
-      <div class="receipt-line"><span>Customer MoMo:</span><strong>${escapeHtml(sale.momo_phone)}</strong></div>
+      <div class="receipt-line"><span>MoMo #:</span><strong>${escapeHtml(sale.momo_phone)}</strong></div>
     `;
-  } else if (sale.payment_method === 'Cash' && Number(sale.change_given || 0) > 0) {
+  } else if (sale.payment_method === 'Cash' && Number(sale.cash_tendered || 0) > 0) {
     extraHtml = `
-      <div class="receipt-line"><span>Amount Given:</span><span>${formatGHS(sale.cash_tendered)}</span></div>
-      <div class="receipt-line"><span>Change Due:</span><strong>${formatGHS(sale.change_given)}</strong></div>
+      <div class="receipt-line"><span>Paid:</span><span>${formatGHS(sale.cash_tendered)}</span></div>
+      <div class="receipt-line"><span>Change:</span><strong>${formatGHS(chgVal)}</strong></div>
     `;
   } else if (sale.payment_method === 'Credit' && sale.customer) {
     extraHtml = `
       <div class="receipt-divider"></div>
       <div class="receipt-line"><span>Customer:</span><strong>${escapeHtml(sale.customer.name)}</strong></div>
-      <div class="receipt-line"><span>Paid Now:</span><span>${formatGHS(sale.initial_deposit)}</span></div>
-      <div class="receipt-line"><span>Remainder Owed:</span><strong>${formatGHS(sale.balance_owed)}</strong></div>
+      <div class="receipt-line"><span>Paid Now:</span><span>${formatGHS(sale.initial_deposit || 0)}</span></div>
+      <div class="receipt-line"><span>Balance Owed:</span><strong>${formatGHS(sale.balance_owed ?? sale.remainder_owed ?? 0)}</strong></div>
     `;
   }
 
   content.innerHTML = `
     <div class="receipt-header">
       <h4>${escapeHtml(s.store_name || 'HOLY STAR POS')}</h4>
-      <div>${escapeHtml(s.shop_location || s.location || 'Ghana')} • ${escapeHtml(s.owner_phone || '')}</div>
+      <div style="font-size:0.7rem;">${escapeHtml(s.shop_location || s.location || 'Ghana')}${s.owner_phone ? ' • ' + escapeHtml(s.owner_phone) : ''}</div>
     </div>
     <div class="receipt-divider"></div>
     <div class="receipt-line"><span>Receipt:</span><strong>${escapeHtml(sale.id)}</strong></div>
@@ -1472,8 +1462,32 @@ function showSaleReceiptModal(sale) {
     </div>
     ${extraHtml}
     <div class="receipt-divider"></div>
-    <div class="receipt-footer">Thank you!</div>
+    <div class="receipt-footer">Thank you for your business!</div>
   `;
+
+  // Build WhatsApp & SMS shareable text
+  const itemsText = (sale.items || []).map((i) => `${i.qty}x ${i.name} - ${formatGHS(i.subtotal)}`).join('\n');
+  const receiptText = [
+    `*${s.store_name || 'HOLY STAR POS'}*`,
+    `Receipt: ${sale.id}`,
+    `Date: ${formatDateTime(sale.timestamp)}`,
+    `--------------------------------`,
+    itemsText,
+    `--------------------------------`,
+    `*TOTAL: ${formatGHS(sale.total_amount)}* (${sale.payment_method})`,
+    `Thank you!`
+  ].join('\n');
+
+  const targetPhone = sale.customer?.phone || sale.momo_phone || '';
+  const cleanPhone = cleanPhoneForWhatsApp(targetPhone);
+  if (waBtn) {
+    waBtn.href = cleanPhone
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(receiptText)}`
+      : `https://wa.me/?text=${encodeURIComponent(receiptText)}`;
+  }
+  if (smsBtn) {
+    smsBtn.href = `sms:${targetPhone}?body=${encodeURIComponent(receiptText)}`;
+  }
 
   modal.classList.remove('hidden');
 }
@@ -1613,6 +1627,7 @@ function renderInventoryView() {
 }
 
 function openProductModal(productId = null) {
+  if (!requireActiveLicense()) return;
   const modal = document.getElementById('modal-product');
   const titleEl = document.getElementById('modal-product-title');
   const idInput = document.getElementById('prod-id');
@@ -1724,6 +1739,7 @@ async function handleSaveProductForm(e) {
 }
 
 function openRestockModal(productId) {
+  if (!requireActiveLicense()) return;
   const product = AppState.products.find((p) => p.id === productId);
   if (!product) return;
 
@@ -1759,6 +1775,7 @@ async function handleRestockSubmit(e) {
 }
 
 async function handleDeleteProduct(productId) {
+  if (!requireActiveLicense()) return;
   const product = AppState.products.find((p) => p.id === productId);
   if (!product) return;
 
@@ -1961,6 +1978,7 @@ function openRecordPaymentModal(debtorId) {
 
 async function handleRecordDebtorPayment(e) {
   e.preventDefault();
+  if (!requireActiveLicense()) return;
   const debtorId = document.getElementById('pay-debtor-id')?.value;
   const amount = document.getElementById('pay-amount-input')?.value;
   const paymentMethod = document.getElementById('pay-method-select')?.value || 'Cash';
@@ -1986,6 +2004,7 @@ async function handleRecordDebtorPayment(e) {
 
 async function handleAddManualDebtor(e) {
   e.preventDefault();
+  if (!requireActiveLicense()) return;
   const name = document.getElementById('mdebtor-name')?.value;
   const phone = document.getElementById('mdebtor-phone')?.value;
   const location = document.getElementById('mdebtor-location')?.value;
@@ -2145,46 +2164,37 @@ function renderReportsView() {
     } else {
       salesTbody.innerHTML = report.sales
         .map((s) => {
-          const itemSummary = (s.items || []).map((i) => `${i.qty}x ${i.name}`).join(', ');
-          const custName = s.customer ? s.customer.name : '';
+          const itemCount = Array.isArray(s.items)
+            ? s.items.reduce((sum, i) => sum + Number(i.qty || 1), 0)
+            : 0;
+          const shortReceipt = String(s.id || '').slice(-8);
 
-          let methodDetails = `<div class="pay-detail-badge"><span class="pay-badge-method">Cash</span>`;
-          if (Number(s.cash_tendered || 0) > 0) {
-            methodDetails += `<span class="pay-badge-sub">Gave: ${formatGHS(s.cash_tendered)} • Chg: ${formatGHS(s.change_due || 0)}</span>`;
-          }
-          methodDetails += `</div>`;
-
-          if (s.payment_method === 'MoMo') {
-            methodDetails = `<div class="pay-detail-badge"><span class="pay-badge-method" style="color:var(--primary);">MoMo</span>`;
-            if (s.momo_phone) {
-              methodDetails += `<span class="pay-badge-sub">${escapeHtml(s.momo_phone)}</span>`;
-            }
-            methodDetails += `</div>`;
+          let payLabel = 'Cash';
+          if (s.payment_method === 'Cash' && Number(s.change_given ?? s.change_due ?? 0) > 0) {
+            payLabel = `Cash (Chg ${formatGHS(s.change_given ?? s.change_due)})`;
+          } else if (s.payment_method === 'MoMo') {
+            payLabel = s.momo_phone ? `MoMo • ${escapeHtml(s.momo_phone)}` : 'MoMo';
           } else if (s.payment_method === 'Credit') {
-            methodDetails = `<div class="pay-detail-badge"><span class="pay-badge-method" style="color:var(--danger);">Credit ${custName ? `(${escapeHtml(custName)})` : ''}</span>`;
-            methodDetails += `<span class="pay-badge-sub">Paid: ${formatGHS(s.initial_deposit || 0)} • Owed: ${formatGHS(s.remainder_owed || 0)}</span></div>`;
+            const custName = s.customer?.name ? escapeHtml(s.customer.name) : 'Credit';
+            payLabel = `Credit (${custName})`;
           }
 
           return `
-            <tr>
-              <td style="font-size:0.76rem; color:var(--text-secondary);">${formatShortTime(s.timestamp)}</td>
-              <td style="max-width:220px;">${escapeHtml(itemSummary)}</td>
-              <td>${methodDetails}</td>
+            <tr class="sale-row-clickable" data-sale-id="${escapeHtml(s.id)}">
+              <td style="color:var(--text-secondary);">${formatShortTime(s.timestamp)}</td>
+              <td style="font-family:monospace; font-weight:700;">#${escapeHtml(shortReceipt)}</td>
+              <td>${itemCount} item${itemCount === 1 ? '' : 's'}</td>
+              <td style="font-weight:700;">${payLabel}</td>
               <td style="font-weight:800;">${formatGHS(s.total_amount)}</td>
               <td style="font-weight:700; color:var(--success);">${formatGHS(s.total_profit)}</td>
-              <td>
-                <button type="button" class="btn btn-outline btn-sm btn-view-receipt" data-id="${escapeHtml(s.id)}" title="View Receipt">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>
-                </button>
-              </td>
             </tr>
           `;
         })
         .join('');
 
-      salesTbody.querySelectorAll('.btn-view-receipt').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const sale = report.sales.find((x) => x.id === btn.dataset.id);
+      salesTbody.querySelectorAll('.sale-row-clickable').forEach((row) => {
+        row.addEventListener('click', () => {
+          const sale = report.sales.find((x) => x.id === row.dataset.saleId);
           if (sale) showSaleReceiptModal(sale);
         });
       });
@@ -2330,6 +2340,18 @@ function renderSalesProfitChart(report) {
 
 function formatCloseDayReceiptText(closedRecord) {
   const s = AppState.store || {};
+  const debtorsPaid = Array.isArray(closedRecord.debtors_paid) ? closedRecord.debtors_paid : [];
+  const debtorLines = debtorsPaid.length > 0
+    ? [
+      `--------------------------------`,
+      `DEBTORS PAID THAT DAY (${debtorsPaid.length}):`,
+      ...debtorsPaid.map((d) => `- ${d.name}: ${formatGHS(d.amount_paid)} (${d.payment_method}) | Bal: ${formatGHS(d.balance_after)}`)
+    ]
+    : [
+      `--------------------------------`,
+      `Debtors Paid That Day: None`
+    ];
+
   return [
     `DAILY CLOSE RECEIPT`,
     `Store: ${closedRecord.store_name || s.store_name || 'Holy Star POS'} (${closedRecord.store_id || s.store_id || 'HS-0000'})`,
@@ -2342,15 +2364,23 @@ function formatCloseDayReceiptText(closedRecord) {
     `Cash Collected: ${formatGHS(closedRecord.cash_collected)}`,
     `MoMo: ${formatGHS(closedRecord.momo)}`,
     `Credit Given: ${formatGHS(closedRecord.credit_given)}`,
+    ...debtorLines,
     `--------------------------------`,
     `Seal: ${closedRecord.audit_seal}`
   ].join('\n');
 }
 
 async function handleCloseDayClick() {
-  const targetDate = AppState.selectedSalesPeriod === 'DATE' && AppState.selectedReportDate
-    ? AppState.selectedReportDate
-    : window.HolyStarDB.formatLocalDate();
+  if (!requireActiveLicense()) return;
+
+  let targetDate = window.HolyStarDB.formatLocalDate();
+  if (AppState.selectedSalesPeriod === 'DATE' && AppState.selectedReportDate) {
+    targetDate = AppState.selectedReportDate;
+  } else if (AppState.selectedSalesPeriod === 'YESTERDAY') {
+    const now = new Date();
+    const yDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12, 0, 0, 0);
+    targetDate = window.HolyStarDB.formatLocalDate(yDate.getTime());
+  }
 
   try {
     const dayReport = await window.HolyStarDB.getDailyReport(targetDate);
@@ -2369,6 +2399,7 @@ async function handleCloseDayClick() {
     const closedRecord = await window.HolyStarDB.archiveClosedDay({
       dateStr: targetDate,
       metrics: m,
+      repayments: dayReport.repayments || [],
       auditSeal: seal
     });
 
@@ -2376,7 +2407,7 @@ async function handleCloseDayClick() {
     triggerSilentBackgroundSync();
     showArchivedCloseDayModal(closedRecord, true);
   } catch (err) {
-    showToast('Could not close day: ' + err.message, 'error');
+    showToast('Could not generate Daily Close Receipt: ' + err.message, 'error');
   }
 }
 
@@ -2578,31 +2609,22 @@ function matchSubscriptionToken(shopId, enteredToken, optionalIssueCode, selecte
   return null;
 }
 
-async function handleActivateToken(e) {
-  e.preventDefault();
-  const issueCodeInput = document.getElementById('token-issue-code');
-  const tokenInput = document.getElementById('token-code-input');
-  const planSelect = document.getElementById('token-plan-days');
-
-  const rawIssue = String(issueCodeInput?.value || '').trim().toUpperCase();
-  const enteredToken = String(tokenInput?.value || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-  const selectedPlan = planSelect?.value || 'AUTO';
-
+async function activateTokenCodeValue(rawTokenValue, rawIssue = '', selectedPlan = 'AUTO') {
+  const enteredToken = String(rawTokenValue || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
   if (!enteredToken || enteredToken.length !== 8) {
-    showToast('Enter a valid 8-character Unlock Token.', 'error');
-    return;
+    showToast('Enter a valid 8-character Unlock Code.', 'error');
+    return false;
   }
 
   const shopId = AppState.store?.store_id || 'HS-0000';
-
   let matchResult = matchSubscriptionToken(shopId, enteredToken, rawIssue, selectedPlan);
   if (!matchResult && rawIssue) {
     matchResult = matchSubscriptionToken(shopId, enteredToken, '', selectedPlan);
   }
 
   if (!matchResult) {
-    showToast(`Invalid Unlock Token "${enteredToken}" for Store ID ${shopId}.`, 'error');
-    return;
+    showToast(`Invalid Unlock Code "${enteredToken}" for Store ID ${shopId}.`, 'error');
+    return false;
   }
 
   const { matchedDays, matchedIssueCode } = matchResult;
@@ -2617,18 +2639,101 @@ async function handleActivateToken(e) {
       shopId
     });
 
-    if (tokenInput) tokenInput.value = '';
-
     await refreshAllData();
     window.HolyStarDB.syncTelemetryHeartbeat(shopId, 'license_renewed');
+    triggerSilentBackgroundSync();
     showToast(`Subscription extended by +${matchedDays} days!`, 'success');
+    return true;
   } catch (err) {
     showToast('Failed to activate token: ' + err.message, 'error');
+    return false;
+  }
+}
+
+async function handleActivateToken(e) {
+  e.preventDefault();
+  const issueCodeInput = document.getElementById('token-issue-code');
+  const tokenInput = document.getElementById('token-code-input');
+  const planSelect = document.getElementById('token-plan-days');
+
+  const rawIssue = String(issueCodeInput?.value || '').trim().toUpperCase();
+  const selectedPlan = planSelect?.value || 'AUTO';
+  const ok = await activateTokenCodeValue(tokenInput?.value, rawIssue, selectedPlan);
+  if (ok && tokenInput) tokenInput.value = '';
+}
+
+function openRenewSubscriptionModal() {
+  const modal = document.getElementById('modal-renew-subscription');
+  if (!modal) return;
+
+  const isConfigured = window.HolyStarPaymentAPI && window.HolyStarPaymentAPI.isConfigured();
+  const statusBadge = document.getElementById('hubtel-api-status-badge');
+  const pendingNotice = document.getElementById('hubtel-pending-notice');
+  const payBtn = document.getElementById('btn-hubtel-pay-unlock');
+  const phoneInput = document.getElementById('renew-momo-phone');
+
+  if (statusBadge) {
+    statusBadge.textContent = isConfigured ? 'Hubtel Live' : 'API Keys Pending';
+    statusBadge.className = isConfigured ? 'badge badge-success' : 'badge badge-warning';
+  }
+  if (pendingNotice) {
+    pendingNotice.classList.toggle('hidden', Boolean(isConfigured));
+  }
+  if (payBtn) {
+    payBtn.disabled = false;
+    payBtn.textContent = 'Pay & Auto-Unlock';
+  }
+  if (phoneInput && !phoneInput.value && AppState.store?.owner_phone) {
+    phoneInput.value = String(AppState.store.owner_phone).replace(/\D/g, '').slice(0, 10);
+  }
+
+  modal.classList.remove('hidden');
+}
+
+async function handleHubtelMoMoRenew(e) {
+  e.preventDefault();
+  const planDays = Number(document.getElementById('renew-plan-select')?.value || 30);
+  const momoPhone = document.getElementById('renew-momo-phone')?.value || '';
+  const payBtn = document.getElementById('btn-hubtel-pay-unlock');
+
+  if (!validate10DigitPhone(momoPhone)) {
+    showToast('MoMo number must be strictly 10 digits (e.g. 0244123456).', 'error');
+    return;
+  }
+
+  if (payBtn) {
+    payBtn.disabled = true;
+    payBtn.textContent = 'Processing MoMo...';
+  }
+
+  try {
+    const res = await window.HolyStarPaymentAPI.initiateMoMoPayment({
+      storeId: AppState.store?.store_id,
+      storeName: AppState.store?.store_name,
+      planDays,
+      momoPhone
+    });
+
+    if (res.ok) {
+      document.getElementById('modal-renew-subscription')?.classList.add('hidden');
+      await refreshAllData();
+      window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'license_renewed');
+      triggerSilentBackgroundSync();
+      showToast(res.message, 'success');
+    } else {
+      showToast(res.message || 'Use Alternative Code Below.', res.keysPending ? 'info' : 'error');
+    }
+  } finally {
+    if (payBtn) {
+      payBtn.disabled = false;
+      payBtn.textContent = 'Pay & Auto-Unlock';
+    }
   }
 }
 
 async function handleSaveShopSettings(e) {
   e.preventDefault();
+  if (!requireActiveLicense()) return;
   const shopName = String(document.getElementById('setting-shop-name')?.value || '').trim();
   const shopCategory = String(document.getElementById('setting-shop-category')?.value || 'Retail').trim();
   const ownerPhone = String(document.getElementById('setting-owner-phone')?.value || '').trim();
@@ -2714,12 +2819,6 @@ function bindUIEvents() {
     btn.addEventListener('click', () => {
       switchAuthTab(btn.dataset.authTab);
     });
-  });
-
-  document.getElementById('login-saved-store-select')?.addEventListener('change', (e) => {
-    const val = e.target.value;
-    const idInput = document.getElementById('login-identifier');
-    if (val && idInput) idInput.value = val;
   });
 
   document.getElementById('form-auth-login')?.addEventListener('submit', async (e) => {
@@ -2832,7 +2931,7 @@ function bindUIEvents() {
   });
 
   document.getElementById('btn-banner-unlock')?.addEventListener('click', () => {
-    switchTab('tab-settings');
+    openRenewSubscriptionModal();
   });
 
   document.getElementById('btn-recheck-clock')?.addEventListener('click', async () => {
@@ -2859,10 +2958,12 @@ function bindUIEvents() {
   }
 
   document.getElementById('btn-pos-scan-barcode')?.addEventListener('click', () => {
+    if (!requireActiveLicense()) return;
     openBarcodeScanner('POS');
   });
 
   document.getElementById('btn-modal-scan-barcode')?.addEventListener('click', () => {
+    if (!requireActiveLicense()) return;
     openBarcodeScanner('STOCK_INPUT');
   });
 
@@ -3004,6 +3105,7 @@ function bindUIEvents() {
   }
 
   document.getElementById('btn-open-manual-debtor-modal')?.addEventListener('click', () => {
+    if (!requireActiveLicense()) return;
     document.getElementById('modal-manual-debtor')?.classList.remove('hidden');
   });
 
@@ -3100,8 +3202,19 @@ function bindUIEvents() {
     window.print();
   });
 
-  // 10. Settings & Manual Cloud Sync
+  // 10. Settings, Dual Subscription Renewal & Manual Cloud Sync
   document.getElementById('btn-sync-online-settings')?.addEventListener('click', handleSyncDatabaseOnline);
+  document.getElementById('btn-settings-open-renew')?.addEventListener('click', openRenewSubscriptionModal);
+  document.getElementById('form-hubtel-momo-renew')?.addEventListener('submit', handleHubtelMoMoRenew);
+  document.getElementById('form-modal-activate-token')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const modalInput = document.getElementById('modal-token-code-input');
+    const ok = await activateTokenCodeValue(modalInput?.value);
+    if (ok) {
+      if (modalInput) modalInput.value = '';
+      document.getElementById('modal-renew-subscription')?.classList.add('hidden');
+    }
+  });
   document.getElementById('form-activate-token')?.addEventListener('submit', handleActivateToken);
   document.getElementById('form-shop-settings')?.addEventListener('submit', handleSaveShopSettings);
   document.getElementById('btn-export-backup')?.addEventListener('click', handleExportBackup);

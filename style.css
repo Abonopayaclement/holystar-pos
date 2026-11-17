@@ -1442,4 +1442,93 @@ body {
     grid-template-columns: 1fr 320px !important;
   }
 }
+
+/* ==========================================================================
+   COMPACT 1-LINE SALES ROWS & 80MM THERMAL RECEIPT
+   ========================================================================== */
+
+.compact-sales-table th,
+.compact-sales-table td {
+  padding: 0.48rem 0.55rem;
+  font-size: 0.77rem;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.sale-row-clickable {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.sale-row-clickable:hover {
+  background: #f1f5f9;
+}
+
+.receipt-80mm {
+  max-width: 280px;
+  margin: 0 auto;
+  background: #ffffff;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  padding: 0.75rem 0.7rem;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: #0f172a;
+}
+
+.receipt-80mm .receipt-header {
+  text-align: center;
+  margin-bottom: 0.4rem;
+}
+
+.receipt-80mm .receipt-header h4 {
+  font-size: 0.88rem;
+  font-weight: 900;
+  margin: 0 0 0.15rem 0;
+  text-transform: uppercase;
+}
+
+.receipt-80mm .receipt-divider {
+  border-top: 1px dashed #94a3b8;
+  margin: 0.38rem 0;
+}
+
+.receipt-80mm .receipt-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+
+.receipt-80mm .receipt-total {
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.receipt-80mm .receipt-footer {
+  text-align: center;
+  font-size: 0.72rem;
+  color: #475569;
+  margin-top: 0.25rem;
+}
+
+/* ==========================================================================
+   STRICT READ-ONLY LOCK WHEN SUBSCRIPTION IS EXPIRED
+   ========================================================================== */
+
+body.license-locked #btn-pos-add-stock,
+body.license-locked #btn-inv-add-product,
+body.license-locked #btn-scan-barcode-pos,
+body.license-locked #btn-scan-barcode-inv,
+body.license-locked #btn-complete-sale,
+body.license-locked #btn-open-manual-debtor-modal,
+body.license-locked .btn-restock-item,
+body.license-locked .btn-edit-item,
+body.license-locked .btn-delete-item,
+body.license-locked .btn-pay-debtor,
+body.license-locked #form-shop-settings button[type="submit"],
+body.license-locked #btn-open-close-day-modal {
+  opacity: 0.48;
+  cursor: not-allowed;
 }

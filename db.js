@@ -434,6 +434,8 @@ class HolyStarDatabase {
             // If timestamps match, preserve local stock reductions if prev has lower stock
             if (prev.stock_qty !== undefined && item.stock_qty !== undefined && Number(prev.stock_qty) < Number(item.stock_qty)) {
               map.set(item[idField], { ...item, stock_qty: prev.stock_qty });
+            } else if (prev.total_owed !== undefined && item.total_owed !== undefined && Number(prev.total_owed) < Number(item.total_owed)) {
+              map.set(item[idField], { ...item, ...prev });
             }
           }
         }
@@ -677,10 +679,17 @@ class HolyStarDatabase {
     const closedDays = Array.isArray(bundle.closed_days) ? bundle.closed_days : [];
     const license = Array.isArray(bundle.license) ? bundle.license : [];
 
-    const existingProducts = await this.getAllProducts(storeId);
+    const [existingProducts, existingDebtors] = await Promise.all([
+      this.getAllProducts(storeId),
+      this.getAllDebtors(storeId)
+    ]);
     const existingMap = new Map();
     for (const ep of existingProducts) {
       if (ep && ep.id) existingMap.set(ep.id, ep);
+    }
+    const existingDebtorMap = new Map();
+    for (const ed of existingDebtors) {
+      if (ed && ed.id) existingDebtorMap.set(ed.id, ed);
     }
 
     return new Promise((resolve) => {
@@ -719,7 +728,19 @@ class HolyStarDatabase {
 
         const dStore = tx.objectStore('debtors');
         for (const d of debtors) {
-          if (d && d.id) dStore.put({ ...d, store_id: storeId });
+          if (!d || !d.id) continue;
+          const localDebtor = existingDebtorMap.get(d.id);
+          if (!localDebtor) {
+            dStore.put({ ...d, store_id: storeId });
+          } else {
+            const localTs = Number(localDebtor.updated_at || localDebtor.created_at || 0);
+            const incomingTs = Number(d.updated_at || d.created_at || 0);
+            if (incomingTs > localTs) {
+              dStore.put({ ...d, store_id: storeId });
+            } else if (incomingTs === localTs && Number(d.total_owed) < Number(localDebtor.total_owed)) {
+              dStore.put({ ...d, store_id: storeId });
+            }
+          }
         }
 
         const cStore = tx.objectStore('closed_days');
@@ -1445,8 +1466,9 @@ class HolyStarDatabase {
 
         const newBalance = Number((currentOwed - payAmount).toFixed(2));
         debtor.total_owed = newBalance;
+        debtor.balance_owed = newBalance;
         debtor.total_paid = Number((Number(debtor.total_paid || 0) + payAmount).toFixed(2));
-        debtor.status = newBalance <= 0 ? 'Cleared' : 'Unpaid';
+        debtor.status = newBalance <= 0 ? 'Paid' : (debtor.total_paid > 0 ? 'Partial' : 'Unpaid');
         debtor.updated_at = now;
 
         const paymentEntry = {
@@ -1463,6 +1485,7 @@ class HolyStarDatabase {
 
         debtor.history = Array.isArray(debtor.history) ? debtor.history : [];
         debtor.history.unshift(paymentEntry);
+        debtor.payment_history = debtor.history;
 
         debtorsStore.put(debtor);
         tx.oncomplete = () => resolve({ debtor, paymentEntry });
@@ -1492,27 +1515,38 @@ class HolyStarDatabase {
   }
 
   isDateInPeriod(dateStr, timestamp, periodType = 'TODAY', customDateStr = '') {
-    const todayStr = this.formatLocalDate();
-    if (periodType === 'ALL') return true;
-    if (periodType === 'TODAY') return dateStr === todayStr;
-    if (periodType === 'DATE') return dateStr === (customDateStr || todayStr);
-
     const now = new Date();
+    const todayStr = this.formatLocalDate(now.getTime());
+    const dStr = dateStr || (timestamp ? this.formatLocalDate(Number(timestamp)) : '');
+
+    if (periodType === 'ALL') return true;
+    if (periodType === 'TODAY') return dStr === todayStr;
+    if (periodType === 'YESTERDAY') {
+      const yDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12, 0, 0, 0);
+      const yesterdayStr = this.formatLocalDate(yDate.getTime());
+      return dStr === yesterdayStr;
+    }
+    if (periodType === 'DATE') return dStr === (customDateStr || todayStr);
+
     if (periodType === 'MONTH') {
       const monthPrefix = todayStr.slice(0, 7); // YYYY-MM
-      return String(dateStr || '').startsWith(monthPrefix);
+      return String(dStr || '').startsWith(monthPrefix);
     }
 
     if (periodType === 'WEEK') {
-      // Monday-start of current week (or last 7 days)
+      // Monday 00:00 of current week through today (local calendar dates)
       const dayOfWeek = now.getDay(); // 0 (Sun) .. 6 (Sat)
       const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
       const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMonday, 0, 0, 0, 0);
-      const itemTs = timestamp ? Number(timestamp) : Date.parse(dateStr + 'T12:00:00');
-      return itemTs >= startOfWeek.getTime();
+      const startOfWeekStr = this.formatLocalDate(startOfWeek.getTime());
+      if (dStr) {
+        return dStr >= startOfWeekStr && dStr <= todayStr;
+      }
+      const itemTs = Number(timestamp || 0);
+      return itemTs >= startOfWeek.getTime() && itemTs <= now.getTime();
     }
 
-    return dateStr === todayStr;
+    return dStr === todayStr;
   }
 
   async getSalesReportByPeriod(periodType = 'TODAY', customDateStr = '') {
@@ -1613,7 +1647,7 @@ class HolyStarDatabase {
   // DAILY CLOSE RECEIPT ARCHIVE (`closed_days` STORE)
   // =========================================================================
 
-  async archiveClosedDay({ dateStr, metrics, auditSeal }) {
+  async archiveClosedDay({ dateStr, metrics, repayments = [], auditSeal, autoClosed = false }) {
     await this.initFromExisting();
     const store = await this.getActiveStore();
     if (!store) throw new Error('No active store.');
@@ -1621,6 +1655,14 @@ class HolyStarDatabase {
     const targetDate = dateStr || this.formatLocalDate();
     const recordId = `${store.store_id}_${targetDate}`;
     const now = Date.now();
+
+    const debtorsPaid = (repayments || []).map((r) => ({
+      name: r.debtor_name || 'Customer',
+      phone: r.debtor_phone || '',
+      amount_paid: Number(r.amount_paid || 0),
+      payment_method: r.payment_method || 'Cash',
+      balance_after: Number(r.balance_after || 0)
+    }));
 
     const closedRecord = {
       id: recordId,
@@ -1631,9 +1673,13 @@ class HolyStarDatabase {
       revenue: Number(metrics?.totalRevenue || 0),
       profit: Number(metrics?.grossProfit || 0),
       cash_collected: Number(metrics?.cashCollected || 0),
+      cash_from_debtors: Number(metrics?.cashFromDebtors || 0),
       momo: Number(metrics?.momoRecorded || 0),
+      momo_from_debtors: Number(metrics?.momoFromDebtors || 0),
       credit_given: Number(metrics?.newCreditGiven || 0),
+      debtors_paid: debtorsPaid,
       audit_seal: auditSeal || '',
+      auto_closed: Boolean(autoClosed),
       closed_at: now
     };
 
@@ -1643,6 +1689,74 @@ class HolyStarDatabase {
       tx.oncomplete = () => resolve(closedRecord);
       tx.onerror = () => reject(tx.error);
     });
+  }
+
+  /**
+   * Automatic Midnight End-of-Day Closing:
+   * Finalizes any past unclosed calendar dates (< today) that have sales or debt repayments.
+   */
+  async autoClosePastDays(storeId = this.getActiveStoreId()) {
+    await this.initFromExisting();
+    if (!storeId) return [];
+    const store = await this.getStoreById(storeId);
+    if (!store) return [];
+
+    const todayStr = this.formatLocalDate();
+    const [allSales, allDebtors, existingClosed] = await Promise.all([
+      this.getAllSales(storeId),
+      this.getAllDebtors(storeId),
+      this.getAllClosedDays(storeId)
+    ]);
+
+    const closedMap = new Map();
+    for (const c of existingClosed) {
+      if (c && c.date_str) closedMap.set(c.date_str, c);
+    }
+
+    const pastDates = new Set();
+    for (const s of allSales) {
+      const d = s.date_str || (s.timestamp ? this.formatLocalDate(Number(s.timestamp)) : '');
+      if (d && d < todayStr) pastDates.add(d);
+    }
+    for (const debtor of allDebtors) {
+      if (!Array.isArray(debtor.history)) continue;
+      for (const h of debtor.history) {
+        if (h.type === 'PAYMENT') {
+          const d = h.date_str || (h.timestamp ? this.formatLocalDate(Number(h.timestamp)) : '');
+          if (d && d < todayStr) pastDates.add(d);
+        }
+      }
+    }
+
+    const newlyClosed = [];
+    for (const dateStr of Array.from(pastDates).sort()) {
+      const report = await this.getDailyReport(dateStr);
+      const prev = closedMap.get(dateStr);
+      const prevRepayCount = Array.isArray(prev?.debtors_paid) ? prev.debtors_paid.length : 0;
+      if (
+        !prev ||
+        Number(prev.sales_count || 0) !== Number(report.metrics.salesCount || 0) ||
+        Number(prev.revenue || 0) !== Number(report.metrics.totalRevenue || 0) ||
+        prevRepayCount !== report.repayments.length
+      ) {
+        const sealRaw = `${store.store_id}|${dateStr}|${report.metrics.totalRevenue}|${report.metrics.grossProfit}`;
+        let h = 0x811c9dc5;
+        for (let i = 0; i < sealRaw.length; i++) {
+          h ^= sealRaw.charCodeAt(i);
+          h = Math.imul(h, 0x01000193);
+        }
+        const auditSeal = 'AUTO-' + (h >>> 0).toString(16).toUpperCase().padStart(8, '0');
+        const rec = await this.archiveClosedDay({
+          dateStr,
+          metrics: report.metrics,
+          repayments: report.repayments,
+          auditSeal,
+          autoClosed: true
+        });
+        newlyClosed.push(rec);
+      }
+    }
+    return newlyClosed;
   }
 
   async getAllClosedDays(storeId = this.getActiveStoreId()) {
