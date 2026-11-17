@@ -394,7 +394,7 @@ function registerServiceWorkerSafe() {
       refreshing = true;
       window.location.reload();
     });
-    navigator.serviceWorker.register('./sw.js?v=3.8', { updateViaCache: 'none' }).then((reg) => {
+    navigator.serviceWorker.register('./sw.js?v=3.9', { updateViaCache: 'none' }).then((reg) => {
       reg.update().catch(() => {});
       window.addEventListener('online', () => {
         reg.update().catch(() => {});
@@ -3250,11 +3250,7 @@ function bindUIEvents() {
     showToast('Clock verified.', 'info');
   });
 
-  // 4. Add Product Modal Triggers
-  document.getElementById('btn-pos-add-stock')?.addEventListener('click', () => {
-    openProductModal(null);
-  });
-
+  // 4. Add Product Modal Trigger (Inventory Page)
   document.getElementById('btn-open-product-modal')?.addEventListener('click', () => {
     openProductModal(null);
   });
@@ -3268,9 +3264,9 @@ function bindUIEvents() {
     });
   }
 
-  document.getElementById('btn-inv-scan-barcode')?.addEventListener('click', () => {
+  document.getElementById('btn-pos-scan-barcode')?.addEventListener('click', () => {
     if (!requireActiveLicense()) return;
-    openBarcodeScanner('INVENTORY');
+    openBarcodeScanner('POS');
   });
 
   document.getElementById('btn-modal-scan-barcode')?.addEventListener('click', () => {

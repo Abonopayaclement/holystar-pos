@@ -1517,10 +1517,8 @@ body {
    STRICT READ-ONLY LOCK WHEN SUBSCRIPTION IS EXPIRED
    ========================================================================== */
 
-body.license-locked #btn-pos-add-stock,
-body.license-locked #btn-inv-add-product,
-body.license-locked #btn-scan-barcode-pos,
-body.license-locked #btn-scan-barcode-inv,
+body.license-locked #btn-pos-scan-barcode,
+body.license-locked #btn-open-product-modal,
 body.license-locked #btn-complete-sale,
 body.license-locked #btn-open-manual-debtor-modal,
 body.license-locked .btn-restock-item,
@@ -1534,12 +1532,12 @@ body.license-locked #btn-open-close-day-modal {
 }
 
 /* ==========================================================================
-   THERMAL RECEIPT PRINT ENGINE (58MM & 80MM @MEDIA PRINT)
+   THERMAL RECEIPT PRINT ENGINE (STRICTLY 1 COMPACT PAGE — 58MM & 80MM)
    ========================================================================== */
 
 @media print {
   @page {
-    margin: 0;
+    margin: 4mm;
   }
 
   html,
@@ -1549,58 +1547,111 @@ body.license-locked #btn-open-close-day-modal {
     background: #ffffff !important;
     color: #000000 !important;
     width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
   }
 
-  body * {
-    visibility: hidden !important;
+  /* Completely collapse all other page sections so hidden content never creates a 2nd page */
+  body > * {
+    display: none !important;
   }
 
-  body[data-print-target="receipt"] #modal-receipt,
-  body[data-print-target="receipt"] #printable-receipt,
-  body[data-print-target="receipt"] #printable-receipt * {
-    visibility: visible !important;
-  }
-
-  body[data-print-target="close-day"] #modal-close-day,
-  body[data-print-target="close-day"] #close-day-report-text,
-  body[data-print-target="close-day"] #close-day-report-text * {
-    visibility: visible !important;
-  }
-
-  body[data-print-target="receipt"] #modal-receipt,
-  body[data-print-target="close-day"] #modal-close-day {
-    position: fixed !important;
-    inset: 0 !important;
-    background: #ffffff !important;
+  body[data-print-target="receipt"] > #modal-receipt,
+  body[data-print-target="close-day"] > #modal-close-day {
     display: block !important;
+    position: static !important;
+    inset: auto !important;
+    background: #ffffff !important;
+    backdrop-filter: none !important;
     padding: 0 !important;
     margin: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  body[data-print-target="receipt"] #modal-receipt .modal-box,
+  body[data-print-target="close-day"] #modal-close-day .modal-box {
+    position: static !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  body[data-print-target="receipt"] #modal-receipt .modal-header,
+  body[data-print-target="receipt"] #modal-receipt .modal-footer,
+  body[data-print-target="receipt"] #modal-receipt .modal-body > div:not(#printable-receipt),
+  body[data-print-target="close-day"] #modal-close-day .modal-header,
+  body[data-print-target="close-day"] #modal-close-day .modal-footer,
+  body[data-print-target="close-day"] #modal-close-day .modal-body > div:not(#close-day-report-text) {
+    display: none !important;
+  }
+
+  body[data-print-target="receipt"] #modal-receipt .modal-body,
+  body[data-print-target="close-day"] #modal-close-day .modal-body {
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
   }
 
   body[data-print-target="receipt"] #printable-receipt,
   body[data-print-target="close-day"] #close-day-report-text {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 80mm !important;
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
     max-width: 80mm !important;
     margin: 0 !important;
-    padding: 3mm 2mm !important;
+    padding: 2px 3px !important;
     border: none !important;
     border-radius: 0 !important;
     box-shadow: none !important;
     font-family: 'Courier New', Courier, monospace !important;
     font-size: 11px !important;
-    line-height: 1.3 !important;
+    line-height: 1.25 !important;
     color: #000000 !important;
     background: #ffffff !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  body[data-print-target="receipt"] #printable-receipt .receipt-header {
+    margin-bottom: 3px !important;
+  }
+
+  body[data-print-target="receipt"] #printable-receipt .receipt-header h4 {
+    margin: 0 0 2px 0 !important;
+    font-size: 12px !important;
+    line-height: 1.2 !important;
+  }
+
+  body[data-print-target="receipt"] #printable-receipt .receipt-divider {
+    margin: 3px 0 !important;
+  }
+
+  body[data-print-target="receipt"] #printable-receipt .receipt-line {
+    margin-bottom: 2px !important;
+    padding: 1px 0 !important;
+    line-height: 1.25 !important;
+  }
+
+  body[data-print-target="receipt"] #printable-receipt .receipt-footer {
+    margin-top: 3px !important;
+    padding-top: 2px !important;
   }
 
   body[data-print-width="58mm"][data-print-target="receipt"] #printable-receipt,
   body[data-print-width="58mm"][data-print-target="close-day"] #close-day-report-text {
-    width: 58mm !important;
     max-width: 58mm !important;
-    padding: 2mm 1.5mm !important;
+    padding: 1px 2px !important;
     font-size: 10px !important;
   }
 }
