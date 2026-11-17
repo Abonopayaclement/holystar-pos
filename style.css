@@ -1532,3 +1532,75 @@ body.license-locked #btn-open-close-day-modal {
   opacity: 0.48;
   cursor: not-allowed;
 }
+
+/* ==========================================================================
+   THERMAL RECEIPT PRINT ENGINE (58MM & 80MM @MEDIA PRINT)
+   ========================================================================== */
+
+@media print {
+  @page {
+    margin: 0;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    width: 100% !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  body[data-print-target="receipt"] #modal-receipt,
+  body[data-print-target="receipt"] #printable-receipt,
+  body[data-print-target="receipt"] #printable-receipt * {
+    visibility: visible !important;
+  }
+
+  body[data-print-target="close-day"] #modal-close-day,
+  body[data-print-target="close-day"] #close-day-report-text,
+  body[data-print-target="close-day"] #close-day-report-text * {
+    visibility: visible !important;
+  }
+
+  body[data-print-target="receipt"] #modal-receipt,
+  body[data-print-target="close-day"] #modal-close-day {
+    position: fixed !important;
+    inset: 0 !important;
+    background: #ffffff !important;
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  body[data-print-target="receipt"] #printable-receipt,
+  body[data-print-target="close-day"] #close-day-report-text {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
+    margin: 0 !important;
+    padding: 3mm 2mm !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    font-family: 'Courier New', Courier, monospace !important;
+    font-size: 11px !important;
+    line-height: 1.3 !important;
+    color: #000000 !important;
+    background: #ffffff !important;
+  }
+
+  body[data-print-width="58mm"][data-print-target="receipt"] #printable-receipt,
+  body[data-print-width="58mm"][data-print-target="close-day"] #close-day-report-text {
+    width: 58mm !important;
+    max-width: 58mm !important;
+    padding: 2mm 1.5mm !important;
+    font-size: 10px !important;
+  }
+}

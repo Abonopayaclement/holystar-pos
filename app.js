@@ -350,6 +350,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       dateInput.value = AppState.selectedReportDate;
     }
 
+    initGlobalUsbBarcodeListener();
     await checkAuthAndBoot();
 
     window.addEventListener('online', () => {
@@ -393,7 +394,7 @@ function registerServiceWorkerSafe() {
       refreshing = true;
       window.location.reload();
     });
-    navigator.serviceWorker.register('./sw.js?v=3.4').then((reg) => {
+    navigator.serviceWorker.register('./sw.js?v=3.6').then((reg) => {
       reg.update().catch(() => {});
     }).catch(() => {});
   }
@@ -698,13 +699,168 @@ function applyCatalogItemToForm(item) {
 // CAMERA BARCODE & QR SCANNER
 // ============================================================================
 
+function playScannerBeep() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1480, ctx.currentTime);
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.09);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.09);
+  } catch (e) {}
+}
+
+function initGlobalUsbBarcodeListener() {
+  let buffer = '';
+  let lastKeyTs = 0;
+
+  document.addEventListener('keydown', (e) => {
+    const now = Date.now();
+    const activeEl = document.activeElement;
+    const tag = activeEl ? activeEl.tagName : '';
+    const isTypingInField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    const prodModalOpen = !document.getElementById('modal-product')?.classList.contains('hidden');
+    const authOpen = !document.getElementById('auth-screen-overlay')?.classList.contains('hidden');
+    if (authOpen) return;
+
+    // Reset buffer if gap between keystrokes > 60ms (human typing vs <50ms HID scanner)
+    if (now - lastKeyTs > 60) {
+      buffer = '';
+    }
+    lastKeyTs = now;
+
+    if (e.key === 'Enter') {
+      if (buffer.length >= 4) {
+        const scannedCode = buffer.trim();
+        buffer = '';
+
+        if (prodModalOpen) {
+          e.preventDefault();
+          const barcodeInput = document.getElementById('prod-barcode');
+          if (barcodeInput) barcodeInput.value = scannedCode;
+          if (Array.isArray(window.MASTER_CATALOG)) {
+            const catMatch = window.MASTER_CATALOG.find(
+              (m) => String(m.suggested_barcode || m.barcode) === scannedCode
+            );
+            if (catMatch) applyCatalogItemToForm(catMatch);
+          }
+          playScannerBeep();
+          showToast(`Barcode ${scannedCode} scanned into product form.`, 'success');
+          return;
+        }
+
+        if (!isTypingInField) {
+          e.preventDefault();
+          handleUsbScannerCode(scannedCode);
+          return;
+        }
+      }
+      buffer = '';
+      return;
+    }
+
+    if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (!isTypingInField || prodModalOpen) {
+        buffer += e.key;
+      }
+    }
+  });
+}
+
+function handleUsbScannerCode(cleanCode) {
+  if (!cleanCode) return;
+  const matchedProduct = AppState.products.find(
+    (p) => String(p.barcode || '').trim().toLowerCase() === cleanCode.toLowerCase()
+  );
+
+  if (matchedProduct) {
+    if (Number(matchedProduct.stock_qty || 0) <= 0) {
+      showToast(`"${matchedProduct.name}" is out of stock.`, 'error');
+      return;
+    }
+    if (!requireActiveLicense()) return;
+    addToCart(matchedProduct.id);
+    playScannerBeep();
+    showToast(`Added ${matchedProduct.name}`, 'success');
+  } else {
+    showToast(`Barcode ${cleanCode} not found in stock`, 'error');
+  }
+}
+
+async function startCameraStreamWithDevice(deviceId = '') {
+  const video = document.getElementById('scanner-video');
+  const statusEl = document.getElementById('scanner-status-msg');
+  if (!video || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+
+  // Stop existing stream if switching cameras
+  if (AppState.barcodeScanner.scanInterval) {
+    clearInterval(AppState.barcodeScanner.scanInterval);
+    AppState.barcodeScanner.scanInterval = null;
+  }
+  if (AppState.barcodeScanner.stream) {
+    AppState.barcodeScanner.stream.getTracks().forEach((t) => t.stop());
+    AppState.barcodeScanner.stream = null;
+  }
+
+  const videoConstraints = deviceId
+    ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+    : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } };
+
+  try {
+    if (statusEl) statusEl.textContent = 'Starting camera...';
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: videoConstraints,
+      audio: false
+    });
+
+    AppState.barcodeScanner.stream = stream;
+    AppState.barcodeScanner.active = true;
+    video.srcObject = stream;
+    await video.play();
+
+    if ('BarcodeDetector' in window) {
+      if (statusEl) statusEl.textContent = 'Point camera at barcode...';
+      const detector = new window.BarcodeDetector({
+        formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code']
+      });
+
+      AppState.barcodeScanner.scanInterval = setInterval(async () => {
+        if (!AppState.barcodeScanner.active || video.readyState < 2) return;
+        try {
+          const barcodes = await detector.detect(video);
+          if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+            const rawCode = String(barcodes[0].rawValue).trim();
+            if (rawCode) {
+              playScannerBeep();
+              handleDetectedBarcode(rawCode);
+            }
+          }
+        } catch (scanErr) {}
+      }, 280);
+    } else if (statusEl) {
+      statusEl.textContent = 'Camera active. Enter digits below if needed.';
+    }
+  } catch (err) {
+    if (statusEl) {
+      statusEl.textContent = 'Camera unavailable. Enter barcode manually below.';
+    }
+  }
+}
+
 async function openBarcodeScanner(targetMode = 'POS') {
   AppState.barcodeScanner.targetMode = targetMode;
   const modal = document.getElementById('modal-barcode-scanner');
-  const video = document.getElementById('scanner-video');
   const statusEl = document.getElementById('scanner-status-msg');
   const manualInput = document.getElementById('manual-barcode-input');
   const quickList = document.getElementById('scanner-quick-list');
+  const camSelect = document.getElementById('scanner-camera-select');
 
   if (!modal) return;
   modal.classList.remove('hidden');
@@ -731,48 +887,39 @@ async function openBarcodeScanner(targetMode = 'POS') {
     });
   }
 
-  if (!video || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     if (statusEl) {
       statusEl.textContent = 'Type barcode below or tap a quick item.';
     }
     return;
   }
 
+  let defaultDeviceId = '';
   try {
-    if (statusEl) statusEl.textContent = 'Starting camera...';
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false
-    });
+    // Request initial stream first so browser reveals device labels, then enumerate
+    await startCameraStreamWithDevice('');
+    if (navigator.mediaDevices.enumerateDevices && camSelect) {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = devices.filter((d) => d.kind === 'videoinput');
+      if (videoInputs.length > 0) {
+        const rearCam = videoInputs.find((d) => /back|rear|environment/i.test(d.label || ''));
+        defaultDeviceId = rearCam ? rearCam.deviceId : videoInputs[0].deviceId;
 
-    AppState.barcodeScanner.stream = stream;
-    AppState.barcodeScanner.active = true;
-    video.srcObject = stream;
-    await video.play();
+        camSelect.innerHTML = videoInputs
+          .map((d, idx) => `<option value="${escapeHtml(d.deviceId)}">${escapeHtml(d.label || `Camera ${idx + 1}`)}</option>`)
+          .join('');
+        camSelect.value = defaultDeviceId;
 
-    if ('BarcodeDetector' in window) {
-      if (statusEl) statusEl.textContent = 'Point camera at barcode...';
-      const detector = new window.BarcodeDetector({
-        formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code']
-      });
-
-      AppState.barcodeScanner.scanInterval = setInterval(async () => {
-        if (!AppState.barcodeScanner.active || video.readyState < 2) return;
-        try {
-          const barcodes = await detector.detect(video);
-          if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
-            const rawCode = String(barcodes[0].rawValue).trim();
-            if (rawCode) handleDetectedBarcode(rawCode);
-          }
-        } catch (scanErr) {}
-      }, 280);
-    } else if (statusEl) {
-      statusEl.textContent = 'Camera active. Enter digits below if needed.';
+        if (!camSelect.dataset.bound) {
+          camSelect.dataset.bound = '1';
+          camSelect.addEventListener('change', async (e) => {
+            await startCameraStreamWithDevice(e.target.value);
+          });
+        }
+      }
     }
   } catch (err) {
-    if (statusEl) {
-      statusEl.textContent = 'Enter barcode manually below.';
-    }
+    if (statusEl) statusEl.textContent = 'Enter barcode manually below.';
   }
 }
 
@@ -1462,7 +1609,7 @@ function showSaleReceiptModal(sale) {
     </div>
     ${extraHtml}
     <div class="receipt-divider"></div>
-    <div class="receipt-footer">Thank you for your business!</div>
+    <div class="receipt-footer">${escapeHtml(window.HolyStarPrinter?.getSettings()?.customFooter || 'Thank you for your business!')}</div>
   `;
 
   // Build WhatsApp & SMS shareable text
@@ -2438,7 +2585,25 @@ function showArchivedCloseDayModal(closedRecord, showSyncPrompt = true) {
     smsBtn.href = `sms:${ownerPhone}?body=${encodeURIComponent(text)}`;
   }
 
+  AppState.activeClosedDayRecord = closedRecord;
   modal.classList.remove('hidden');
+}
+
+function updateBluetoothPrinterBadge() {
+  const badge = document.getElementById('bt-printer-status-badge');
+  const connectBtn = document.getElementById('btn-connect-bt-printer');
+  if (!badge) return;
+  const connected = window.HolyStarPrinter && window.HolyStarPrinter.isBluetoothConnected();
+  const name = connected ? window.HolyStarPrinter.getConnectedDeviceName() : '';
+  if (connected) {
+    badge.textContent = `Connected: ${name}`;
+    badge.className = 'badge badge-success';
+    if (connectBtn) connectBtn.textContent = 'Reconnect Bluetooth';
+  } else {
+    badge.textContent = 'Not Paired';
+    badge.className = 'badge badge-neutral';
+    if (connectBtn) connectBtn.textContent = 'Connect Bluetooth';
+  }
 }
 
 // ============================================================================
@@ -2485,6 +2650,15 @@ async function renderSettingsView() {
   if (setShopName) setShopName.value = s.store_name || s.shop_name || '';
   if (setOwnerPhone) setOwnerPhone.value = s.owner_phone || '';
   if (setShopLoc) setShopLoc.value = s.shop_location || s.location || '';
+
+  if (window.HolyStarPrinter) {
+    const pSettings = window.HolyStarPrinter.getSettings();
+    const paperEl = document.getElementById('setting-paper-width');
+    const footerEl = document.getElementById('setting-receipt-footer');
+    if (paperEl) paperEl.value = pSettings.paperWidth;
+    if (footerEl) footerEl.value = pSettings.customFooter;
+    updateBluetoothPrinterBadge();
+  }
 }
 
 function showUpdateStoreDialog(type, title, message) {
@@ -3198,11 +3372,33 @@ function bindUIEvents() {
     }
   });
 
-  document.getElementById('btn-print-receipt')?.addEventListener('click', () => {
-    window.print();
+  document.getElementById('btn-print-receipt')?.addEventListener('click', async () => {
+    if (window.HolyStarPrinter && AppState.activeSaleReceipt) {
+      try {
+        const res = await window.HolyStarPrinter.printCustomerReceipt(AppState.activeSaleReceipt, AppState.store);
+        if (res.mode === 'bluetooth') showToast('Sent to Bluetooth printer!', 'success');
+      } catch (err) {
+        showToast(err.message || 'Print failed.', 'error');
+      }
+    } else {
+      window.print();
+    }
   });
 
-  // 10. Settings, Dual Subscription Renewal & Manual Cloud Sync
+  document.getElementById('btn-print-close-day')?.addEventListener('click', async () => {
+    if (window.HolyStarPrinter && AppState.activeClosedDayRecord) {
+      try {
+        const res = await window.HolyStarPrinter.printDailyCloseReceipt(AppState.activeClosedDayRecord, AppState.store);
+        if (res.mode === 'bluetooth') showToast('Daily Close sent to Bluetooth printer!', 'success');
+      } catch (err) {
+        showToast(err.message || 'Print failed.', 'error');
+      }
+    } else {
+      window.print();
+    }
+  });
+
+  // 10. Settings, Receipt Printer Setup, Dual Subscription Renewal & Manual Cloud Sync
   document.getElementById('btn-sync-online-settings')?.addEventListener('click', handleSyncDatabaseOnline);
   document.getElementById('btn-settings-open-renew')?.addEventListener('click', openRenewSubscriptionModal);
   document.getElementById('form-hubtel-momo-renew')?.addEventListener('submit', handleHubtelMoMoRenew);
@@ -3219,6 +3415,42 @@ function bindUIEvents() {
   document.getElementById('form-shop-settings')?.addEventListener('submit', handleSaveShopSettings);
   document.getElementById('btn-export-backup')?.addEventListener('click', handleExportBackup);
   document.getElementById('restore-file-input')?.addEventListener('change', handleRestoreFileChange);
+
+  document.getElementById('form-printer-settings')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!window.HolyStarPrinter) return;
+    const paperWidth = document.getElementById('setting-paper-width')?.value || '80mm';
+    const customFooter = document.getElementById('setting-receipt-footer')?.value || '';
+    window.HolyStarPrinter.saveSettings({ paperWidth, customFooter });
+    showToast(`Printer saved (${paperWidth}).`, 'success');
+  });
+
+  document.getElementById('btn-connect-bt-printer')?.addEventListener('click', async () => {
+    if (!window.HolyStarPrinter) return;
+    try {
+      const name = await window.HolyStarPrinter.connectBluetoothPrinter();
+      updateBluetoothPrinterBadge();
+      showToast(`Connected to ${name}!`, 'success');
+    } catch (err) {
+      if (err && err.name !== 'NotFoundError') {
+        showToast(err.message || 'Could not connect Bluetooth printer.', 'error');
+      } else {
+        showToast('Bluetooth pairing cancelled.', 'info');
+      }
+    }
+  });
+
+  document.getElementById('btn-test-print')?.addEventListener('click', async () => {
+    if (!window.HolyStarPrinter) return;
+    try {
+      const res = await window.HolyStarPrinter.printTestReceipt(AppState.store);
+      if (res.mode === 'bluetooth') {
+        showToast('Test receipt sent to Bluetooth printer!', 'success');
+      }
+    } catch (err) {
+      showToast(err.message || 'Test print failed.', 'error');
+    }
+  });
 
   // 11. Universal Modal Close Buttons
   document.querySelectorAll('[data-close], [data-close-modal]').forEach((btn) => {
