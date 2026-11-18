@@ -394,7 +394,7 @@ function registerServiceWorkerSafe() {
       refreshing = true;
       window.location.reload();
     });
-    navigator.serviceWorker.register('./sw.js?v=3.9', { updateViaCache: 'none' }).then((reg) => {
+    navigator.serviceWorker.register('./sw.js?v=4.0', { updateViaCache: 'none' }).then((reg) => {
       reg.update().catch(() => {});
       window.addEventListener('online', () => {
         reg.update().catch(() => {});
@@ -2987,7 +2987,7 @@ function openRenewSubscriptionModal() {
   const phoneInput = document.getElementById('renew-momo-phone');
 
   if (statusBadge) {
-    statusBadge.textContent = isTest ? 'Instant MoMo' : 'Hubtel Live';
+    statusBadge.textContent = isTest ? 'Paystack MoMo (Test)' : 'Paystack MoMo';
     statusBadge.className = 'badge badge-success';
   }
   if (payBtn) {
@@ -3014,7 +3014,7 @@ async function handleHubtelMoMoRenew(e) {
 
   if (payBtn) {
     payBtn.disabled = true;
-    payBtn.textContent = 'Activating...';
+    payBtn.textContent = 'Opening Paystack...';
   }
 
   try {
@@ -3030,7 +3030,16 @@ async function handleHubtelMoMoRenew(e) {
       await refreshAllData();
       window.HolyStarDB.syncTelemetryHeartbeat(AppState.store?.store_id, 'license_renewed');
       triggerSilentBackgroundSync();
-      showUpdateStoreDialog('success', 'Subscription Activated!', `Subscription Activated for ${planDays} Days!`);
+      const newExpiryStr = AppState.store?.license_expiry
+        ? formatDateTime(AppState.store.license_expiry)
+        : `+${res.planDays} Days`;
+      showUpdateStoreDialog(
+        'success',
+        'Subscription Activated!',
+        `Reference: ${res.reference || 'PAYSTACK'} • Unlocked: ${res.planDays} Days (GHS ${Number(res.amountGhs || 0).toFixed(2)}) • Expires: ${newExpiryStr}`
+      );
+    } else if (res.cancelled) {
+      showToast('Payment was cancelled. Store remains locked.', 'info');
     } else {
       showToast(res.message || 'Payment failed. Try Alternative Code.', 'error');
     }
